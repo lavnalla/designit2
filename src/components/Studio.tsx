@@ -5,6 +5,7 @@
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
+import NecklaceTryOn from "./NecklaceTryOn";
 import { 
   ChevronDown, Eraser, Trash, Plus, Image as ImageIcon, Ruler, Ghost, Video, Upload, ArrowLeft, 
   Shirt, Grid, MousePointer, PaintBucket, PenTool, Edit3, Type, Shapes, Palette, Layers, Undo2, 
@@ -91,6 +92,75 @@ interface MannequinMeasurements {
 }
 
 export function Studio({ onBack }: { onBack: () => void }) {
+      const [refineError, setRefineError] = useState<string | null>(null);
+    // Refine image state
+    const [refinePrompt, setRefinePrompt] = useState("");
+    const [isRefiningImage, setIsRefiningImage] = useState(false);
+    // ...existing state hooks...
+    // All shape state hooks...
+    const [workspaceShapes, setWorkspaceShapes] = useState<DistortableShape[]>([]);
+    // ...other state hooks...
+    // Place after workspaceShapes is defined:
+    const [selectedShapeId, setSelectedShapeId] = useState<string|null>(null);
+    const selectedShape = selectedShapeId ? workspaceShapes?.find(s => s.id === selectedShapeId) : null;
+
+    // Helper: convert dataURL to File
+    function dataURLtoFile(dataurl: string, filename: string) {
+      const arr = dataurl.split(','), mime = arr[0].match(/:(.*?);/)[1], bstr = atob(arr[1]), n = bstr.length, u8arr = new Uint8Array(n);
+      for (let i = 0; i < n; i++) u8arr[i] = bstr.charCodeAt(i);
+      return new File([u8arr], filename, { type: mime });
+    }
+
+    // Refine handler
+    const handleRefineImage = async () => {
+      setRefineError(null);
+      if (!selectedShape || !selectedShape.img) {
+        setRefineError('No shape or image selected.');
+        console.warn('Refine: No selected shape or image.', { selectedShape });
+        return;
+      }
+      setIsRefiningImage(true);
+      try {
+        // Convert base64 or dataURL to File
+        let file: File;
+        if (selectedShape.img.startsWith('data:')) {
+          file = dataURLtoFile(selectedShape.img, 'selected.png');
+        } else {
+          // fallback: fetch as blob
+          const res = await fetch(selectedShape.img);
+          const blob = await res.blob();
+          file = new File([blob], 'selected.png', { type: blob.type });
+        }
+        const formData = new FormData();
+        formData.append('image', file);
+        formData.append('prompt', refinePrompt);
+        formData.append('image_strength', '0.7');
+        formData.append('cfg_scale', '7');
+        formData.append('steps', '30');
+        const response = await fetch('/api/refine-image', { method: 'POST', body: formData });
+        let data;
+        try {
+          data = await response.json();
+        } catch (err) {
+          setRefineError('Failed to parse response from server.');
+          console.error('Refine: Failed to parse response', err);
+          return;
+        }
+        console.log('Refine: API response', data);
+        if (data.resultImage) {
+          setWorkspaceShapes(prev => prev.map(s => s.id === selectedShapeId ? { ...s, img: data.resultImage } : s));
+        } else if (data.error) {
+          setRefineError('API error: ' + data.error);
+        } else {
+          setRefineError('No image returned from API.');
+        }
+      } catch (err: any) {
+        setRefineError('Network or server error: ' + (err?.message || err));
+        console.error('Refine: Network/server error', err);
+      } finally {
+        setIsRefiningImage(false);
+      }
+    };
   // helper: convert hex color + alpha (0..1) to rgba() string
   const hexToRgba = (hex: string, alpha = 1) => {
     if (!hex) return `rgba(0,0,0,${alpha})`;
@@ -409,6 +479,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
     { value: "wool", label: "Wool" }
   ];
 
+  const [showTryOn, setShowTryOn] = useState(false);
   const [mounted, setMounted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -448,7 +519,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [imgDims, setImgDims] = useState({ width: 0, height: 0 });
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [sourceDots, setSourceDots] = useState<Dot[]>([]);
-  const [workspaceShapes, setWorkspaceShapes] = useState<DistortableShape[]>([]);
   const [activeTool, setActiveTool] = useState<"cursor" | "scissor" | "pen" | "ghost" | "fill" | "erase">("cursor");
   const [workspaceBgColor, setWorkspaceBgColor] = useState<string>('amber');
   const [activeColor, setActiveColor] = useState("#27EEF5");
@@ -463,7 +533,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [showColorPanel, setShowColorPanel] = useState(false);
   const [showFabricDropdown, setShowFabricDropdown] = useState(false);
   const [isFabricLoading, setIsFabricLoading] = useState(false);
-  const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
   const [globalShowDots, setGlobalShowDots] = useState(true);
   const [isLocked, setIsLocked] = useState(false); 
   const [strokes, setStrokes] = useState<Stroke[]>([]);
@@ -3448,7 +3517,17 @@ export function Studio({ onBack }: { onBack: () => void }) {
               }
               isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingStrokeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setResizingId(null); setRotatingId(null); }}>
               
-              <svg id="workspace-svg" ref={workspaceRef} className={`w-full h-full shadow-2xl rounded-[3rem] lg:rounded-[3rem] rounded-2xl ${getWorkspaceBgClasses()}`} onContextMenu={(e) => {
+              {/* Wrap the workspace viewport inside a layout branch */}
+          {showTryOn ? (
+            <div className="w-full h-full min-h-[480px] flex items-center justify-center bg-black rounded-[3rem] overflow-hidden shadow-2xl">
+              <NecklaceTryOn />
+            </div>
+          ) : (
+            <svg 
+              id="workspace-svg" 
+              ref={workspaceRef} 
+              className={`w-full h-full shadow-2xl rounded-[3rem] lg:rounded-[3rem] rounded-2xl ${getWorkspaceBgClasses()}`} 
+              onContextMenu={(e) => {
                 e.preventDefault();
                 if (selectionRect) {
                   e.stopPropagation();
@@ -3458,354 +3537,380 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     setContextMenu({ x: e.clientX, y: e.clientY, id: 'selection', type: 'selection' });
                   }
                 }
-              }}>
-                {selectionRect && (
-                  <rect 
-                    x={Math.min(selectionRect.x1, selectionRect.x2)} 
-                    y={Math.min(selectionRect.y1, selectionRect.y2)} 
-                    width={Math.abs(selectionRect.x2 - selectionRect.x1)} 
-                    height={Math.abs(selectionRect.y2 - selectionRect.y1)} 
-                    fill="rgba(59, 130, 246, 0.1)" 
-                    stroke="#3b82f6" 
-                    strokeWidth={2} 
-                    strokeDasharray="5,5"
-                    style={{ cursor: 'context-menu' }}
-                  />
-                )}
-                {/* Render shapes and strokes together sorted by zIndex */}
-                {[...workspaceShapes.map(s => ({ ...s, type: 'shape' as const })), ...strokes.map(s => ({ ...s, type: 'stroke' as const }))]
-                  .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0))
-                  .map((item, idx) => {
-                    if (item.type === 'shape') {
-                      const shape = item as DistortableShape;
-                      const transform = `translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale}) rotate(${shape.rotation || 0} ${shape.dims.width/2} ${shape.dims.height/2})`;
-                      return (
-                        <g key={shape.id} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); const c = getCoords(e); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y }); }}>
-                          {shape.isMannequin ? (
-                            <>
-                              <defs>
-                                <clipPath id={`cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`}><path d={generatePathData(shape.dots, true)} /></clipPath>
-                              </defs>
-                              <image key={`img-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`} data-shape-id={shape.id} href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={shape.dots && shape.dots.length > 0 ? `url(#cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length})` : undefined} onPointerDown={(e) => {
-                                if (pickColorMode) { e.stopPropagation(); const c = getCoords(e); handlePickRemove(shape, c.x, c.y); return; }
-                                if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
-                              }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); const c = getCoords(e); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y }); }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
-                              {globalShowDots && shape.dots.map((dot) => (<circle key={dot.id} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#8b5cf6" stroke="#ffffff" strokeWidth={2 / shape.scale} opacity={0.8} onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}
-                              {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.x, y: c.y }); }} />}
-                              {globalShowDots && <circle cx={shape.dims.width / 2} cy={-30} r={20/shape.scale} fill="#10b981" onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setRotatingId(shape.id); setDragOffset({ x: c.x, y: c.y }); }} />}
-                            </>
-                          ) : (
-                            <>
-                              <defs>
-                                <clipPath id={`cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`}><path d={generatePathData(shape.dots, true)} /></clipPath>
-                                {shape.erasedPaths && shape.erasedPaths.length > 0 && (
-                                  <mask id={`ms-${shape.id}`} maskUnits="userSpaceOnUse" x="0" y="0" width={shape.dims.width} height={shape.dims.height}>
-                                    <rect x={0} y={0} width={shape.dims.width} height={shape.dims.height} fill="white" />
-                                    {shape.erasedPaths.map((p, i) => <path key={`er-${i}`} d={p} fill="black" />)}
-                                  </mask>
-                                )}
-                              </defs>
-                              <image key={`img-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`} data-shape-id={shape.id} href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={shape.dots && shape.dots.length > 0 ? `url(#cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length})` : undefined} mask={shape.erasedPaths && shape.erasedPaths.length > 0 ? `url(#ms-${shape.id})` : undefined} onPointerDown={(e) => {
-                                if (pickColorMode) { e.stopPropagation(); const c = getCoords(e); handlePickRemove(shape, c.x, c.y); return; }
-                                if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? { ...s, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : s)); return; }
-                                if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
-                              }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); const c = getCoords(e); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y }); }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
-                              {shape.baseFill && <path d={generatePathData(shape.dots, true)} fill={shape.baseFill} pointerEvents="none" />}
-                              {shape.fillColor && shape.clothType && shape.clothType !== 'solid' ? (
-                                <>
-                                  <defs>
-                                    {getFabricImagePath(shape.clothType) ? (
-                                      <filter id={`colorize-${shape.id}`}>
-                                        <feColorMatrix type="matrix" values="
-                                          0.33 0.33 0.33 0 0
-                                          0.33 0.33 0.33 0 0
-                                          0.33 0.33 0.33 0 0
-                                          0    0    0    1 0" result="gray" />
-                                        <feFlood floodColor={shape.fillColor} result="color" />
-                                        <feBlend mode="hard-light" in="color" in2="gray" />
-                                      </filter>
-                                    ) : null}
-                                    <pattern id={`pt-${shape.id}`} patternUnits="userSpaceOnUse" width={getFabricImagePath(shape.clothType) ? 150 : 40} height={getFabricImagePath(shape.clothType) ? 150 : 40}>
-                                      {getFabricImagePath(shape.clothType) ? (
-                                        <image href={getFabricImagePath(shape.clothType)!} x="0" y="0" width={150} height={150} preserveAspectRatio="xMidYMid slice" filter={`url(#colorize-${shape.id})`} />
-                                      ) : (
-                                        <image href={generateTextureDataUrl(shape.fillColor, normalizeFabric(shape.clothType), 64)} x="0" y="0" width={40} height={40} preserveAspectRatio="none" />
-                                      )}
-                                    </pattern>
-                                  </defs>
-                                  <path d={generatePathData(shape.dots, true)} fill={`url(#pt-${shape.id})`} pointerEvents="none" />
-                                </>
-                              ) : (
-                                shape.fillColor && <path d={generatePathData(shape.dots, true)} fill={shape.fillColor} pointerEvents="none" />
-                              )}
-                              {/* Removed dotted outline as requested */}
-                              {/* {globalShowDots && <path d={generatePathData(shape.dots, true)} fill="transparent" stroke="#3b82f6" strokeWidth={2 / shape.scale} strokeDasharray="4,4" opacity={0.5} pointerEvents="none" />} */}
-                              {globalShowDots && shape.dots.map((dot, dotIdx) => (<circle key={dot.id} id={idx === 0 && dotIdx === 0 ? "workspace-dot-0" : undefined} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#3b82f6" onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}
-                              {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.x, y: c.y }); }} />}
-                              {globalShowDots && <circle cx={shape.dims.width / 2} cy={-30} r={20/shape.scale} fill="#10b981" onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setRotatingId(shape.id); setDragOffset({ x: c.x, y: c.y }); }} />}
-                            </>
-                          )}
-                        </g>
-                      );
-                    } else {
-                      const s = item as Stroke;
-                      const allX = s.points.map(p => p.x);
-                      const allY = s.points.map(p => p.y);
-                      const centerX = (Math.min(...allX) + Math.max(...allX)) / 2;
-                      const centerY = (Math.min(...allY) + Math.max(...allY)) / 2;
-                      const transform = `rotate(${s.rotation || 0} ${centerX} ${centerY})`;
-                      return (
-                      <g key={s.id} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
-                    {s.baseFill && <path d={generatePathData(s.points, s.closed ?? false)} fill={s.baseFill} pointerEvents="none" strokeLinecap="round" strokeLinejoin="round" />}
-                    {s.fillColor && s.clothType && s.clothType !== 'solid' ? (
-                      <>
-                        <defs>
-                          {s.clothType === 'gem' ? (
-                            <>
-                              <linearGradient id={`gem-grad-${s.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
-                                <stop offset="0%" stopColor="#ffffff" stopOpacity="0.8" />
-                                <stop offset="30%" stopColor={s.fillColor} stopOpacity="0.4" />
-                                <stop offset="50%" stopColor={s.fillColor} stopOpacity="0.7" />
-                                <stop offset="100%" stopColor={s.fillColor} stopOpacity="0.2" />
-                              </linearGradient>
-                              {/* Complex Glass Filter providing refraction and reflection */}
-                              <filter id={`gem-shine-${s.id}`} x="-50%" y="-50%" width="200%" height="200%">
-                                {/* 1. Base Bevel/Emboss for 3D Cut shape */}
-                                <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="blur" />
-                                <feOffset in="blur" dx="2" dy="2" result="offsetBlur"/>
-                                <feSpecularLighting in="blur" surfaceScale="5" specularConstant="1.5" specularExponent="40" lightingColor="#ffffff" result="specOut">
-                                  <fePointLight x="-5000" y="-10000" z="20000"/>
-                                </feSpecularLighting>
-                                <feComposite in="specOut" in2="SourceAlpha" operator="in" result="specOut"/>
-                                
-                                {/* 2. Inner Glow / Refraction Simulation */}
-                                <feMorphology operator="erode" radius="2" in="SourceAlpha" result="eroded" />
-                                <feGaussianBlur in="eroded" stdDeviation="4" result="innerBlur" />
-                                <feComposite in="innerBlur" in2="eroded" operator="arithmetic" k2="2" k3="-1" result="innerGlow" />
-                                <feFlood floodColor="white" floodOpacity="0.5" result="lightFlood" />
-                                <feComposite in="lightFlood" in2="innerGlow" operator="in" result="innerHighlight" />
+              }}
+            >
+              {selectionRect && (
+                <rect 
+                  x={Math.min(selectionRect.x1, selectionRect.x2)}
+                  y={Math.min(selectionRect.y1, selectionRect.y2)}
+                  width={Math.abs(selectionRect.x2 - selectionRect.x1)}
+                  height={Math.abs(selectionRect.y2 - selectionRect.y1)}
+                  fill="rgba(59, 130, 246, 0.1)"
+                  stroke="#3b82f6"
+                  strokeWidth={2}
+                  strokeDasharray="5,5"
+                  style={{ cursor: 'context-menu' }}
+                />
+              )}
 
-                                <feMerge>
-                                  <feMergeNode in="SourceGraphic"/> 
-                                  <feMergeNode in="specOut"/>
-                                  <feMergeNode in="innerHighlight"/>
-                                </feMerge>
-                              </filter>
-                            </>
-                          ) : s.clothType === 'bead' || (workspaceShapes.find(ws=>ws.id===s.id)?.clothType === 'bead') ? (
-                             /* 3D Bead Shader - Sphere */
-                             <>
-                               <radialGradient id={`bead-grad-${s.id}`} cx="35%" cy="35%" r="60%" fx="30%" fy="30%">
-                                 <stop offset="0%" stopColor="#ffffff" stopOpacity="0.9" />
-                                 <stop offset="20%" stopColor={s.fillColor} stopOpacity="1" />
-                                 <stop offset="50%" stopColor={s.fillColor} stopOpacity="1" />
-                                 <stop offset="90%" stopColor="#000000" stopOpacity="0.6" />
-                                 <stop offset="100%" stopColor="#000000" stopOpacity="0.8" />
-                               </radialGradient>
-                               <filter id={`bead-shine-${s.id}`} x="-50%" y="-50%" width="200%" height="200%">
-                                 <feGaussianBlur in="SourceAlpha" stdDeviation="2" result="blur" />
-                                 <feSpecularLighting in="blur" surfaceScale="5" specularConstant="1.5" specularExponent="25" lightingColor="#ffffff" result="specOut">
-                                   <fePointLight x="-5000" y="-10000" z="20000"/>
-                                 </feSpecularLighting>
-                                 <feComposite in="specOut" in2="SourceAlpha" operator="in" result="specOut"/>
-                                 <feDropShadow dx="2" dy="2" stdDeviation="2" floodColor="#000000" floodOpacity="0.5" />
-                                 <feMerge>
-                                   <feMergeNode in="SourceGraphic"/>
-                                   <feMergeNode in="specOut"/>
-                                 </feMerge>
-                               </filter>
-                             </>
-                          ) : getFabricImagePath(s.clothType) ? (
-                            <filter id={`colorize-stroke-${s.id}`}>
-                              <feColorMatrix type="matrix" values="
-                                0.33 0.33 0.33 0 0
-                                0.33 0.33 0.33 0 0
-                                0.33 0.33 0.33 0 0
-                                0    0    0    1 0" result="gray" />
-                              <feFlood floodColor={s.fillColor} result="color" />
-                              <feBlend mode="hard-light" in="color" in2="gray" />
-                            </filter>
-                          ) : null}
-                          {s.clothType !== 'gem' && (
-                          <pattern id={`pt-stroke-${s.id}`} patternUnits="userSpaceOnUse" width={getFabricImagePath(s.clothType) ? 150 : 40} height={getFabricImagePath(s.clothType) ? 150 : 40}>
-                            {getFabricImagePath(s.clothType) ? (
-                              <image href={getFabricImagePath(s.clothType)!} x="0" y="0" width={150} height={150} preserveAspectRatio="xMidYMid slice" filter={`url(#colorize-stroke-${s.id})`} />
-                            ) : (
-                              <image href={generateTextureDataUrl(s.fillColor, normalizeFabric(s.clothType || 'cotton'), 64)} x="0" y="0" width={40} height={40} preserveAspectRatio="none" />
-                            )}
-                          </pattern>
-                          )}
-                        </defs>
-                        {/* Special case: Gem, Bead, or others */}
-                        {s.clothType === 'gem' ? (
-                           <path d={generatePathData(s.points, s.closed ?? false)} 
-                                stroke={s.visible === false ? (globalShowDots ? s.color : "transparent") : s.color} 
-                                strokeWidth={s.width / 2} /* thinner stroke for gems, looks better */
-                                fill={`url(#gem-grad-${s.id})`} 
-                                opacity={0.9} /* slightly transp */
-                                onPointerDown={(e) => { 
-                                  if (activeTool === "fill") { 
-                                    e.stopPropagation(); 
-                                    saveForUndo(); 
-                                    setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); 
-                                  } else if (activeTool === "cursor" && !isLocked) { 
-                                    e.stopPropagation(); 
-                                    const c = getCoords(e); 
-                                    setDraggingStrokeId(s.id); 
-                                    setDragOffset({ x: c.x, y: c.y }); 
-                                  } 
-                                }}
-                                onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}
-                                filter={`url(#gem-shine-${s.id})`}
-                           />
-                        ) : s.clothType && s.clothType.startsWith('asset:') ? (
-                          <image 
-                            href={`/assets/${s.clothType.split(':')[1]}`}
-                            x={Math.min(...s.points.map(p => p.x))} 
-                            y={Math.min(...s.points.map(p => p.y))} 
-                            width={Math.max(...s.points.map(p => p.x)) - Math.min(...s.points.map(p => p.x))} 
-                            height={Math.max(...s.points.map(p => p.y)) - Math.min(...s.points.map(p => p.y))} 
-                            onPointerDown={(e) => { 
-                                if (activeTool === "fill") { 
-                                  // Can't replace color in images easily yet
-                                } else if (activeTool === "cursor" && !isLocked) { 
-                                  e.stopPropagation(); 
-                                  const c = getCoords(e); 
-                                  setDraggingStrokeId(s.id); 
-                                  setDragOffset({ x: c.x, y: c.y }); 
-                                } 
-                              }}
-                            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}
-                            // Removed preserveAspectRatio="none" to fix distortion
-                          />
-                        ) : s.clothType === 'real-bead' ? (
-                          <image 
-                            href="/assets/bead.png" 
-                            x={Math.min(...s.points.map(p => p.x))} 
-                            y={Math.min(...s.points.map(p => p.y))} 
-                            width={Math.max(...s.points.map(p => p.x)) - Math.min(...s.points.map(p => p.x))} 
-                            height={Math.max(...s.points.map(p => p.y)) - Math.min(...s.points.map(p => p.y))} 
-                            onPointerDown={(e) => { 
-                                if (activeTool === "fill") { 
-                                  e.stopPropagation(); 
-                                  saveForUndo(); 
-                                  setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); 
-                                } else if (activeTool === "cursor" && !isLocked) { 
-                                  e.stopPropagation(); 
-                                  const c = getCoords(e); 
-                                  setDraggingStrokeId(s.id); 
-                                  setDragOffset({ x: c.x, y: c.y }); 
-                                } 
-                              }}
-                            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}
-                            preserveAspectRatio="none"
-                          />
-                        ) : s.clothType === 'real-emerald' ? (
-                          <image 
-                            href="/assets/emerald.png" 
-                            x={Math.min(...s.points.map(p => p.x))} 
-                            y={Math.min(...s.points.map(p => p.y))} 
-                            width={Math.max(...s.points.map(p => p.x)) - Math.min(...s.points.map(p => p.x))} 
-                            height={Math.max(...s.points.map(p => p.y)) - Math.min(...s.points.map(p => p.y))}
-                            onPointerDown={(e) => { 
-                                if (activeTool === "fill") { 
-                                  e.stopPropagation(); 
-                                  saveForUndo(); 
-                                  setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); 
-                                } else if (activeTool === "cursor" && !isLocked) { 
-                                  e.stopPropagation(); 
-                                  const c = getCoords(e); 
-                                  setDraggingStrokeId(s.id); 
-                                  setDragOffset({ x: c.x, y: c.y }); 
-                                } 
-                              }} 
-                            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}
-                            preserveAspectRatio="none"
-                          />
-                        ) : s.clothType === 'bead' || (workspaceShapes.find(ws=>ws.id===s.id)?.clothType === 'bead') ? (
-                           <path d={generatePathData(s.points, s.closed ?? false)} 
-                                stroke="none"
-                                fill={`url(#bead-grad-${s.id})`}
-                                onPointerDown={(e) => { 
-                                    if (activeTool === "fill") { 
-                                      e.stopPropagation(); 
-                                      saveForUndo(); 
-                                      setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); 
-                                    } else if (activeTool === "cursor" && !isLocked) { 
-                                      e.stopPropagation(); 
-                                      const c = getCoords(e); 
-                                      setDraggingStrokeId(s.id); 
-                                      setDragOffset({ x: c.x, y: c.y }); 
-                                    } 
-                                  }} 
-                                onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}
-                                filter={`url(#bead-shine-${s.id})`}
-                           />
-                        ) : s.clothType === 'button' ? (
-                          <g onPointerDown={(e) => { 
-                            if (activeTool === "fill") { 
-                              e.stopPropagation(); 
-                              saveForUndo(); 
-                              setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); 
-                            } else if (activeTool === "cursor" && !isLocked) { 
-                              e.stopPropagation(); 
-                              const c = getCoords(e); 
-                              setDraggingStrokeId(s.id); 
-                              setDragOffset({ x: c.x, y: c.y }); 
-                            } 
-                          }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }} opacity={s.visible === false ? 0.3 : 1}>
-                              {/* Build button 3D look with gradient and slight shadow */}
-                              <defs>
-                                <radialGradient id={`btn-grad-${s.id}`} cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
-                                  <stop offset="70%" stopColor={s.fillColor} />
-                                  <stop offset="95%" stopColor="#000000" stopOpacity="0.2" />
-                                  <stop offset="100%" stopColor="#000000" stopOpacity="0.5" />
-                                </radialGradient>
-                                <filter id={`btn-shadow-${s.id}`}>
-                                   <feDropShadow dx="1" dy="2" stdDeviation="1" floodOpacity="0.3"/>
-                                </filter>
-                              </defs>
-                              <path d={generatePathData(s.points, true)} fill={`url(#btn-grad-${s.id})`} stroke={s.color} strokeWidth={1} filter={`url(#btn-shadow-${s.id})`}/>
-                              {/* Rim highlight maybe? */}
-                              <path d={generatePathData(s.points, true)} fill="none" stroke="white" strokeWidth={2} strokeOpacity="0.3" transform="scale(0.95)" transform-origin="center" />
-                          </g>
+              {/* Render shapes and strokes together sorted by zIndex */}
+              {[...workspaceShapes.map(s => ({ ...s, type: 'shape' as const })), ...strokes.map(s => ({ ...s, type: 'stroke' as const }))]
+                .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0))
+                .map((item, idx) => {
+                  if (item.type === 'shape') {
+                    const shape = item as DistortableShape;
+                    const transform = `translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale}) rotate(${shape.rotation || 0} ${shape.dims.width/2} ${shape.dims.height/2})`;
+                    return (
+                      <g key={shape.id} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); const c = getCoords(e); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y }); }}>
+                        {shape.isMannequin ? (
+                          <>
+                            <defs>
+                              <clipPath id={`cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`}><path d={generatePathData(shape.dots, true)} /></clipPath>
+                            </defs>
+                            <image key={`img-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`} data-shape-id={shape.id} href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={shape.dots && shape.dots.length > 0 ? `url(#cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length})` : undefined} onPointerDown={(e) => {
+                              if (pickColorMode) { e.stopPropagation();
+                              const c = getCoords(e); handlePickRemove(shape, c.x, c.y); return; }
+                              if (activeTool === "cursor" && !isLocked) { e.stopPropagation();
+                              const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y });
+                              }
+                            }} onContextMenu={(e) => { e.preventDefault();
+                              e.stopPropagation(); const c = getCoords(e); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y });
+                            }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
+                            {globalShowDots && shape.dots.map((dot) => (<circle key={dot.id} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#8b5cf6" stroke="#ffffff" strokeWidth={2 / shape.scale} opacity={0.8} onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}
+                            {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id);
+                            setDragOffset({ x: c.x, y: c.y }); }} />}
+                            {globalShowDots && <circle cx={shape.dims.width / 2} cy={-30} r={20/shape.scale} fill="#10b981" onPointerDown={(e) => { e.stopPropagation();
+                              const c = getCoords(e); setRotatingId(shape.id); setDragOffset({ x: c.x, y: c.y });
+                            }} />}
+                          </>
                         ) : (
-                          /* Standard Fabric or Solid Fill */
-                            <path d={generatePathData(s.points, s.closed ?? false)} 
-                              stroke={s.visible === false ? (globalShowDots ? s.color : "transparent") : s.color} 
-                              strokeWidth={s.width} 
-                              fill={`url(#pt-stroke-${s.id})`} 
-                              strokeLinecap="round" strokeLinejoin="round" 
-                              strokeDasharray={s.visible === false ? "5,5" : undefined} 
-                              opacity={s.visible === false ? 0.3 : 1} 
-                            />
+                          <>
+                            <defs>
+                              <clipPath id={`cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`}><path d={generatePathData(shape.dots, true)} /></clipPath>
+                              {shape.erasedPaths && shape.erasedPaths.length > 0 && (
+                                <mask id={`ms-${shape.id}`} maskUnits="userSpaceOnUse" x="0" y="0" width={shape.dims.width} height={shape.dims.height}>
+                                  <rect x={0} y={0} width={shape.dims.width} height={shape.dims.height} fill="white" />
+                                  {shape.erasedPaths.map((p, i) => <path key={`er-${i}`} d={p} fill="black" />)}
+                                </mask>
+                              )}
+                            </defs>
+                            <image key={`img-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`} data-shape-id={shape.id} href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={shape.dots && shape.dots.length > 0 ? `url(#cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length})` : undefined} mask={shape.erasedPaths && shape.erasedPaths.length > 0 ? `url(#ms-${shape.id})` : undefined} onPointerDown={(e) => {
+                              if (pickColorMode) { e.stopPropagation();
+                              const c = getCoords(e); handlePickRemove(shape, c.x, c.y); return; }
+                              if (activeTool === "fill") { e.stopPropagation();
+                              saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? { ...s, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : s));
+                              return; }
+                              if (activeTool === "cursor" && !isLocked) { e.stopPropagation();
+                              const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y });
+                              }
+                            }} onContextMenu={(e) => { e.preventDefault();
+                              e.stopPropagation(); const c = getCoords(e); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y });
+                            }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
+                            {shape.baseFill && <path d={generatePathData(shape.dots, true)} fill={shape.baseFill} pointerEvents="none" />}
+                            {shape.fillColor && shape.clothType && shape.clothType !== 'solid' ?
+                            (
+                              <>
+                                <defs>
+                                  {getFabricImagePath(shape.clothType) ? (
+                                    <filter id={`colorize-${shape.id}`}>
+                                      <feColorMatrix type="matrix" values="
+                                        0.33 0.33 0.33 0 0
+                                        0.33 0.33 0.33 0 0
+                                        0.33 0.33 0.33 0 0
+                                        0    0    0    1 0" result="gray" />
+                                      <feFlood floodColor={shape.fillColor} result="color" />
+                                      <feBlend mode="hard-light" in="color" in2="gray" />
+                                    </filter>
+                                  ) : null}
+                                  <pattern id={`pt-${shape.id}`} patternUnits="userSpaceOnUse" width={getFabricImagePath(shape.clothType) ? 150 : 40} height={getFabricImagePath(shape.clothType) ? 150 : 40}>
+                                    {getFabricImagePath(shape.clothType) ?
+                                    (
+                                      <image href={getFabricImagePath(shape.clothType)!} x="0" y="0" width={150} height={150} preserveAspectRatio="xMidYMid slice" filter={`url(#colorize-${shape.id})`} />
+                                    ) : (
+                                      <image href={generateTextureDataUrl(shape.fillColor, normalizeFabric(shape.clothType), 64)} x="0" y="0" width={40} height={40} preserveAspectRatio="none" />
+                                    )}
+                                  </pattern>
+                                </defs>
+                                <path d={generatePathData(shape.dots, true)} fill={`url(#pt-${shape.id})`} pointerEvents="none" />
+                              </>
+                            ) : (
+                              shape.fillColor && <path d={generatePathData(shape.dots, true)} fill={shape.fillColor} pointerEvents="none" />
+                            )}
+                            {globalShowDots && shape.dots.map((dot, dotIdx) => (<circle key={dot.id} id={idx === 0 && dotIdx === 0 ? "workspace-dot-0" : undefined} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#3b82f6" onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id });
+                            }} />))}
+                            {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation();
+                              const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.x, y: c.y });
+                            }} />}
+                            {globalShowDots && <circle cx={shape.dims.width / 2} cy={-30} r={20/shape.scale} fill="#10b981" onPointerDown={(e) => { e.stopPropagation();
+                              const c = getCoords(e); setRotatingId(shape.id); setDragOffset({ x: c.x, y: c.y });
+                            }} />}
+                          </>
                         )}
-                      </>
-                    ) : (
-                      <path d={generatePathData(s.points, s.closed ?? false)} stroke={s.visible === false ? (globalShowDots ? s.color : "transparent") : s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={s.visible === false ? "5,5" : undefined} opacity={s.visible === false ? 0.3 : 1} onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }} />
-                    )}
-                    {globalShowDots && s.points.map((p) => (
-                      <circle key={p.id} cx={p.x} cy={p.y} r={8} fill={s.color} onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingStrokeDot({ strokeId: s.id, dotId: p.id }); } }} />
-                    ))}
-                    {globalShowDots && (() => {
-                      const allX = s.points.map(p => p.x);
-                      const allY = s.points.map(p => p.y);
-                      const maxX = Math.max(...allX);
-                      const maxY = Math.max(...allY);
-                      const minX = Math.min(...allX);
-                      const minY = Math.min(...allY);
-                      const centerX = (minX + maxX) / 2;
-                      return (
+                      </g>
+                    );
+                  } else {
+                    const s = item as Stroke;
+                    const allX = s.points.map(p => p.x);
+                    const allY = s.points.map(p => p.y);
+                    const centerX = (Math.min(...allX) + Math.max(...allX)) / 2;
+                    const centerY = (Math.min(...allY) + Math.max(...allY)) / 2;
+                    const transform = `rotate(${s.rotation || 0} ${centerX} ${centerY})`;
+                    return (
+                    <g key={s.id} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
+                      {s.baseFill && <path d={generatePathData(s.points, s.closed ?? false)} fill={s.baseFill} pointerEvents="none" strokeLinecap="round" strokeLinejoin="round" />}
+                      {s.fillColor && s.clothType && s.clothType !== 'solid' ?
+                      (
                         <>
-                          <rect x={maxX + 10} y={maxY + 10} width={45} height={45} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(s.id); setDragOffset({ x: c.x, y: c.y }); }} />
-                          <circle cx={centerX} cy={minY - 30} r={20} fill="#10b981" onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setRotatingId(s.id); setDragOffset({ x: c.x, y: c.y }); }} />
+                          <defs>
+                            {s.clothType === 'gem' ? (
+                              <>
+                                <linearGradient id={`gem-grad-${s.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
+                                  <stop offset="0%" stopColor="#ffffff" stopOpacity="0.8" />
+                                  <stop offset="30%" stopColor={s.fillColor} stopOpacity="0.4" />
+                                  <stop offset="50%" stopColor={s.fillColor} stopOpacity="0.7" />
+                                  <stop offset="100%" stopColor={s.fillColor} stopOpacity="0.2" />
+                                </linearGradient>
+                                <filter id={`gem-shine-${s.id}`} x="-50%" y="-50%" width="200%" height="200%">
+                                  <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="blur" />
+                                  <feOffset in="blur" dx="2" dy="2" result="offsetBlur"/>
+                                  <feSpecularLighting in="blur" surfaceScale="5" specularConstant="1.5" specularExponent="40" lightingColor="#ffffff" result="specOut">
+                                    <fePointLight x="-5000" y="-10000" z="20000"/>
+                                  </feSpecularLighting>
+                                  <feComposite in="specOut" in2="SourceAlpha" operator="in" result="specOut"/>
+                                  <feMorphology operator="erode" radius="2" in="SourceAlpha" result="eroded" />
+                                  <feGaussianBlur in="eroded" stdDeviation="4" result="innerBlur" />
+                                  <feComposite in="innerBlur" in2="eroded" operator="arithmetic" k2="2" k3="-1" result="innerGlow" />
+                                  <feFlood floodColor="white" floodOpacity="0.5" result="lightFlood" />
+                                  <feComposite in="lightFlood" in2="innerGlow" operator="in" result="innerHighlight" />
+                                  <feMerge>
+                                    <feMergeNode in="SourceGraphic"/>
+                                    <feMergeNode in="specOut"/>
+                                    <feMergeNode in="innerHighlight"/>
+                                  </feMerge>
+                                </filter>
+                              </>
+                            ) : s.clothType === 'bead' || (workspaceShapes.find(ws=>ws.id===s.id)?.clothType === 'bead') ? (
+                               <>
+                                 <radialGradient id={`bead-grad-${s.id}`} cx="35%" cy="35%" r="60%" fx="30%" fy="30%">
+                                   <stop offset="0%" stopColor="#ffffff" stopOpacity="0.9" />
+                                   <stop offset="20%" stopColor={s.fillColor} stopOpacity="1" />
+                                   <stop offset="50%" stopColor={s.fillColor} stopOpacity="1" />
+                                   <stop offset="90%" stopColor="#000000" stopOpacity="0.6" />
+                                   <stop offset="100%" stopColor="#000000" stopOpacity="0.8" />
+                                 </radialGradient>
+                                 <filter id={`bead-shine-${s.id}`} x="-50%" y="-50%" width="200%" height="200%">
+                                   <feGaussianBlur in="SourceAlpha" stdDeviation="2" result="blur" />
+                                   <feSpecularLighting in="blur" surfaceScale="5" specularConstant="1.5" specularExponent="25" lightingColor="#ffffff" result="specOut">
+                                     <fePointLight x="-5000" y="-10000" z="20000"/>
+                                   </feSpecularLighting>
+                                   <feComposite in="specOut" in2="SourceAlpha" operator="in" result="specOut"/>
+                                   <feDropShadow dx="2" dy="2" stdDeviation="2" floodColor="#000000" floodOpacity="0.5" />
+                                   <feMerge>
+                                     <feMergeNode in="SourceGraphic"/>
+                                     <feMergeNode in="specOut"/>
+                                   </feMerge>
+                                 </filter>
+                               </>
+                            ) : getFabricImagePath(s.clothType) ? (
+                              <filter id={`colorize-stroke-${s.id}`}>
+                                <feColorMatrix type="matrix" values="
+                                  0.33 0.33 0.33 0 0
+                                  0.33 0.33 0.33 0 0
+                                  0.33 0.33 0.33 0 0
+                                  0    0    0    1 0" result="gray" />
+                                <feFlood floodColor={s.fillColor} result="color" />
+                                <feBlend mode="hard-light" in="color" in2="gray" />
+                              </filter>
+                            ) : null}
+                            {s.clothType !== 'gem' && (
+                              <pattern id={`pt-stroke-${s.id}`} patternUnits="userSpaceOnUse" width={getFabricImagePath(s.clothType) ? 150 : 40} height={getFabricImagePath(s.clothType) ? 150 : 40}>
+                              {getFabricImagePath(s.clothType) ? (
+                                <image href={getFabricImagePath(s.clothType)!} x="0" y="0" width={150} height={150} preserveAspectRatio="xMidYMid slice" filter={`url(#colorize-stroke-${s.id})`} />
+                              ) : (
+                                <image href={generateTextureDataUrl(s.fillColor, normalizeFabric(s.clothType || 'cotton'), 64)} x="0" y="0" width={40} height={40} preserveAspectRatio="none" />
+                              )}
+                            </pattern>
+                            )}
+                          </defs>
+                          {s.clothType === 'gem' ?
+                          (
+                             <path d={generatePathData(s.points, s.closed ?? false)}
+                                  stroke={s.visible === false ? (globalShowDots ? s.color : "transparent") : s.color}
+                                  strokeWidth={s.width / 2}
+                                  fill={`url(#gem-grad-${s.id})`}
+                                  opacity={0.9}
+                                  onPointerDown={(e) => {
+                                    if (activeTool === "fill") {
+                                      e.stopPropagation();
+                                      saveForUndo();
+                                      setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st));
+                                    } else if (activeTool === "cursor" && !isLocked) {
+                                      e.stopPropagation();
+                                      const c = getCoords(e);
+                                      setDraggingStrokeId(s.id);
+                                      setDragOffset({ x: c.x, y: c.y });
+                                    }
+                                  }}
+                                  onContextMenu={(e) => { e.preventDefault();
+                                    e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" });
+                                  }}
+                                  filter={`url(#gem-shine-${s.id})`}
+                             />
+                          ) : s.clothType && s.clothType.startsWith('asset:') ?
+                          (
+                            <image
+                              href={`/assets/${s.clothType.split(':')[1]}`}
+                              x={Math.min(...s.points.map(p => p.x))}
+                              y={Math.min(...s.points.map(p => p.y))}
+                              width={Math.max(...s.points.map(p => p.x)) - Math.min(...s.points.map(p => p.x))}
+                              height={Math.max(...s.points.map(p => p.y)) - Math.min(...s.points.map(p => p.y))}
+                              onPointerDown={(e) => {
+                                  if (activeTool === "fill") {
+                                  } else if (activeTool === "cursor" && !isLocked) {
+                                    e.stopPropagation();
+                                    const c = getCoords(e);
+                                    setDraggingStrokeId(s.id);
+                                    setDragOffset({ x: c.x, y: c.y });
+                                  }
+                                }}
+                              onContextMenu={(e) => { e.preventDefault();
+                                e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" });
+                              }}
+                            />
+                          ) : s.clothType === 'real-bead' ?
+                          (
+                            <image
+                              href="/assets/bead.png"
+                              x={Math.min(...s.points.map(p => p.x))}
+                              y={Math.min(...s.points.map(p => p.y))}
+                              width={Math.max(...s.points.map(p => p.x)) - Math.min(...s.points.map(p => p.x))}
+                              height={Math.max(...s.points.map(p => p.y)) - Math.min(...s.points.map(p => p.y))}
+                              onPointerDown={(e) => {
+                                  if (activeTool === "fill") {
+                                    e.stopPropagation();
+                                    saveForUndo();
+                                    setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st));
+                                  } else if (activeTool === "cursor" && !isLocked) {
+                                    e.stopPropagation();
+                                    const c = getCoords(e);
+                                    setDraggingStrokeId(s.id);
+                                    setDragOffset({ x: c.x, y: c.y });
+                                  }
+                                }}
+                              onContextMenu={(e) => { e.preventDefault();
+                                e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" });
+                              }}
+                              preserveAspectRatio="none"
+                            />
+                          ) : s.clothType === 'real-emerald' ?
+                          (
+                            <image
+                              href="/assets/emerald.png"
+                              x={Math.min(...s.points.map(p => p.x))}
+                              y={Math.min(...s.points.map(p => p.y))}
+                              width={Math.max(...s.points.map(p => p.x)) - Math.min(...s.points.map(p => p.x))}
+                              height={Math.max(...s.points.map(p => p.y)) - Math.min(...s.points.map(p => p.y))}
+                              onPointerDown={(e) => {
+                                  if (activeTool === "fill") {
+                                    e.stopPropagation();
+                                    saveForUndo();
+                                    setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st));
+                                  } else if (activeTool === "cursor" && !isLocked) {
+                                    e.stopPropagation();
+                                    const c = getCoords(e);
+                                    setDraggingStrokeId(s.id);
+                                    setDragOffset({ x: c.x, y: c.y });
+                                  }
+                                }} 
+                              onContextMenu={(e) => { e.preventDefault();
+                                e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" });
+                              }}
+                              preserveAspectRatio="none"
+                            />
+                          ) : s.clothType === 'bead' || (workspaceShapes.find(ws=>ws.id===s.id)?.clothType === 'bead') ? (
+                             <path d={generatePathData(s.points, s.closed ?? false)}
+                                  stroke="none"
+                                  fill={`url(#bead-grad-${s.id})`}
+                                  onPointerDown={(e) => {
+                                      if (activeTool === "fill") {
+                                        e.stopPropagation();
+                                        saveForUndo();
+                                        setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st));
+                                      } else if (activeTool === "cursor" && !isLocked) {
+                                        e.stopPropagation();
+                                        const c = getCoords(e);
+                                        setDraggingStrokeId(s.id);
+                                        setDragOffset({ x: c.x, y: c.y });
+                                      }
+                                    }} 
+                                  onContextMenu={(e) => { e.preventDefault();
+                                    e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" });
+                                  }}
+                                  filter={`url(#bead-shine-${s.id})`}
+                             />
+                          ) : s.clothType === 'button' ?
+                          (
+                            <g onPointerDown={(e) => {
+                              if (activeTool === "fill") {
+                                e.stopPropagation();
+                                saveForUndo();
+                                setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st));
+                              } else if (activeTool === "cursor" && !isLocked) {
+                                  e.stopPropagation();
+                                  const c = getCoords(e);
+                                  setDraggingStrokeId(s.id);
+                                  setDragOffset({ x: c.x, y: c.y });
+                                }
+                              }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }} opacity={s.visible === false ? 0.3 : 1}>
+                                <defs>
+                                  <radialGradient id={`btn-grad-${s.id}`} cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+                                    <stop offset="70%" stopColor={s.fillColor} />
+                                    <stop offset="95%" stopColor="#000000" stopOpacity="0.2" />
+                                    <stop offset="100%" stopColor="#000000" stopOpacity="0.5" />
+                                  </radialGradient>
+                                  <filter id={`btn-shadow-${s.id}`}>
+                                      <feDropShadow dx="1" dy="2" stdDeviation="1" floodOpacity="0.3"/>
+                                  </filter>
+                                </defs>
+                                <path d={generatePathData(s.points, true)} fill={`url(#btn-grad-${s.id})`} stroke={s.color} strokeWidth={1} filter={`url(#btn-shadow-${s.id})`}/>
+                                <path d={generatePathData(s.points, true)} fill="none" stroke="white" strokeWidth={2} strokeOpacity="0.3" transform="scale(0.95)" transform-origin="center" />
+                            </g>
+                          ) : (
+                              <path d={generatePathData(s.points, s.closed ?? false)}
+                                stroke={s.visible === false ? (globalShowDots ? s.color : "transparent") : s.color}
+                                strokeWidth={s.width}
+                                fill={`url(#pt-stroke-${s.id})`}
+                                strokeLinecap="round" strokeLinejoin="round"
+                                strokeDasharray={s.visible === false ? "5,5" : undefined}
+                                opacity={s.visible === false ? 0.3 : 1}
+                              />
+                            )}
                         </>
-                      );
-                    })()}
-                  </g>
-                  );
-                }
-              })}
+                      ) : (
+                        <path d={generatePathData(s.points, s.closed ?? false)} stroke={s.visible === false ? (globalShowDots ? s.color : "transparent") : s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={s.visible === false ? "5,5" : undefined} opacity={s.visible === false ? 0.3 : 1} onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }} />
+                      )}
+                      {globalShowDots && s.points.map((p) => (
+                        <circle key={p.id} cx={p.x} cy={p.y} r={8} fill={s.color} onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingStrokeDot({ strokeId: s.id, dotId: p.id }); } }} />
+                      ))}
+                      {globalShowDots && (() => {
+                        const allX = s.points.map(p => p.x);
+                        const allY = s.points.map(p => p.y);
+                        const maxX = Math.max(...allX);
+                        const maxY = Math.max(...allY);
+                        const minX = Math.min(...allX);
+                        const minY = Math.min(...allY);
+                        const centerX = (minX + maxX) / 2;
+                        return (
+                          <>
+                            <rect x={maxX + 10} y={maxY + 10} width={45} height={45} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(s.id); setDragOffset({ x: c.x, y: c.y }); }} />
+                            <circle cx={centerX} cy={minY - 30} r={20} fill="#10b981" onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setRotatingId(s.id); setDragOffset({ x: c.x, y: c.y }); }} />
+                          </>
+                        );
+                      })()}
+                    </g>
+                    );
+                  }
+                })}
 
               {activeTool === "scissor" && scissorDots.length > 0 && (
                 <g pointerEvents="none">
@@ -3840,11 +3945,76 @@ export function Studio({ onBack }: { onBack: () => void }) {
                   ))}
                 </g>
               )}
-              </svg>
-            </div>
-            <button onClick={runTutorial} disabled={tutorialDisabled} className="fixed bottom-6 right-6 w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-500 text-white rounded-full font-black shadow-2xl border-4 border-white hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">?</button>
-          </main>
+              
+              {/* Highlight selected shape */}
+              {selectedShapeId && workspaceShapes?.map(s => s.id === selectedShapeId ? (
+                <g key={s.id + '-highlight'}>
+                  <rect
+                    x={s.position.x - 8}
+                    y={s.position.y - 8}
+                    width={s.dims.width * s.scale + 16}
+                    height={s.dims.height * s.scale + 16}
+                    fill="none"
+                    stroke="#f43f5e"
+                    strokeWidth={4}
+                    strokeDasharray="8 4"
+                    pointerEvents="none"
+                  />
+                </g>
+              ) : null)}
+            </svg>
+          )}
 
+          </div>
+          {/* Tutorial UI Assist Controls */}
+          <button onClick={runTutorial} disabled={tutorialDisabled} className="fixed bottom-6 right-6 w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-500 text-white rounded-full font-black shadow-2xl border-4 border-white hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">?</button>
+        </main>
+
+        </div>
+        {/* Footer Refine UI */}
+        <div className="w-full flex flex-col md:flex-row items-center gap-2 px-4 py-3 bg-white border-t border-slate-200 shadow-inner z-50 sticky bottom-0">
+          {refineError && (
+            <div className="w-full text-red-600 text-xs mb-1 text-center">{refineError}</div>
+          )}
+          <input
+            type="text"
+            placeholder="Enter prompt to refine image..."
+            value={refinePrompt}
+            onChange={e => setRefinePrompt(e.target.value)}
+            className="flex-1 border border-slate-300 rounded-md px-3 py-2 text-sm"
+            disabled={isRefiningImage}
+          />
+          <button
+            onClick={handleRefineImage}
+            disabled={isRefiningImage || !refinePrompt || !selectedShape}
+            className="px-5 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-md text-sm font-bold uppercase shadow-md hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {isRefiningImage ? (
+              <>
+                <span className="animate-spin">⏳</span> Refining...
+              </>
+            ) : (
+              <>🪄 Refine Image</>
+            )}
+          </button>
+          <button
+  onClick={() => setShowTryOn(prev => !prev)}
+  className={`px-5 py-2.5 rounded-xl font-bold text-white shadow-md transition-all active:scale-95 flex items-center gap-2 ${
+    showTryOn 
+      ? 'bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700' 
+      : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'
+  }`}
+>
+  {showTryOn ? (
+    <>
+      <span>🎨</span> Return to Studio Canvas
+    </>
+  ) : (
+    <>
+      <span>📸</span> Open Live Try-On
+    </>
+  )}
+</button>
         </div>
         <AdBanner />
         <SubmissionModal
