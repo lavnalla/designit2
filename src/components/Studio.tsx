@@ -479,7 +479,9 @@ export function Studio({ onBack }: { onBack: () => void }) {
     { value: "wool", label: "Wool" }
   ];
 
-  const [showTryOn, setShowTryOn] = useState(false);
+  const [showTryOn, setShowTryOn] = useState(false); 
+  const [renderedWorkspaceImg, setRenderedWorkspaceImg] = useState<string | null>(null);
+
   const [mounted, setMounted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -550,6 +552,112 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [customAssets, setCustomAssets] = useState<{name: string, path: string}[]>([]);
   const workspaceRef = useRef<SVGSVGElement | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
+
+  // Place this at the top level of your Studio component (below your state declarations)
+useEffect(() => {
+  if (!showTryOn) return;
+
+  const svgElement = document.getElementById("workspace-svg");
+  if (!svgElement) return;
+
+  let active = true;
+
+  const generateFlatCanvasSnapshot = () => {
+    try {
+      const activeShapeObj = workspaceShapes?.find(s => s.id === selectedShapeId);
+      if (!activeShapeObj) return;
+
+      const tempCanvas = document.createElement("canvas");
+      const canvasWidth = activeShapeObj.dims?.width || 512;
+      const canvasHeight = activeShapeObj.dims?.height || 512;
+      tempCanvas.width = canvasWidth;
+      tempCanvas.height = canvasHeight;
+      
+      const ctx = tempCanvas.getContext("2d");
+      if (!ctx) return;
+
+      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+
+      const baseImg = new Image();
+      baseImg.crossOrigin = "anonymous";
+      baseImg.src = activeShapeObj.img;
+      
+      baseImg.onload = () => {
+        if (!active) return;
+
+        // 1. Draw the raw template image layout onto the canvas context
+        ctx.drawImage(baseImg, 0, 0, canvasWidth, canvasHeight);
+
+        // 💡 NEW: If it's a blouse/mannequin template, strip out the solid background pixels instantly
+        const isBlouse = activeShapeObj.id?.includes("blouse") || (activeShapeObj.img && activeShapeObj.img.includes("blouse"));
+        if (isBlouse) {
+          const imgData = ctx.getImageData(0, 0, canvasWidth, canvasHeight);
+          const data = imgData.data;
+          
+          // Loop through every pixel (RGBA) to mask off the light/white backdrop space
+          for (let i = 0; i < data.length; i += 4) {
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+            
+            // Matches whites and very bright gray mannequin backgrounds
+            if (r > 220 && g > 220 && b > 220) {
+              data[i + 3] = 0; // Turn alpha transparent!
+            }
+          }
+          ctx.putImageData(imgData, 0, 0);
+        }
+
+        // 2. Overlay your customized editor brush strokes on top cleanly
+        if (Array.isArray(strokes)) {
+          strokes.forEach((stroke) => {
+            if (!stroke.points || stroke.points.length < 2) return;
+            
+            ctx.beginPath();
+            ctx.strokeStyle = stroke.color || "#3b82f6";
+            ctx.lineWidth = stroke.width || 5;
+            ctx.lineCap = "round";
+            ctx.lineJoin = "round";
+
+            const startPoint = stroke.points[0];
+            ctx.moveTo(
+              startPoint.x - activeShapeObj.position.x, 
+              startPoint.y - activeShapeObj.position.y
+            );
+
+            for (let i = 1; i < stroke.points.length; i++) {
+              ctx.lineTo(
+                stroke.points[i].x - activeShapeObj.position.x, 
+                stroke.points[i].y - activeShapeObj.position.y
+              );
+            }
+            
+            if (stroke.closed) ctx.closePath();
+            ctx.stroke();
+          });
+        }
+
+        // 3. Dispatch the cleanly processed composite layer to the tracker
+        const flatDataUrl = tempCanvas.toDataURL("image/png");
+        setRenderedWorkspaceImg(flatDataUrl);
+      };
+
+      baseImg.onerror = (err) => {
+        console.error("Failed to load template layout backdrop:", err);
+      };
+
+    } catch (err) {
+      console.error("Failed to generate custom composition:", err);
+    }
+  };
+
+  generateFlatCanvasSnapshot();
+
+  return () => {
+    active = false;
+  };
+}, [showTryOn, selectedShapeId, workspaceShapes, strokes]);
+
 
   useEffect(() => {
     fetch('/api/assets')
@@ -3518,11 +3626,15 @@ export function Studio({ onBack }: { onBack: () => void }) {
               isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingStrokeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setResizingId(null); setRotatingId(null); }}>
               
               {/* Wrap the workspace viewport inside a layout branch */}
-          {showTryOn ? (
-            <div className="w-full h-full min-h-[480px] flex items-center justify-center bg-black rounded-[3rem] overflow-hidden shadow-2xl">
-              <NecklaceTryOn />
-            </div>
-          ) : (
+  {showTryOn && (
+  <div className="mt-4 p-4 border border-slate-200 rounded-2xl bg-white shadow-sm flex flex-col items-center w-full max-w-[670px] mx-auto">
+    <h3 className="text-sm font-bold text-slate-700 mb-2 uppercase tracking-wide">
+      Live Device Try-On Pipeline
+    </h3>
+    {/* Explicitly passing only the custom baked canvas image */}
+    <NecklaceTryOn selectedImageSrc={renderedWorkspaceImg} />
+  </div>
+)}
             <svg 
               id="workspace-svg" 
               ref={workspaceRef} 
@@ -3963,7 +4075,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 </g>
               ) : null)}
             </svg>
-          )}
+          
 
           </div>
           {/* Tutorial UI Assist Controls */}

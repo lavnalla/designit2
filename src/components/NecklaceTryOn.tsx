@@ -3,69 +3,132 @@
 import React, { useEffect, useRef, useState } from "react";
 import { PoseLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 
-const NECKLACE_FILES = [
+const DEFAULT_NECKLACE_FILES = [
   "necklace1.png", "necklace2.png", "necklace3.png", "necklace4.png",
   "necklace5.png", "design1.png", "design2.png", "design3.png"
 ];
 
-export default function NecklaceTryOn() {
+interface NecklaceTryOnProps {
+  selectedImageSrc?: string | null;
+}
+
+export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const poseLandmarkerRef = useRef<PoseLandmarker | null>(null);
   const requestRef = useRef<number | null>(null);
   const imagesRef = useRef<HTMLImageElement[]>([]);
 
-  // State Management
+  const necklaceCatalog = React.useMemo(() => {
+  if (selectedImageSrc) {
+      return [selectedImageSrc, ...DEFAULT_NECKLACE_FILES];
+  }
+    return DEFAULT_NECKLACE_FILES;
+  }, [selectedImageSrc]);
+
   const [isReady, setIsReady] = useState(false);
   const [isActive, setIsActive] = useState(false);
-  const [statusText, setStatusText] = useState("Loading assets & tracking models...");
+  const [statusText, setStatusText] = useState("Loading tracking models...");
   const [currentIdx, setCurrentIdx] = useState(0);
   const [scaleMult, setScaleMult] = useState(1.0);
   const [vertOffset, setVertOffset] = useState(0.0);
 
-  // Constants
   const scaleStep = 0.05;
   const offsetStep = 0.03;
 
-  // 1. Initialize & Preload everything on mount
+  // Helper function to dynamically clear white/near-white canvas backgrounds
+  const removeWhiteBackground = (imageSrc: string): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = imageSrc;
+      img.onload = () => {
+        const tempCanvas = document.createElement("canvas");
+        tempCanvas.width = img.width;
+        tempCanvas.height = img.height;
+        const ctx = tempCanvas.getContext("2d");
+        if (!ctx) {
+          resolve(imageSrc);
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0);
+        const imgData = ctx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+        const data = imgData.data;
+
+        // Loop through every pixel (RGBA) to target white background pixels
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          
+          // Target pixels close to white
+          if (r > 230 && g > 230 && b > 230) {
+            data[i + 3] = 0; // Set Alpha Channel to 0 (Fully Transparent)
+          }
+        }
+
+        ctx.putImageData(imgData, 0, 0);
+        resolve(tempCanvas.toDataURL("image/png"));
+      };
+      img.onerror = () => resolve(imageSrc);
+    });
+  };
+
+  // Place this right below your useState declarations inside NecklaceTryOn.tsx
+useEffect(() => {
+  if (selectedImageSrc) {
+    setCurrentIdx(0); // Force-lock to the studio workspace snapshot asset at index 0
+  }
+}, [selectedImageSrc]);
+
   useEffect(() => {
     let active = true;
-
+    setIsReady(false);
+    
     async function setup() {
       try {
-        // Preload Image Assets
         const loadedImages = await Promise.all(
-          NECKLACE_FILES.map((src) => {
-            return new Promise<HTMLImageElement>((resolve, reject) => {
+          necklaceCatalog.map(async (src, idx) => {
+            return new Promise<HTMLImageElement>(async (resolve, reject) => {
+              let finalSrc = src;
+
+              if (selectedImageSrc && idx === 0) {
+                setStatusText("Cleaning design background...");
+                finalSrc = await removeWhiteBackground(src);
+              }
+
               const img = new Image();
-              img.src = src; // Ensure these live in your /public directory
+              img.crossOrigin = "anonymous";
+              img.src = finalSrc;
               img.onload = () => resolve(img);
-              img.onerror = () => reject(new Error(`Failed to load ${src}`));
+              img.onerror = () => reject(new Error("Failed to load asset"));
             });
           })
         );
 
         if (!active) return;
         imagesRef.current = loadedImages;
+        setCurrentIdx(0);
 
-        // Initialize MediaPipe Pose Model
-        setStatusText("Loading vision models...");
-        const vision = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
-        );
-        
-        const landmarker = await PoseLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            // Updated absolute CDN path configuration targeting the Lite layout model pipeline
-            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
-            delegate: "GPU"
-          },
-          runningMode: "VIDEO",
-          outputSegmentationMasks: false
-        });
+        if (!poseLandmarkerRef.current) {
+          setStatusText("Loading tracking engine models...");
+          const vision = await FilesetResolver.forVisionTasks(
+            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+          );
+          
+          const landmarker = await PoseLandmarker.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+              delegate: "GPU"
+            },
+            runningMode: "VIDEO",
+            outputSegmentationMasks: false
+          });
+          if (!active) return;
+          poseLandmarkerRef.current = landmarker;
+        }
 
-        if (!active) return;
-        poseLandmarkerRef.current = landmarker;
         setIsReady(true);
         setStatusText("Ready! Click the button to start.");
       } catch (error) {
@@ -78,20 +141,18 @@ export default function NecklaceTryOn() {
 
     return () => {
       active = false;
-      if (requestRef.current) cancelAnimationFrame(requestRef.current);
     };
-  }, []);
+  }, [necklaceCatalog, selectedImageSrc]);
 
-  // 2. Capture Key Commands natively in React window context
   useEffect(() => {
     if (!isActive) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
       if (key === "n") {
-        setCurrentIdx((prev) => (prev + 1) % NECKLACE_FILES.length);
+        setCurrentIdx((prev) => (prev + 1) % necklaceCatalog.length);
       } else if (key === "b") {
-        setCurrentIdx((prev) => (prev - 1 + NECKLACE_FILES.length) % NECKLACE_FILES.length);
+        setCurrentIdx((prev) => (prev - 1 + necklaceCatalog.length) % necklaceCatalog.length);
       } else if (key === "u") {
         setVertOffset((prev) => prev - offsetStep);
       } else if (key === "j") {
@@ -110,9 +171,8 @@ export default function NecklaceTryOn() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isActive]);
+  }, [isActive, necklaceCatalog]);
 
-  // 3. Main processing loop execution tracking hooks
   useEffect(() => {
     let lastVideoTime = -1;
 
@@ -140,7 +200,6 @@ export default function NecklaceTryOn() {
             const leftShoulder = landmarks[11];
             const rightShoulder = landmarks[12];
 
-            // Normalize values down into exact viewport layout coordinates
             const nY = nose.y * canvas.height;
             const lsX = leftShoulder.x * canvas.width;
             const lsY = leftShoulder.y * canvas.height;
@@ -151,14 +210,11 @@ export default function NecklaceTryOn() {
             const midY = (lsY + rsY) / 2;
             const shoulderWidth = Math.abs(rsX - lsX);
 
-            // Access live atomic configurations matching key updates
             const activeImage = imagesRef.current[currentIdx];
-            
             if (activeImage) {
               const necklaceW = shoulderWidth * scaleMult;
               const aspect = activeImage.naturalHeight / activeImage.naturalWidth;
               const necklaceH = necklaceW * aspect;
-
               const neckY = nY + (midY - nY) * (0.62 + vertOffset);
               const drawX = midX - necklaceW / 2;
               const drawY = neckY - necklaceH / 6;
@@ -183,7 +239,6 @@ export default function NecklaceTryOn() {
     };
   }, [isActive, currentIdx, scaleMult, vertOffset]);
 
-  // 4. Trigger Web Camera Device Capabilities
   const startTryOn = async () => {
     if (!videoRef.current) return;
     try {
@@ -198,7 +253,6 @@ export default function NecklaceTryOn() {
     }
   };
 
-  // 5. Screenshot Logic
   const saveScreenshot = () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -222,6 +276,8 @@ export default function NecklaceTryOn() {
     }
   };
 
+  const isCustomAsset = selectedImageSrc && currentIdx === 0;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "15px" }}>
       {!isActive && (
@@ -238,7 +294,7 @@ export default function NecklaceTryOn() {
             fontSize: "16px"
           }}
         >
-          {isReady ? "Start Virtual Try-On" : "Loading Engine Assets..."}
+          {isReady ? "Start Virtual Try-On" : "Preparing Studio Design..."}
         </button>
       )}
 
@@ -253,7 +309,6 @@ export default function NecklaceTryOn() {
           display: isActive ? "block" : "none"
         }}
       >
-        {/* HUD Control Overlay Panel */}
         <div
           style={{
             position: "absolute",
@@ -271,7 +326,10 @@ export default function NecklaceTryOn() {
             lineHeight: "1.4"
           }}
         >
-          <strong>[{currentIdx + 1}/{NECKLACE_FILES.length}] {NECKLACE_FILES[currentIdx]}</strong><br />
+          <strong>
+            [{currentIdx + 1}/{necklaceCatalog.length}] {isCustomAsset ? "✨ Studio Workspace Active Design (Transparent)" : necklaceCatalog[currentIdx]}
+          </strong>
+          <br />
           Scale: {scaleMult.toFixed(2)} | Offset: {vertOffset.toFixed(2)}<br />
           <span style={{ color: "#aaa", fontSize: "11px" }}>
             N/B: Switch | U/J: Up/Down | +/-: Size | R: Reset | S: Screenshot
