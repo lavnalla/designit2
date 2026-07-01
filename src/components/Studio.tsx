@@ -6,6 +6,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import NecklaceTryOn from "./NecklaceTryOn";
+import Garment3DTryOn from "./Garment3DTryOn";
 import { 
   ChevronDown, Eraser, Trash, Plus, Image as ImageIcon, Ruler, Ghost, Video, Upload, ArrowLeft, 
   Shirt, Grid, MousePointer, PaintBucket, PenTool, Edit3, Type, Shapes, Palette, Layers, Undo2, 
@@ -653,6 +654,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   ];
 
   const [showTryOn, setShowTryOn] = useState(false); 
+  const [show3DTryOn, setShow3DTryOn] = useState(false);
   const [renderedWorkspaceImg, setRenderedWorkspaceImg] = useState<string | null>(null);
 
   const [mounted, setMounted] = useState(false);
@@ -3808,6 +3810,15 @@ useEffect(() => {
     <NecklaceTryOn selectedImageSrc={renderedWorkspaceImg} />
   </div>
 )}
+{show3DTryOn && (
+  <div className="mt-4 p-4 border border-slate-200 rounded-2xl bg-white shadow-sm flex flex-col items-center w-full max-w-[670px] mx-auto">
+    <h3 className="text-sm font-bold text-slate-700 mb-2 uppercase tracking-wide">
+      Live 3D Garment Try-On Pipeline
+    </h3>
+    {/* Renders the baked design as a body-tracked 3D garment */}
+    <Garment3DTryOn selectedImageSrc={renderedWorkspaceImg} />
+  </div>
+)}
             <svg 
               id="workspace-svg" 
               ref={workspaceRef} 
@@ -4294,6 +4305,28 @@ useEffect(() => {
   }`}
 >
   {showTryOn ? "✕ Close Try-On View" : "✨ Test Live on Webcam"}
+</button>
+<button
+  onClick={async () => {
+    if (!show3DTryOn) {
+      // Bake the workspace design before mounting the 3D camera pipeline.
+      const readyAsset = await syncWorkspaceToTryOn();
+      if (!readyAsset) {
+        alert("Could not process studio workspace asset safely. Try again.");
+        return;
+      }
+      setShow3DTryOn(true);
+    } else {
+      setShow3DTryOn(false);
+    }
+  }}
+  className={`px-5 py-2.5 rounded-xl font-bold text-white shadow-md transition-all active:scale-95 flex items-center gap-2 ${
+    show3DTryOn
+      ? 'bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700'
+      : 'bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700'
+  }`}
+>
+  {show3DTryOn ? "✕ Close 3D Try-On" : "🧥 3D Garment Try-On"}
 </button>
         </div>
         <AdBanner />
