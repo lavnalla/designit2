@@ -12,12 +12,19 @@ interface NecklaceTryOnProps {
   selectedImageSrc?: string | null;
 }
 
+type Landmark2D = {
+  x: number;
+  y: number;
+};
+
 export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const poseLandmarkerRef = useRef<PoseLandmarker | null>(null);
   const requestRef = useRef<number | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const imagesRef = useRef<HTMLImageElement[]>([]);
+  const latestLandmarksRef = useRef<Landmark2D[] | null>(null);
 
   const necklaceCatalog = React.useMemo(() => {
   if (selectedImageSrc) {
@@ -26,7 +33,6 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
     return DEFAULT_NECKLACE_FILES;
   }, [selectedImageSrc]);
 
-  const [isReady, setIsReady] = useState(false);
   const [isActive, setIsActive] = useState(false);
   const [statusText, setStatusText] = useState("Loading tracking models...");
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -36,78 +42,78 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
   const scaleStep = 0.05;
   const offsetStep = 0.03;
 
-  // Helper function to dynamically clear white/near-white canvas backgrounds
-  const removeWhiteBackground = (imageSrc: string): Promise<string> => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.src = imageSrc;
-      img.onload = () => {
-        const tempCanvas = document.createElement("canvas");
-        tempCanvas.width = img.width;
-        tempCanvas.height = img.height;
-        const ctx = tempCanvas.getContext("2d");
-        if (!ctx) {
-          resolve(imageSrc);
+  useEffect(() => {
+    let cancelled = false;
+
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: 640, height: 480 }
+        });
+        if (cancelled) {
+          stream.getTracks().forEach(track => track.stop());
           return;
         }
-
-        ctx.drawImage(img, 0, 0);
-        const imgData = ctx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-        const data = imgData.data;
-
-        // Loop through every pixel (RGBA) to target white background pixels
-        for (let i = 0; i < data.length; i += 4) {
-          const r = data[i];
-          const g = data[i + 1];
-          const b = data[i + 2];
-          
-          // Target pixels close to white
-          if (r > 230 && g > 230 && b > 230) {
-            data[i + 3] = 0; // Set Alpha Channel to 0 (Fully Transparent)
-          }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
         }
+        setIsActive(true);
+      } catch (err) {
+        setStatusText("Webcam connection failed.");
+        console.error(err);
+      }
+    }
 
-        ctx.putImageData(imgData, 0, 0);
-        resolve(tempCanvas.toDataURL("image/png"));
-      };
-      img.onerror = () => resolve(imageSrc);
-    });
-  };
+    startCamera();
 
-  // Place this right below your useState declarations inside NecklaceTryOn.tsx
-useEffect(() => {
-  if (selectedImageSrc) {
-    setCurrentIdx(0); // Force-lock to the studio workspace snapshot asset at index 0
-  }
-}, [selectedImageSrc]);
+    return () => {
+      cancelled = true;
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
-    setIsReady(false);
+
+    const loadImageSafe = (src: string) => {
+      return new Promise<HTMLImageElement | null>((resolve) => {
+        const img = new Image();
+        if (!src.startsWith("data:") && !src.startsWith("blob:")) {
+          img.crossOrigin = "anonymous";
+        }
+        img.onload = () => {
+          if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+            resolve(img);
+          } else {
+            resolve(null);
+          }
+        };
+        img.onerror = () => resolve(null);
+        img.src = src;
+      });
+    };
     
     async function setup() {
       try {
-        const loadedImages = await Promise.all(
-          necklaceCatalog.map(async (src, idx) => {
-            return new Promise<HTMLImageElement>(async (resolve, reject) => {
-              let finalSrc = src;
-
-              if (selectedImageSrc && idx === 0) {
-                setStatusText("Cleaning design background...");
-                finalSrc = await removeWhiteBackground(src);
-              }
-
-              const img = new Image();
-              img.crossOrigin = "anonymous";
-              img.src = finalSrc;
-              img.onload = () => resolve(img);
-              img.onerror = () => reject(new Error("Failed to load asset"));
-            });
+        const loadedImagesRaw = await Promise.all(
+          necklaceCatalog.map(async (src) => {
+            return loadImageSafe(src);
           })
         );
 
+        const loadedImages = loadedImagesRaw.filter((img): img is HTMLImageElement => !!img);
+
         if (!active) return;
+
+        if (loadedImages.length === 0) {
+          setStatusText("Failed to load try-on image.");
+          return;
+        }
+
         imagesRef.current = loadedImages;
         setCurrentIdx(0);
 
@@ -129,8 +135,8 @@ useEffect(() => {
           poseLandmarkerRef.current = landmarker;
         }
 
-        setIsReady(true);
         setStatusText("Ready! Click the button to start.");
+
       } catch (error) {
         console.error(error);
         setStatusText("Failed to initialize system assets.");
@@ -143,6 +149,29 @@ useEffect(() => {
       active = false;
     };
   }, [necklaceCatalog, selectedImageSrc]);
+
+  function saveScreenshot() {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+
+    const snapshotCanvas = document.createElement("canvas");
+    snapshotCanvas.width = canvas.width;
+    snapshotCanvas.height = canvas.height;
+    const sCtx = snapshotCanvas.getContext("2d");
+
+    if (sCtx) {
+      sCtx.translate(snapshotCanvas.width, 0);
+      sCtx.scale(-1, 1);
+      sCtx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      sCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height);
+
+      const link = document.createElement("a");
+      link.download = `studio_snapshot_${Date.now()}.png`;
+      link.href = snapshotCanvas.toDataURL("image/png");
+      link.click();
+    }
+  }
 
   useEffect(() => {
     if (!isActive) return;
@@ -180,59 +209,65 @@ useEffect(() => {
       const video = videoRef.current;
       const canvas = canvasRef.current;
       const landmarker = poseLandmarkerRef.current;
-// --- FIX: Switch from renderedWorkspaceImg to selectedImageSrc ---
-  if (selectedImageSrc) {
-    const testImg = new Image();
-    testImg.src = selectedImageSrc;
-    
-    // Skip frames gracefully if the image dimension buffer hasn't calculated completely
-    if (testImg.naturalWidth === 0 || testImg.naturalHeight === 0) {
-      console.log("⏳ [TRY-ON DOM WATCH] Workspace asset image dimensions not ready yet. Skipping frame...");
-      requestAnimationFrame(predictLoop);
-      return;
-    }
-  }
-  // -----------------------------------------------------------------
 
-      if (video && canvas && landmarker && video.currentTime !== lastVideoTime) {
-        lastVideoTime = video.currentTime;
-        
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
+      if (video && canvas) {
+        // Keep the draw surface valid even before metadata is fully available.
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
         const ctx = canvas.getContext("2d");
 
         if (ctx) {
-          const startTimeMs = performance.now();
-          const results = landmarker.detectForVideo(video, startTimeMs);
+          const activeImage = imagesRef.current[currentIdx];
 
           ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-          if (results.landmarks && results.landmarks.length > 0) {
-            const landmarks = results.landmarks[0];
+          const hasValidVideoFrame =
+            video.readyState >= 2 &&
+            video.videoWidth > 0 &&
+            video.videoHeight > 0;
+
+          if (landmarker && hasValidVideoFrame && video.currentTime !== lastVideoTime) {
+            lastVideoTime = video.currentTime;
+            try {
+              const startTimeMs = performance.now();
+              const results = landmarker.detectForVideo(video, startTimeMs);
+              latestLandmarksRef.current = results.landmarks && results.landmarks.length > 0
+                ? results.landmarks[0]
+                : null;
+            } catch (err) {
+              // Keep loop alive and continue drawing fallback placement.
+              latestLandmarksRef.current = null;
+              console.warn("Pose tracking frame failed", err);
+            }
+          }
+
+          const landmarks = latestLandmarksRef.current;
+          if (landmarks && activeImage) {
             const nose = landmarks[0];
             const leftShoulder = landmarks[11];
             const rightShoulder = landmarks[12];
 
-            const nY = nose.y * canvas.height;
-            const lsX = leftShoulder.x * canvas.width;
-            const lsY = leftShoulder.y * canvas.height;
-            const rsX = rightShoulder.x * canvas.width;
-            const rsY = rightShoulder.y * canvas.height;
+            if (nose && leftShoulder && rightShoulder) {
+              const nY = Math.trunc(nose.y * canvas.height);
+              const lsX = Math.trunc(leftShoulder.x * canvas.width);
+              const lsY = Math.trunc(leftShoulder.y * canvas.height);
+              const rsX = Math.trunc(rightShoulder.x * canvas.width);
+              const rsY = Math.trunc(rightShoulder.y * canvas.height);
 
-            const midX = (lsX + rsX) / 2;
-            const midY = (lsY + rsY) / 2;
-            const shoulderWidth = Math.abs(rsX - lsX);
+              const midX = Math.trunc((lsX + rsX) / 2);
+              const midY = Math.trunc((lsY + rsY) / 2);
+              const shoulderWidth = Math.abs(rsX - lsX);
 
-            const activeImage = imagesRef.current[currentIdx];
-            if (activeImage) {
-              const necklaceW = shoulderWidth * scaleMult;
+              const necklaceW = Math.trunc(shoulderWidth * scaleMult);
               const aspect = activeImage.naturalHeight / activeImage.naturalWidth;
-              const necklaceH = necklaceW * aspect;
-              const neckY = nY + (midY - nY) * (0.62 + vertOffset);
-              const drawX = midX - necklaceW / 2;
-              const drawY = neckY - necklaceH / 6;
+              const necklaceH = Math.trunc(necklaceW * aspect);
+              const neckY = Math.trunc(nY + (midY - nY) * (0.62 + vertOffset));
+              const drawX = Math.trunc(midX - necklaceW / 2);
+              const drawY = Math.trunc(neckY - necklaceH / 6);
 
-              ctx.drawImage(activeImage, drawX, drawY, necklaceW, necklaceH);
+              if (Number.isFinite(drawX) && Number.isFinite(drawY) && necklaceW > 0 && necklaceH > 0) {
+                ctx.drawImage(activeImage, drawX, drawY, necklaceW, necklaceH);
+              }
             }
           }
         }
@@ -250,67 +285,12 @@ useEffect(() => {
     return () => {
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
     };
-  }, [isActive, currentIdx, scaleMult, vertOffset]);
-
-  const startTryOn = async () => {
-    if (!videoRef.current) return;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480 }
-      });
-      videoRef.current.srcObject = stream;
-      setIsActive(true);
-    } catch (err) {
-      alert("Webcam connection failed.");
-      console.error(err);
-    }
-  };
-
-  const saveScreenshot = () => {
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas) return;
-
-    const snapshotCanvas = document.createElement("canvas");
-    snapshotCanvas.width = canvas.width;
-    snapshotCanvas.height = canvas.height;
-    const sCtx = snapshotCanvas.getContext("2d");
-
-    if (sCtx) {
-      sCtx.translate(snapshotCanvas.width, 0);
-      sCtx.scale(-1, 1);
-      sCtx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      sCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height);
-
-      const link = document.createElement("a");
-      link.download = `studio_snapshot_${Date.now()}.png`;
-      link.href = snapshotCanvas.toDataURL("image/png");
-      link.click();
-    }
-  };
+  }, [isActive, currentIdx, scaleMult, vertOffset, selectedImageSrc]);
 
   const isCustomAsset = selectedImageSrc && currentIdx === 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "15px" }}>
-      {!isActive && (
-        <button
-          onClick={startTryOn}
-          disabled={!isReady}
-          style={{
-            background: isReady ? "#3498db" : "#555",
-            color: "white",
-            padding: "10px 20px",
-            border: "none",
-            borderRadius: "5px",
-            cursor: isReady ? "pointer" : "not-allowed",
-            fontSize: "16px"
-          }}
-        >
-          {isReady ? "Start Virtual Try-On" : "Preparing Studio Design..."}
-        </button>
-      )}
-
       <div
         style={{
           position: "relative",
@@ -357,7 +337,8 @@ useEffect(() => {
             position: "absolute",
             width: "640px",
             height: "480px",
-            transform: "scaleX(-1)"
+            transform: "scaleX(-1)",
+            zIndex: 1
           }}
         />
         <canvas
@@ -366,9 +347,11 @@ useEffect(() => {
             position: "absolute",
             width: "640px",
             height: "480px",
-            transform: "scaleX(-1)"
+            transform: "scaleX(-1)",
+            zIndex: 2
           }}
         />
+
       </div>
       {!isActive && <p style={{ fontSize: "14px", color: "#888" }}>{statusText}</p>}
     </div>

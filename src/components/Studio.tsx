@@ -78,6 +78,9 @@ interface Dot {
 interface DistortableShape {
   id: string;
   img: string;
+  fabricFillSrc?: string;
+  fabricFillWidth?: number;
+  fabricFillHeight?: number;
   dots: Dot[];
   dims: { width: number; height: number };
   position: { x: number; y: number };
@@ -162,6 +165,42 @@ export function Studio({ onBack }: { onBack: () => void }) {
         return resolve(null);
       }
 
+      const targetShapeId = selectedShapeId || [...workspaceShapes]
+        .reverse()
+        .find(s => !s.isMannequin && !!s.img)?.id || null;
+
+      const selectedShapeForTryOn = selectedShapeId
+        ? workspaceShapes.find(s => s.id === selectedShapeId) || null
+        : null;
+
+      const selectedGroupIds = new Set<string>();
+      if (selectedShapeForTryOn?.groupId) {
+        selectedGroupIds.add(selectedShapeForTryOn.groupId);
+      }
+
+      if (selectionRect) {
+        workspaceShapes.forEach((shape) => {
+          const bbox = getBoundingBox(shape);
+          if (isItemInRect(bbox, selectionRect) && shape.groupId) {
+            selectedGroupIds.add(shape.groupId);
+          }
+        });
+        strokes.forEach((stroke) => {
+          const bbox = getBoundingBox(stroke);
+          if (isItemInRect(bbox, selectionRect) && stroke.groupId) {
+            selectedGroupIds.add(stroke.groupId);
+          }
+        });
+      }
+
+      const targetShapeIds = selectedGroupIds.size > 0
+        ? new Set(
+            workspaceShapes
+              .filter(shape => !!shape.groupId && selectedGroupIds.has(shape.groupId))
+              .map(shape => shape.id)
+          )
+        : new Set(targetShapeId ? [targetShapeId] : []);
+
       try {
         console.log(
           "💾 [TRY-ON PIPELINE] Initializing comprehensive design texture parsing environment...",
@@ -231,7 +270,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
           }
 
           const id = el.getAttribute("id") || "";
-          const href = el.getAttribute("href") || "";
           const className = el.getAttribute("class") || "";
           const dataShapeId = el.getAttribute("data-shape-id") || "";
 
@@ -243,7 +281,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
             href.includes("base_") ||
             href.includes("mannequin") ||
             id.includes("mannequin") ||
-            className.includes("template") ||
             className.includes("mannequin") ||
             dataShapeId.includes("mannequin");
 
@@ -252,6 +289,28 @@ export function Studio({ onBack }: { onBack: () => void }) {
             el.remove();
           }
         });
+
+        // 5b. Keep only selected target branch(es) for Try-On export.
+        if (targetShapeIds.size > 0 || selectedGroupIds.size > 0) {
+          Array.from(clonedSvg.children).forEach((child) => {
+            const tag = child.tagName.toLowerCase();
+            if (tag === 'defs') return;
+
+            if (tag !== 'g') {
+              child.remove();
+              return;
+            }
+
+            const childShapeId = child.getAttribute('data-shape-id') || '';
+            const childGroupId = child.getAttribute('data-group-id') || '';
+            const keepByShape = childShapeId ? targetShapeIds.has(childShapeId) : false;
+            const keepByGroup = childGroupId ? selectedGroupIds.has(childGroupId) : false;
+
+            if (!keepByShape && !keepByGroup) {
+              child.remove();
+            }
+          });
+        }
 
         // 6. ASYNCHRONOUS INLINE ASSET CONVERSION PIPELINE FOR MODIFIED TEXTURES
         const imageElements = clonedSvg.querySelectorAll("image, img");
@@ -291,13 +350,13 @@ export function Studio({ onBack }: { onBack: () => void }) {
 
         // 7. COMPILING FLATTENED RENDER snapshot
         Promise.all(promises).then(() => {
-          clonedSvg.setAttribute("width", width.toString());
-          clonedSvg.setAttribute("height", height.toString());
+          clonedSvg.setAttribute("width", exportWidth.toString());
+          clonedSvg.setAttribute("height", exportHeight.toString());
           clonedSvg.setAttribute("viewBox", viewBox);
 
           clonedSvg.removeAttribute("class");
-          clonedSvg.style.width = `${width}px`;
-          clonedSvg.style.height = `${height}px`;
+          clonedSvg.style.width = `${exportWidth}px`;
+          clonedSvg.style.height = `${exportHeight}px`;
           clonedSvg.style.transform = "none";
 
           const serializer = new XMLSerializer();
@@ -310,8 +369,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
           }
 
           const canvas = document.createElement("canvas");
-          canvas.width = width;
-          canvas.height = height;
+          canvas.width = exportWidth;
+          canvas.height = exportHeight;
           const ctx = canvas.getContext("2d");
 
           if (!ctx) {
@@ -323,8 +382,9 @@ export function Studio({ onBack }: { onBack: () => void }) {
           finalImg.crossOrigin = "anonymous";
 
           finalImg.onload = () => {
-            ctx.clearRect(0, 0, width, height);
-            ctx.drawImage(finalImg, 0, 0, width, height);
+            URL.revokeObjectURL(svgUrl);
+            ctx.clearRect(0, 0, exportWidth, exportHeight);
+            ctx.drawImage(finalImg, 0, 0, exportWidth, exportHeight);
 
             const dataUrlOutput = canvas.toDataURL("image/png");
             setRenderedWorkspaceImg(dataUrlOutput);
