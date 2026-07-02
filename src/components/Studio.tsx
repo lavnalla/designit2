@@ -4219,20 +4219,20 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                               <path d={strokePathD} />
                             </clipPath>
                             <pattern
-  id={`fabric-pt-stroke-${s.id}`}
-  patternUnits="userSpaceOnUse"
-  width={strokeW}
-  height={strokeH}
->
-  <image
-    href={s.fabricFillSrc}
-    x={0}
-    y={0}
-    width={strokeW}
-    height={strokeH}
-    preserveAspectRatio="xMidYMid slice"
-  />
-</pattern>
+                            id={`fabric-pt-stroke-${s.id}`}
+                            patternUnits="userSpaceOnUse"
+                            width={strokeW}
+                            height={strokeH}
+                          >
+                            <image
+                              href={s.fabricFillSrc}
+                              x={0}
+                              y={0}
+                              width={strokeW}
+                              height={strokeH}
+                              preserveAspectRatio="xMidYMid slice"
+                            />
+                          </pattern>
                           </defs>
                           <path
                             d={strokePathD}
