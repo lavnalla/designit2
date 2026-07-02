@@ -2392,6 +2392,118 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
     ? (target.type === 'stroke' ? strokes.filter(stroke => stroke.id === target.id) : [])
     : [];
 
+  const loadImage = (src: string) =>
+    new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new window.Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Failed to load fabric source image'));
+      img.src = src;
+    });
+
+  const createSharpStretchedTexture = (img: HTMLImageElement, width: number, height: number) => {
+    const targetW = Math.max(96, Math.round(width));
+    const targetH = Math.max(96, Math.round(height));
+
+    const srcW = Math.max(1, img.naturalWidth || img.width || 1);
+    const srcH = Math.max(1, img.naturalHeight || img.height || 1);
+    const minUpscale = Math.max(targetW / srcW, targetH / srcH);
+    const oversample = Math.min(3, Math.max(1.5, minUpscale > 1 ? minUpscale : 2));
+
+    const workingW = Math.max(targetW, Math.round(targetW * oversample));
+    const workingH = Math.max(targetH, Math.round(targetH * oversample));
+
+    const workingCanvas = document.createElement('canvas');
+    workingCanvas.width = workingW;
+    workingCanvas.height = workingH;
+    const workingCtx = workingCanvas.getContext('2d', { willReadFrequently: true });
+    if (!workingCtx) return null;
+
+    workingCtx.clearRect(0, 0, workingW, workingH);
+    workingCtx.imageSmoothingEnabled = true;
+    workingCtx.imageSmoothingQuality = 'high';
+    workingCtx.filter = 'contrast(1.04) saturate(1.02)';
+    // Stretch to target bounds intentionally, based on user preference.
+    workingCtx.drawImage(img, 0, 0, workingW, workingH);
+    workingCtx.filter = 'none';
+
+    // Mild unsharp pass to recover edge crispness after upscale stretch.
+    try {
+      const data = workingCtx.getImageData(0, 0, workingW, workingH);
+      const src = data.data;
+      const out = new Uint8ClampedArray(src);
+      const amount = 0.2;
+      const idx = (x: number, y: number) => (y * workingW + x) * 4;
+      for (let y = 1; y < workingH - 1; y++) {
+        for (let x = 1; x < workingW - 1; x++) {
+          const i = idx(x, y);
+          for (let c = 0; c < 3; c++) {
+            const center = src[i + c];
+            const blur = (
+              src[idx(x - 1, y) + c] + src[idx(x + 1, y) + c] +
+              src[idx(x, y - 1) + c] + src[idx(x, y + 1) + c]
+            ) * 0.25;
+            const sharpened = center + (center - blur) * amount;
+            out[i + c] = Math.max(0, Math.min(255, sharpened));
+          }
+        }
+      }
+      data.data.set(out);
+      workingCtx.putImageData(data, 0, 0);
+    } catch (sharpenError) {
+      console.warn('Sharp stretch post-process skipped:', sharpenError);
+    }
+
+    const finalCanvas = document.createElement('canvas');
+    finalCanvas.width = targetW;
+    finalCanvas.height = targetH;
+    const finalCtx = finalCanvas.getContext('2d');
+    if (!finalCtx) return null;
+    finalCtx.imageSmoothingEnabled = true;
+    finalCtx.imageSmoothingQuality = 'high';
+    finalCtx.drawImage(workingCanvas, 0, 0, targetW, targetH);
+
+    return {
+      src: finalCanvas.toDataURL('image/png'),
+      width: targetW,
+      height: targetH
+    };
+  };
+
+  const createPythonSharpStretchedTexture = async (imageDataUrl: string, width: number, height: number) => {
+    try {
+      const response = await fetch('/api/python-resize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageDataUrl,
+          width,
+          height,
+          mode: 'stretch'
+        })
+      });
+
+      if (!response.ok) {
+        const message = await response.text().catch(() => 'Python resize request failed');
+        throw new Error(message || 'Python resize request failed');
+      }
+
+      const data = await response.json();
+      if (!data?.imageDataUrl) {
+        throw new Error('Python resize response missing imageDataUrl');
+      }
+
+      return {
+        src: data.imageDataUrl as string,
+        width: Number(data.width) || Math.max(96, Math.round(width)),
+        height: Number(data.height) || Math.max(96, Math.round(height))
+      };
+    } catch (pythonError) {
+      console.warn('Python sharp stretch unavailable; using browser fallback.', pythonError);
+      return null;
+    }
+  };
+
   try {
     const copiedFabricDims = await new Promise<{ width: number; height: number } | null>((resolve) => {
       const img = new window.Image();
@@ -2406,25 +2518,115 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
       return;
     }
 
+    let sourceImage: HTMLImageElement | null = null;
+    try {
+      sourceImage = await loadImage(fabricClipboardSrc);
+    } catch (loadError) {
+      console.warn('Sharp stretch source image load failed; falling back to plain paste.', loadError);
+    }
+
+    const swatchWidth = Math.max(1, Math.round(copiedFabricDims?.width || sourceImage?.naturalWidth || sourceImage?.width || 1));
+    const swatchHeight = Math.max(1, Math.round(copiedFabricDims?.height || sourceImage?.naturalHeight || sourceImage?.height || 1));
+
+    let processedSwatchSrc: string | null = null;
+    if (sourceImage) {
+      const pythonSwatch = await createPythonSharpStretchedTexture(fabricClipboardSrc, swatchWidth, swatchHeight);
+      if (pythonSwatch?.src) {
+        processedSwatchSrc = pythonSwatch.src;
+      } else {
+        const fallbackSwatch = createSharpStretchedTexture(sourceImage, swatchWidth, swatchHeight);
+        if (fallbackSwatch?.src) {
+          processedSwatchSrc = fallbackSwatch.src;
+        }
+      }
+    }
+
     saveForUndo();
     const targetIds = new Set(targetShapes.map(shape => shape.id));
     const targetStrokeIds = new Set(targetStrokes.map(stroke => stroke.id));
 
+    const originalShapeGeometry = new Map(
+      targetShapes.map(shape => [shape.id, {
+        scale: shape.scale,
+        position: { ...shape.position }
+      }])
+    );
+    const originalStrokeGeometry = new Map(
+      targetStrokes.map(st => [st.id, {
+        points: st.points.map(p => ({ ...p }))
+      }])
+    );
+
+    const waitNextFrame = () => new Promise<void>((resolve) => {
+      if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(() => resolve());
+      } else {
+        setTimeout(() => resolve(), 0);
+      }
+    });
+
+    // 1) Resize target object to copied fabric size.
     setWorkspaceShapes(prev => prev.map(shape => {
       if (!targetIds.has(shape.id)) return shape;
-      const nextFabricWidth = shape.fabricFillWidth ?? copiedFabricDims?.width;
-      const nextFabricHeight = shape.fabricFillHeight ?? copiedFabricDims?.height;
+      const renderW = Math.max(1, shape.dims.width * Math.max(0.1, shape.scale));
+      const renderH = Math.max(1, shape.dims.height * Math.max(0.1, shape.scale));
+      const widthRatio = swatchWidth / renderW;
+      const heightRatio = swatchHeight / renderH;
+      const scaleFactor = Math.max(0.1, (widthRatio + heightRatio) / 2);
+      const nextScale = Math.max(0.1, shape.scale * scaleFactor);
+      const oldRenderW = shape.dims.width * shape.scale;
+      const oldRenderH = shape.dims.height * shape.scale;
+      const newRenderW = shape.dims.width * nextScale;
+      const newRenderH = shape.dims.height * nextScale;
       return {
         ...shape,
-        fabricFillSrc: fabricClipboardSrc,
-        fabricFillWidth: nextFabricWidth,
-        fabricFillHeight: nextFabricHeight,
+        scale: nextScale,
+        position: {
+          x: shape.position.x + (oldRenderW - newRenderW) / 2,
+          y: shape.position.y + (oldRenderH - newRenderH) / 2
+        }
+      };
+    }));
+
+    setStrokes(prev => prev.map(st => {
+      if (!targetStrokeIds.has(st.id)) return st;
+      const xs = st.points.map(p => p.x);
+      const ys = st.points.map(p => p.y);
+      const minX = xs.length > 0 ? Math.min(...xs) : 0;
+      const maxX = xs.length > 0 ? Math.max(...xs) : swatchWidth;
+      const minY = ys.length > 0 ? Math.min(...ys) : 0;
+      const maxY = ys.length > 0 ? Math.max(...ys) : swatchHeight;
+      const oldW = Math.max(1, maxX - minX);
+      const oldH = Math.max(1, maxY - minY);
+      const centerX = (minX + maxX) / 2;
+      const centerY = (minY + maxY) / 2;
+      const widthRatio = swatchWidth / oldW;
+      const heightRatio = swatchHeight / oldH;
+      const scaleFactor = Math.max(0.1, (widthRatio + heightRatio) / 2);
+      return {
+        ...st,
+        points: st.points.map(p => ({
+          ...p,
+          x: centerX + (p.x - centerX) * scaleFactor,
+          y: centerY + (p.y - centerY) * scaleFactor
+        }))
+      };
+    }));
+
+    await waitNextFrame();
+
+    // 2) Paste fabric.
+    setWorkspaceShapes(prev => prev.map(shape => {
+      if (!targetIds.has(shape.id)) return shape;
+      return {
+        ...shape,
+        fabricFillSrc: processedSwatchSrc || fabricClipboardSrc,
+        fabricFillWidth: swatchWidth,
+        fabricFillHeight: swatchHeight,
         baseFill: undefined,
         fillColor: undefined,
         clothType: undefined,
-        clipUpdate: Date.now(),
-        // Enforces minimum scale constraint during paste
-        scale: Math.max(0.1, shape.scale)
+        clipUpdate: Date.now()
       };
     }));
 
@@ -2432,12 +2634,36 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
       if (!targetStrokeIds.has(st.id)) return st;
       return {
         ...st,
-        fabricFillSrc: fabricClipboardSrc,
-        fabricFillWidth: copiedFabricDims?.width,
-        fabricFillHeight: copiedFabricDims?.height,
+        fabricFillSrc: processedSwatchSrc || fabricClipboardSrc,
+        fabricFillWidth: swatchWidth,
+        fabricFillHeight: swatchHeight,
         baseFill: undefined,
         fillColor: undefined,
         clothType: undefined
+      };
+    }));
+
+    await waitNextFrame();
+
+    // 3) Resize target object back to original size.
+    setWorkspaceShapes(prev => prev.map(shape => {
+      if (!targetIds.has(shape.id)) return shape;
+      const original = originalShapeGeometry.get(shape.id);
+      if (!original) return shape;
+      return {
+        ...shape,
+        scale: original.scale,
+        position: { ...original.position }
+      };
+    }));
+
+    setStrokes(prev => prev.map(st => {
+      if (!targetStrokeIds.has(st.id)) return st;
+      const original = originalStrokeGeometry.get(st.id);
+      if (!original) return st;
+      return {
+        ...st,
+        points: original.points.map(p => ({ ...p }))
       };
     }));
 
@@ -4073,10 +4299,10 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                     const shape = item as DistortableShape;
                     // Match pasted fabric to the same local rectangle as the shape image.
                     // The group scale/rotation (orange handle logic) is applied uniformly to both.
+                    const fabricWidth = Math.max(1, shape.dims.width);
+                    const fabricHeight = Math.max(1, shape.dims.height);
                     const fabricX = 0;
                     const fabricY = 0;
-                    const fabricWidth = shape.dims.width;
-                    const fabricHeight = shape.dims.height;
                     const transform = `translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale}) rotate(${shape.rotation || 0} ${shape.dims.width/2} ${shape.dims.height/2})`;
                     return (
                       <g key={shape.id} data-shape-id={shape.id} data-group-id={shape.groupId || ''} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); const c = getCoords(e); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y }); }}>
@@ -4126,27 +4352,15 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                             }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
                             {shape.fabricFillSrc && (
                               <>
-                                <defs>
-                                  <pattern
-                                    id={`fabric-pt-${shape.id}`}
-                                    patternUnits="userSpaceOnUse"
-                                    width={shape.fabricFillWidth || fabricWidth}
-                                    height={shape.fabricFillHeight || fabricHeight}
-                                  >
-                                    <image
-                                      href={shape.fabricFillSrc}
-                                      x={0}
-                                      y={0}
-                                      width={shape.fabricFillWidth || fabricWidth}
-                                      height={shape.fabricFillHeight || fabricHeight}
-                                      preserveAspectRatio="none"
-                                    />
-                                  </pattern>
-                                </defs>
-                                <path
+                                <image
                                   key={`fabric-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`}
-                                  d={generatePathData(shape.dots, true)}
-                                  fill={`url(#fabric-pt-${shape.id})`}
+                                  href={shape.fabricFillSrc}
+                                  x={fabricX}
+                                  y={fabricY}
+                                  width={fabricWidth}
+                                  height={fabricHeight}
+                                  preserveAspectRatio="none"
+                                  imageRendering="optimizeQuality"
                                   clipPath={shape.dots && shape.dots.length > 0 ? `url(#cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length})` : undefined}
                                   mask={shape.erasedPaths && shape.erasedPaths.length > 0 ? `url(#ms-${shape.id})` : undefined}
                                   pointerEvents="none"
@@ -4218,25 +4432,15 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                             <clipPath id={`cl-st-fabric-${s.id}`}>
                               <path d={strokePathD} />
                             </clipPath>
-                            <pattern
-                              id={`fabric-pt-stroke-${s.id}`}
-                              patternUnits="userSpaceOnUse"
-                              width={s.fabricFillWidth || strokeW}
-                              height={s.fabricFillHeight || strokeH}
-                            >
-                              <image
-                                href={s.fabricFillSrc}
-                                x={0}
-                                y={0}
-                                width={s.fabricFillWidth || strokeW}
-                                height={s.fabricFillHeight || strokeH}
-                                preserveAspectRatio="none"
-                              />
-                            </pattern>
                           </defs>
-                          <path
-                            d={strokePathD}
-                            fill={`url(#fabric-pt-stroke-${s.id})`}
+                          <image
+                            href={s.fabricFillSrc}
+                            x={minX}
+                            y={minY}
+                            width={strokeW}
+                            height={strokeH}
+                            preserveAspectRatio="none"
+                            imageRendering="optimizeQuality"
                             clipPath={`url(#cl-st-fabric-${s.id})`}
                             pointerEvents="none"
                           />
