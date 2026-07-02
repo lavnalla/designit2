@@ -38,9 +38,29 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
   const [currentIdx, setCurrentIdx] = useState(0);
   const [scaleMult, setScaleMult] = useState(1.0);
   const [vertOffset, setVertOffset] = useState(0.0);
+  const [showTouchKeyboard, setShowTouchKeyboard] = useState(false);
 
   const scaleStep = 0.05;
   const offsetStep = 0.03;
+
+  const nextDesign = () => setCurrentIdx((prev) => (prev + 1) % necklaceCatalog.length);
+  const prevDesign = () => setCurrentIdx((prev) => (prev - 1 + necklaceCatalog.length) % necklaceCatalog.length);
+  const moveUp = () => setVertOffset((prev) => prev - offsetStep);
+  const moveDown = () => setVertOffset((prev) => prev + offsetStep);
+  const sizeUp = () => setScaleMult((prev) => prev + scaleStep);
+  const sizeDown = () => setScaleMult((prev) => Math.max(0.1, prev - scaleStep));
+  const resetAdjustments = () => {
+    setScaleMult(1.0);
+    setVertOffset(0.0);
+  };
+
+  useEffect(() => {
+    const mq = window.matchMedia("(pointer: coarse), (max-width: 900px)");
+    const sync = () => setShowTouchKeyboard(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -179,20 +199,19 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
     const handleKeyDown = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
       if (key === "n") {
-        setCurrentIdx((prev) => (prev + 1) % necklaceCatalog.length);
+        nextDesign();
       } else if (key === "b") {
-        setCurrentIdx((prev) => (prev - 1 + necklaceCatalog.length) % necklaceCatalog.length);
+        prevDesign();
       } else if (key === "u") {
-        setVertOffset((prev) => prev - offsetStep);
+        moveUp();
       } else if (key === "j") {
-        setVertOffset((prev) => prev + offsetStep);
+        moveDown();
       } else if (key === "+" || e.key === "=") {
-        setScaleMult((prev) => prev + scaleStep);
+        sizeUp();
       } else if (key === "-") {
-        setScaleMult((prev) => Math.max(0.1, prev - scaleStep));
+        sizeDown();
       } else if (key === "r") {
-        setScaleMult(1.0);
-        setVertOffset(0.0);
+        resetAdjustments();
       } else if (key === "s") {
         saveScreenshot();
       }
@@ -200,7 +219,7 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isActive, necklaceCatalog]);
+  }, [isActive, necklaceCatalog.length]);
 
   useEffect(() => {
     let lastVideoTime = -1;
@@ -354,6 +373,39 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
 
       </div>
       {!isActive && <p style={{ fontSize: "14px", color: "#888" }}>{statusText}</p>}
+
+      {showTouchKeyboard && (
+        <div
+          style={{
+            width: "min(100%, 640px)",
+            background: "#0f172a",
+            color: "#e2e8f0",
+            borderRadius: "10px",
+            padding: "10px",
+            border: "1px solid rgba(148, 163, 184, 0.35)"
+          }}
+        >
+          <div style={{ fontSize: "11px", fontWeight: 700, marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+            Mobile Keyboard
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+              gap: "8px"
+            }}
+          >
+            <button onClick={prevDesign} style={{ padding: "8px", borderRadius: "8px", background: "#1e293b", color: "#f8fafc", border: "1px solid #334155", fontWeight: 700 }}>B Prev</button>
+            <button onClick={nextDesign} style={{ padding: "8px", borderRadius: "8px", background: "#1e293b", color: "#f8fafc", border: "1px solid #334155", fontWeight: 700 }}>N Next</button>
+            <button onClick={sizeDown} style={{ padding: "8px", borderRadius: "8px", background: "#1e293b", color: "#f8fafc", border: "1px solid #334155", fontWeight: 700 }}>- Size</button>
+            <button onClick={sizeUp} style={{ padding: "8px", borderRadius: "8px", background: "#1e293b", color: "#f8fafc", border: "1px solid #334155", fontWeight: 700 }}>+ Size</button>
+            <button onClick={moveUp} style={{ padding: "8px", borderRadius: "8px", background: "#1e293b", color: "#f8fafc", border: "1px solid #334155", fontWeight: 700 }}>U Up</button>
+            <button onClick={moveDown} style={{ padding: "8px", borderRadius: "8px", background: "#1e293b", color: "#f8fafc", border: "1px solid #334155", fontWeight: 700 }}>J Down</button>
+            <button onClick={resetAdjustments} style={{ padding: "8px", borderRadius: "8px", background: "#334155", color: "#f8fafc", border: "1px solid #475569", fontWeight: 700 }}>R Reset</button>
+            <button onClick={saveScreenshot} style={{ padding: "8px", borderRadius: "8px", background: "#0ea5e9", color: "#082f49", border: "1px solid #38bdf8", fontWeight: 800 }}>S Shot</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
