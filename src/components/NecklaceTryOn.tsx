@@ -290,12 +290,12 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
   const isCustomAsset = selectedImageSrc && currentIdx === 0;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "15px" }}>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "15px", width: "100%" }}>
       <div
         style={{
           position: "relative",
-          width: "640px",
-          height: "480px",
+          width: "min(100%, 640px)",
+          aspectRatio: "4 / 3",
           background: "#000",
           borderRadius: "8px",
           overflow: "hidden",
@@ -335,8 +335,9 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
           playsInline
           style={{
             position: "absolute",
-            width: "640px",
-            height: "480px",
+            inset: 0,
+            width: "100%",
+            height: "100%",
             transform: "scaleX(-1)",
             zIndex: 1
           }}
@@ -345,8 +346,9 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
           ref={canvasRef}
           style={{
             position: "absolute",
-            width: "640px",
-            height: "480px",
+            inset: 0,
+            width: "100%",
+            height: "100%",
             transform: "scaleX(-1)",
             zIndex: 2
           }}

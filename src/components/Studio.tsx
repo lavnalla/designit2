@@ -851,6 +851,15 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
     workspaceShapesRef.current = workspaceShapes;
   }, [workspaceShapes]);
 
+  useEffect(() => {
+    if (!showTryOn) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [showTryOn]);
+
   const saveForUndo = useCallback(() => {
     setHistory(h => [...h, { shapes: JSON.parse(JSON.stringify(workspaceShapes)), strokes: JSON.parse(JSON.stringify(strokes)) }].slice(-50));
   }, [workspaceShapes, strokes]);
@@ -2247,6 +2256,11 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   }, [selectionRect, workspaceShapes, strokes, getBoundingBox, isItemInRect]);
 
   const copyFabricDebugFromSelection = useCallback(async (target?: { type: 'shape' | 'stroke' | 'selection'; id: string }) => {
+  if (!isLocked) {
+    alert('Lock to enable fabric copy.');
+    return;
+  }
+
     try {
       let normalizedFabric = 'selection-crop';
       let fabricSrc: string | null = null;
@@ -2376,7 +2390,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
 
     setSelectionRect(null);
     setContextMenu(null);
-  }, [selectionRect, workspaceShapes, strokes, selectedShapeId, selectedClothType, activeColor]);
+  }, [isLocked, selectionRect, workspaceShapes, strokes, selectedShapeId, selectedClothType, activeColor]);
 
   
   const pasteFabricToSelection = useCallback(async (target?: { type: 'shape' | 'stroke'; id: string }) => {
@@ -3742,9 +3756,25 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                   <button onClick={copyFromSelection} className="w-full text-left px-4 py-2 hover:bg-blue-50 text-[9px] font-black uppercase border-b border-slate-100 text-blue-600">
                     📋 Copy Area
                   </button>
-                  <button onClick={() => copyFabricDebugFromSelection()} className="w-full text-left px-4 py-2 hover:bg-indigo-50 text-[9px] font-black uppercase border-b border-slate-100 text-indigo-600">
+                  <button
+                    onClick={() => copyFabricDebugFromSelection()}
+                    disabled={!isLocked}
+                    className="w-full text-left px-4 py-2 hover:bg-indigo-50 text-[9px] font-black uppercase border-b border-slate-100 text-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
+                    title={!isLocked ? 'Lock to enable' : 'Copy fabric'}
+                  >
                     🧪 Copy Fabric
                   </button>
+                  {!isLocked && (
+                    <div className="px-4 py-2 border-b border-slate-100 bg-amber-50/80">
+                      <p className="text-[9px] font-black uppercase text-amber-700">Lock to enable fabric copy</p>
+                      <button
+                        onClick={() => setIsLocked(true)}
+                        className="mt-1 text-[9px] font-black uppercase text-amber-800 underline"
+                      >
+                        Lock now
+                      </button>
+                    </div>
+                  )}
                   <button onClick={() => pasteFabricToSelection()} className="w-full text-left px-4 py-2 hover:bg-cyan-50 text-[9px] font-black uppercase border-b border-slate-100 text-cyan-700">
                     🧵 Paste Fabric
                   </button>
@@ -3791,15 +3821,31 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                     </button>
                   )}
                   {(contextMenu.type === "shape" || contextMenu.type === "stroke") && (
-                    <button onClick={() => {
+                    <button
+                      onClick={() => {
                       if (contextMenu.type === "shape") {
                         copyFabricDebugFromSelection({ type: "shape", id: contextMenu.id });
                       } else if (contextMenu.type === "stroke") {
                         copyFabricDebugFromSelection({ type: "stroke", id: contextMenu.id });
                       }
-                    }} className="w-full text-left px-4 py-2 hover:bg-indigo-50 text-[9px] font-black uppercase border-b border-slate-100 text-indigo-600">
+                    }}
+                      disabled={!isLocked}
+                      className="w-full text-left px-4 py-2 hover:bg-indigo-50 text-[9px] font-black uppercase border-b border-slate-100 text-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
+                      title={!isLocked ? 'Lock to enable' : 'Copy fabric'}
+                    >
                       🧪 Copy Fabric
                     </button>
+                  )}
+                  {(contextMenu.type === "shape" || contextMenu.type === "stroke") && !isLocked && (
+                    <div className="px-4 py-2 border-b border-slate-100 bg-amber-50/80">
+                      <p className="text-[9px] font-black uppercase text-amber-700">Lock to enable fabric copy</p>
+                      <button
+                        onClick={() => setIsLocked(true)}
+                        className="mt-1 text-[9px] font-black uppercase text-amber-800 underline"
+                      >
+                        Lock now
+                      </button>
+                    </div>
                   )}
                   {(contextMenu.type === "shape" || contextMenu.type === "stroke") && (
                     <button onClick={() => {
@@ -4259,22 +4305,6 @@ const extractSelection = useCallback(async (asJpeg = false) => {
               }
               isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingStrokeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setResizingId(null); setRotatingId(null); }}>
               
-              {/* Wrap the workspace viewport inside a layout branch */}
-  {showTryOn && (
-  <div className="mt-4 p-4 border border-slate-200 rounded-2xl bg-white shadow-sm flex flex-col items-center w-full max-w-[670px] mx-auto">
-    <h3 className="text-sm font-bold text-slate-700 mb-2 uppercase tracking-wide">
-      Live Device Try-On Pipeline
-    </h3>
-    {renderedWorkspaceImg ? (
-      <NecklaceTryOn
-        key={`${renderedWorkspaceImg.length}-${renderedWorkspaceImg.slice(-64)}`}
-        selectedImageSrc={renderedWorkspaceImg}
-      />
-    ) : (
-      <div className="text-xs text-slate-500 py-6">Preparing modified PNG for try-on...</div>
-    )}
-  </div>
-)}
             <svg 
               id="workspace-svg" 
               ref={workspaceRef} 
@@ -4834,6 +4864,51 @@ const extractSelection = useCallback(async (asJpeg = false) => {
           onClose={() => setShowSubmissionModal(false)}
           getDesignImage={getDesignImage}
         />
+
+        {showTryOn && (
+          <div className="fixed inset-0 z-[1200] bg-slate-900/70 backdrop-blur-sm">
+            <div
+              className="h-full w-full overflow-y-scroll overscroll-contain"
+              style={{ scrollbarGutter: 'stable both-edges', WebkitOverflowScrolling: 'touch' }}
+            >
+              <div className="min-h-full w-full flex flex-col p-2 sm:p-4 lg:p-6">
+                <div className="w-full max-w-6xl mx-auto bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col min-h-[calc(100dvh-1rem)] sm:min-h-[calc(100dvh-2rem)] lg:min-h-[calc(100dvh-3rem)]">
+                  <div className="sticky top-0 z-10 flex items-center justify-between gap-3 px-3 sm:px-5 py-3 border-b border-slate-200 bg-white/95 backdrop-blur rounded-t-2xl">
+                    <div>
+                      <h3 className="text-xs sm:text-sm font-black uppercase tracking-wide text-slate-800">Live Device Try-On</h3>
+                      <p className="text-[10px] sm:text-xs text-slate-500">Full-screen webcam preview with mobile scrolling support</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowTryOn(false);
+                        setRenderedWorkspaceImg(null);
+                      }}
+                      className="shrink-0 px-3 sm:px-4 py-2 rounded-xl text-[10px] sm:text-xs font-black uppercase text-white bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700"
+                    >
+                      Close
+                    </button>
+                  </div>
+
+                  <div
+                    className="flex-1 overflow-y-scroll p-2 sm:p-4 lg:p-6"
+                    style={{ scrollbarGutter: 'stable both-edges', WebkitOverflowScrolling: 'touch' }}
+                  >
+                    {renderedWorkspaceImg ? (
+                      <div className="w-full max-w-5xl mx-auto">
+                        <NecklaceTryOn
+                          key={`${renderedWorkspaceImg.length}-${renderedWorkspaceImg.slice(-64)}`}
+                          selectedImageSrc={renderedWorkspaceImg}
+                        />
+                      </div>
+                    ) : (
+                      <div className="text-xs text-slate-500 py-8 text-center">Preparing modified PNG for try-on...</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
   );
 }
