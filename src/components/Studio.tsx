@@ -4128,20 +4128,20 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                               <>
                                 <defs>
                                   <pattern
-                                    id={`fabric-pt-${shape.id}`}
-                                    patternUnits="userSpaceOnUse"
-                                    width={shape.fabricFillWidth || fabricWidth}
-                                    height={shape.fabricFillHeight || fabricHeight}
-                                  >
-                                    <image
-                                      href={shape.fabricFillSrc}
-                                      x={0}
-                                      y={0}
-                                      width={shape.fabricFillWidth || fabricWidth}
-                                      height={shape.fabricFillHeight || fabricHeight}
-                                      preserveAspectRatio="none"
-                                    />
-                                  </pattern>
+                                  id={`fabric-pt-${shape.id}`}
+                                  patternUnits="userSpaceOnUse"
+                                  width={shape.dims.width}
+                                  height={shape.dims.height}
+                                >
+                                  <image
+                                    href={shape.fabricFillSrc}
+                                    x={0}
+                                    y={0}
+                                    width={shape.dims.width}
+                                    height={shape.dims.height}
+                                    preserveAspectRatio="xMidYMid slice"
+                                  />
+                                </pattern>
                                 </defs>
                                 <path
                                   key={`fabric-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`}
@@ -4219,20 +4219,20 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                               <path d={strokePathD} />
                             </clipPath>
                             <pattern
-                              id={`fabric-pt-stroke-${s.id}`}
-                              patternUnits="userSpaceOnUse"
-                              width={s.fabricFillWidth || strokeW}
-                              height={s.fabricFillHeight || strokeH}
-                            >
-                              <image
-                                href={s.fabricFillSrc}
-                                x={0}
-                                y={0}
-                                width={s.fabricFillWidth || strokeW}
-                                height={s.fabricFillHeight || strokeH}
-                                preserveAspectRatio="none"
-                              />
-                            </pattern>
+                            id={`fabric-pt-stroke-${s.id}`}
+                            patternUnits="userSpaceOnUse"
+                            width={strokeW}
+                            height={strokeH}
+                          >
+                            <image
+                              href={s.fabricFillSrc}
+                              x={0}
+                              y={0}
+                              width={strokeW}
+                              height={strokeH}
+                              preserveAspectRatio="xMidYMid slice"
+                            />
+                          </pattern>
                           </defs>
                           <path
                             d={strokePathD}
