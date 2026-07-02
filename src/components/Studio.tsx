@@ -2247,6 +2247,11 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   }, [selectionRect, workspaceShapes, strokes, getBoundingBox, isItemInRect]);
 
   const copyFabricDebugFromSelection = useCallback(async (target?: { type: 'shape' | 'stroke' | 'selection'; id: string }) => {
+  if (!isLocked) {
+    alert('Lock to enable fabric copy.');
+    return;
+  }
+
     try {
       let normalizedFabric = 'selection-crop';
       let fabricSrc: string | null = null;
@@ -2376,7 +2381,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
 
     setSelectionRect(null);
     setContextMenu(null);
-  }, [selectionRect, workspaceShapes, strokes, selectedShapeId, selectedClothType, activeColor]);
+  }, [isLocked, selectionRect, workspaceShapes, strokes, selectedShapeId, selectedClothType, activeColor]);
 
   
   const pasteFabricToSelection = useCallback(async (target?: { type: 'shape' | 'stroke'; id: string }) => {
@@ -3742,9 +3747,25 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                   <button onClick={copyFromSelection} className="w-full text-left px-4 py-2 hover:bg-blue-50 text-[9px] font-black uppercase border-b border-slate-100 text-blue-600">
                     📋 Copy Area
                   </button>
-                  <button onClick={() => copyFabricDebugFromSelection()} className="w-full text-left px-4 py-2 hover:bg-indigo-50 text-[9px] font-black uppercase border-b border-slate-100 text-indigo-600">
+                  <button
+                    onClick={() => copyFabricDebugFromSelection()}
+                    disabled={!isLocked}
+                    className="w-full text-left px-4 py-2 hover:bg-indigo-50 text-[9px] font-black uppercase border-b border-slate-100 text-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
+                    title={!isLocked ? 'Lock to enable' : 'Copy fabric'}
+                  >
                     🧪 Copy Fabric
                   </button>
+                  {!isLocked && (
+                    <div className="px-4 py-2 border-b border-slate-100 bg-amber-50/80">
+                      <p className="text-[9px] font-black uppercase text-amber-700">Lock to enable fabric copy</p>
+                      <button
+                        onClick={() => setIsLocked(true)}
+                        className="mt-1 text-[9px] font-black uppercase text-amber-800 underline"
+                      >
+                        Lock now
+                      </button>
+                    </div>
+                  )}
                   <button onClick={() => pasteFabricToSelection()} className="w-full text-left px-4 py-2 hover:bg-cyan-50 text-[9px] font-black uppercase border-b border-slate-100 text-cyan-700">
                     🧵 Paste Fabric
                   </button>
@@ -3791,15 +3812,31 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                     </button>
                   )}
                   {(contextMenu.type === "shape" || contextMenu.type === "stroke") && (
-                    <button onClick={() => {
+                    <button
+                      onClick={() => {
                       if (contextMenu.type === "shape") {
                         copyFabricDebugFromSelection({ type: "shape", id: contextMenu.id });
                       } else if (contextMenu.type === "stroke") {
                         copyFabricDebugFromSelection({ type: "stroke", id: contextMenu.id });
                       }
-                    }} className="w-full text-left px-4 py-2 hover:bg-indigo-50 text-[9px] font-black uppercase border-b border-slate-100 text-indigo-600">
+                    }}
+                      disabled={!isLocked}
+                      className="w-full text-left px-4 py-2 hover:bg-indigo-50 text-[9px] font-black uppercase border-b border-slate-100 text-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
+                      title={!isLocked ? 'Lock to enable' : 'Copy fabric'}
+                    >
                       🧪 Copy Fabric
                     </button>
+                  )}
+                  {(contextMenu.type === "shape" || contextMenu.type === "stroke") && !isLocked && (
+                    <div className="px-4 py-2 border-b border-slate-100 bg-amber-50/80">
+                      <p className="text-[9px] font-black uppercase text-amber-700">Lock to enable fabric copy</p>
+                      <button
+                        onClick={() => setIsLocked(true)}
+                        className="mt-1 text-[9px] font-black uppercase text-amber-800 underline"
+                      >
+                        Lock now
+                      </button>
+                    </div>
                   )}
                   {(contextMenu.type === "shape" || contextMenu.type === "stroke") && (
                     <button onClick={() => {
