@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useEffect, useRef, useState } from "react";
 import { PoseLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
@@ -38,29 +38,9 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
   const [currentIdx, setCurrentIdx] = useState(0);
   const [scaleMult, setScaleMult] = useState(1.0);
   const [vertOffset, setVertOffset] = useState(0.0);
-  const [showTouchKeyboard, setShowTouchKeyboard] = useState(false);
 
   const scaleStep = 0.05;
   const offsetStep = 0.03;
-
-  const nextDesign = () => setCurrentIdx((prev) => (prev + 1) % necklaceCatalog.length);
-  const prevDesign = () => setCurrentIdx((prev) => (prev - 1 + necklaceCatalog.length) % necklaceCatalog.length);
-  const moveUp = () => setVertOffset((prev) => prev - offsetStep);
-  const moveDown = () => setVertOffset((prev) => prev + offsetStep);
-  const sizeUp = () => setScaleMult((prev) => prev + scaleStep);
-  const sizeDown = () => setScaleMult((prev) => Math.max(0.1, prev - scaleStep));
-  const resetAdjustments = () => {
-    setScaleMult(1.0);
-    setVertOffset(0.0);
-  };
-
-  useEffect(() => {
-    const mq = window.matchMedia("(pointer: coarse), (max-width: 900px)");
-    const sync = () => setShowTouchKeyboard(mq.matches);
-    sync();
-    mq.addEventListener("change", sync);
-    return () => mq.removeEventListener("change", sync);
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -199,19 +179,20 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
     const handleKeyDown = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
       if (key === "n") {
-        nextDesign();
+        setCurrentIdx((prev) => (prev + 1) % necklaceCatalog.length);
       } else if (key === "b") {
-        prevDesign();
+        setCurrentIdx((prev) => (prev - 1 + necklaceCatalog.length) % necklaceCatalog.length);
       } else if (key === "u") {
-        moveUp();
+        setVertOffset((prev) => prev - offsetStep);
       } else if (key === "j") {
-        moveDown();
+        setVertOffset((prev) => prev + offsetStep);
       } else if (key === "+" || e.key === "=") {
-        sizeUp();
+        setScaleMult((prev) => prev + scaleStep);
       } else if (key === "-") {
-        sizeDown();
+        setScaleMult((prev) => Math.max(0.1, prev - scaleStep));
       } else if (key === "r") {
-        resetAdjustments();
+        setScaleMult(1.0);
+        setVertOffset(0.0);
       } else if (key === "s") {
         saveScreenshot();
       }
@@ -219,7 +200,7 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isActive, necklaceCatalog.length]);
+  }, [isActive, necklaceCatalog]);
 
   useEffect(() => {
     let lastVideoTime = -1;
@@ -275,29 +256,17 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
 
               const midX = Math.trunc((lsX + rsX) / 2);
               const midY = Math.trunc((lsY + rsY) / 2);
-              const startX = lsX <= rsX ? lsX : rsX;
-              const startY = lsX <= rsX ? lsY : rsY;
-              const endX = lsX <= rsX ? rsX : lsX;
-              const endY = lsX <= rsX ? rsY : lsY;
-              const shoulderDx = endX - startX;
-              const shoulderDy = endY - startY;
-              const shoulderWidth = Math.hypot(shoulderDx, shoulderDy);
-              const shoulderAngle = Math.atan2(shoulderDy, shoulderDx);
+              const shoulderWidth = Math.abs(rsX - lsX);
 
               const necklaceW = Math.trunc(shoulderWidth * scaleMult);
               const aspect = activeImage.naturalHeight / activeImage.naturalWidth;
               const necklaceH = Math.trunc(necklaceW * aspect);
-              const neckY = Math.trunc(nY + (midY - nY) * 0.62);
+              const neckY = Math.trunc(nY + (midY - nY) * (0.62 + vertOffset));
+              const drawX = Math.trunc(midX - necklaceW / 2);
+              const drawY = Math.trunc(neckY - necklaceH / 6);
 
-              if (Number.isFinite(startX) && Number.isFinite(startY) && Number.isFinite(shoulderAngle) && necklaceW > 0 && necklaceH > 0) {
-                const verticalPx = Math.trunc((midY - nY) * vertOffset);
-                ctx.save();
-                // Use visual shoulder order (leftmost -> rightmost) to keep orientation upright.
-                ctx.translate(startX, startY);
-                ctx.rotate(shoulderAngle);
-                // Shoulder-start to shoulder-start span in screen order.
-                ctx.drawImage(activeImage, 0, Math.trunc(-necklaceH * 0.14) + (neckY - midY) + verticalPx, necklaceW, necklaceH);
-                ctx.restore();
+              if (Number.isFinite(drawX) && Number.isFinite(drawY) && necklaceW > 0 && necklaceH > 0) {
+                ctx.drawImage(activeImage, drawX, drawY, necklaceW, necklaceH);
               }
             }
           }
@@ -321,12 +290,12 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
   const isCustomAsset = selectedImageSrc && currentIdx === 0;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "15px", width: "100%" }}>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "15px" }}>
       <div
         style={{
           position: "relative",
-          width: "min(100%, 640px)",
-          aspectRatio: "4 / 3",
+          width: "640px",
+          height: "480px",
           background: "#000",
           borderRadius: "8px",
           overflow: "hidden",
@@ -351,7 +320,7 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
           }}
         >
           <strong>
-            [{currentIdx + 1}/{necklaceCatalog.length}] {isCustomAsset ? "✨ Studio Workspace Active Design (Transparent)" : necklaceCatalog[currentIdx]}
+            [{currentIdx + 1}/{necklaceCatalog.length}] {isCustomAsset ? "Γ£¿ Studio Workspace Active Design (Transparent)" : necklaceCatalog[currentIdx]}
           </strong>
           <br />
           Scale: {scaleMult.toFixed(2)} | Offset: {vertOffset.toFixed(2)}<br />
@@ -366,9 +335,8 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
           playsInline
           style={{
             position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
+            width: "640px",
+            height: "480px",
             transform: "scaleX(-1)",
             zIndex: 1
           }}
@@ -377,9 +345,8 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
           ref={canvasRef}
           style={{
             position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
+            width: "640px",
+            height: "480px",
             transform: "scaleX(-1)",
             zIndex: 2
           }}
@@ -387,39 +354,6 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
 
       </div>
       {!isActive && <p style={{ fontSize: "14px", color: "#888" }}>{statusText}</p>}
-
-      {showTouchKeyboard && (
-        <div
-          style={{
-            width: "min(100%, 640px)",
-            background: "#0f172a",
-            color: "#e2e8f0",
-            borderRadius: "10px",
-            padding: "10px",
-            border: "1px solid rgba(148, 163, 184, 0.35)"
-          }}
-        >
-          <div style={{ fontSize: "11px", fontWeight: 700, marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-            Mobile Keyboard
-          </div>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-              gap: "8px"
-            }}
-          >
-            <button onClick={prevDesign} style={{ padding: "8px", borderRadius: "8px", background: "#1e293b", color: "#f8fafc", border: "1px solid #334155", fontWeight: 700 }}>B Prev</button>
-            <button onClick={nextDesign} style={{ padding: "8px", borderRadius: "8px", background: "#1e293b", color: "#f8fafc", border: "1px solid #334155", fontWeight: 700 }}>N Next</button>
-            <button onClick={sizeDown} style={{ padding: "8px", borderRadius: "8px", background: "#1e293b", color: "#f8fafc", border: "1px solid #334155", fontWeight: 700 }}>- Size</button>
-            <button onClick={sizeUp} style={{ padding: "8px", borderRadius: "8px", background: "#1e293b", color: "#f8fafc", border: "1px solid #334155", fontWeight: 700 }}>+ Size</button>
-            <button onClick={moveUp} style={{ padding: "8px", borderRadius: "8px", background: "#1e293b", color: "#f8fafc", border: "1px solid #334155", fontWeight: 700 }}>U Up</button>
-            <button onClick={moveDown} style={{ padding: "8px", borderRadius: "8px", background: "#1e293b", color: "#f8fafc", border: "1px solid #334155", fontWeight: 700 }}>J Down</button>
-            <button onClick={resetAdjustments} style={{ padding: "8px", borderRadius: "8px", background: "#334155", color: "#f8fafc", border: "1px solid #475569", fontWeight: 700 }}>R Reset</button>
-            <button onClick={saveScreenshot} style={{ padding: "8px", borderRadius: "8px", background: "#0ea5e9", color: "#082f49", border: "1px solid #38bdf8", fontWeight: 800 }}>S Shot</button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
