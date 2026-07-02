@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useEffect, useRef, useState } from "react";
 import { PoseLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
@@ -290,12 +290,12 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
   const isCustomAsset = selectedImageSrc && currentIdx === 0;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "15px", width: "100%" }}>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "15px" }}>
       <div
         style={{
           position: "relative",
-          width: "min(100%, 640px)",
-          aspectRatio: "4 / 3",
+          width: "640px",
+          height: "480px",
           background: "#000",
           borderRadius: "8px",
           overflow: "hidden",
@@ -320,7 +320,7 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
           }}
         >
           <strong>
-            [{currentIdx + 1}/{necklaceCatalog.length}] {isCustomAsset ? "✨ Studio Workspace Active Design (Transparent)" : necklaceCatalog[currentIdx]}
+            [{currentIdx + 1}/{necklaceCatalog.length}] {isCustomAsset ? "Γ£¿ Studio Workspace Active Design (Transparent)" : necklaceCatalog[currentIdx]}
           </strong>
           <br />
           Scale: {scaleMult.toFixed(2)} | Offset: {vertOffset.toFixed(2)}<br />
@@ -335,9 +335,8 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
           playsInline
           style={{
             position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
+            width: "640px",
+            height: "480px",
             transform: "scaleX(-1)",
             zIndex: 1
           }}
@@ -346,9 +345,8 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
           ref={canvasRef}
           style={{
             position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
+            width: "640px",
+            height: "480px",
             transform: "scaleX(-1)",
             zIndex: 2
           }}
