@@ -17,6 +17,7 @@ const BODY_MASK_THRESHOLD = 0.35;
 const GARMENT_ALPHA_THRESHOLD = 12;
 const SNAPSHOT_INTERVAL_MS = 1000;
 const LANDMARK_SMOOTHING = 0.8;
+const NECKLACE_SHOULDER_Y_DROP_FACTOR = 0.06;
 
 type AccessoryType = "garment" | "necklace" | "earrings";
 
@@ -49,21 +50,28 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
   const garmentShoulderYNormRef = useRef<number>(0.08);
   const necklaceAnchorXNormRef = useRef<number>(0.5);
   const necklaceAnchorYNormRef = useRef<number>(0.08);
+  const necklaceCenterXNormRef = useRef<number>(0.5);
+  const necklaceCenterYNormRef = useRef<number>(0.5);
   const modelShoulderCenterNormRef = useRef<number | null>(null);
   const modelShoulderYNormRef = useRef<number | null>(null);
   const modelShoulderWidthNormRef = useRef<number>(0.25);
   const modelNeckNormRef = useRef<{ x: number; y: number } | null>(null);
   const modelLeftEarNormRef = useRef<{ x: number; y: number } | null>(null);
   const modelRightEarNormRef = useRef<{ x: number; y: number } | null>(null);
+  const latestLandmarksRef = useRef<Array<{ x: number; y: number }> | null>(null);
 
   const [isActive, setIsActive] = useState(false);
   const [hasSnapshot, setHasSnapshot] = useState(false);
   const [statusText, setStatusText] = useState("Loading tracking models...");
   const [showTouchKeyboard, setShowTouchKeyboard] = useState(false);
   const [accessoryType, setAccessoryType] = useState<AccessoryType>("garment");
+  const [showDebugOverlay, setShowDebugOverlay] = useState(false);
   const [manualScale, setManualScale] = useState(1);
   const [manualOffsetY, setManualOffsetY] = useState(0);
   const [manualOffsetX, setManualOffsetX] = useState(0);
+  const [isWindowOpen, setIsWindowOpen] = useState(true);
+  const [isWindowMinimized, setIsWindowMinimized] = useState(false);
+  const [isWindowMaximized, setIsWindowMaximized] = useState(true);
 
   const manualScaleRef = useRef(1);
   const manualOffsetYRef = useRef(0);
@@ -82,6 +90,28 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
 
   const adjustOffsetX = (delta: number) => {
     setManualOffsetX((prev) => Math.max(-120, Math.min(120, prev + delta)));
+  };
+
+  const closeTryOn = () => {
+    setIsWindowOpen(false);
+    setIsWindowMinimized(false);
+    setIsActive(false);
+    setHasSnapshot(false);
+    setStatusText("Try-on closed.");
+
+    if (requestRef.current) {
+      cancelAnimationFrame(requestRef.current);
+      requestRef.current = null;
+    }
+
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
   };
 
   useEffect(() => {
@@ -166,6 +196,8 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
     garmentShoulderYNormRef.current = 0.08;
     necklaceAnchorXNormRef.current = 0.5;
     necklaceAnchorYNormRef.current = 0.08;
+    necklaceCenterXNormRef.current = 0.5;
+    necklaceCenterYNormRef.current = 0.5;
 
     if (!selectedImageSrc) {
       return;
@@ -220,6 +252,29 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
 
         garmentShoulderCenterNormRef.current = Math.max(0, Math.min(1, bestCenter / Math.max(1, measureCanvas.width - 1)));
         garmentShoulderYNormRef.current = Math.max(0, Math.min(1, bestRowY / Math.max(1, measureCanvas.height - 1)));
+
+        // True necklace visual center from opaque pixel bounding box.
+        let minX = measureCanvas.width;
+        let minY = measureCanvas.height;
+        let maxX = -1;
+        let maxY = -1;
+        for (let y = 0; y < measureCanvas.height; y++) {
+          for (let x = 0; x < measureCanvas.width; x++) {
+            const alpha = imageData.data[(y * measureCanvas.width + x) * 4 + 3];
+            if (alpha > GARMENT_ALPHA_THRESHOLD) {
+              if (x < minX) minX = x;
+              if (x > maxX) maxX = x;
+              if (y < minY) minY = y;
+              if (y > maxY) maxY = y;
+            }
+          }
+        }
+        if (maxX >= minX && maxY >= minY) {
+          const cx = (minX + maxX) / 2;
+          const cy = (minY + maxY) / 2;
+          necklaceCenterXNormRef.current = Math.max(0, Math.min(1, cx / Math.max(1, measureCanvas.width - 1)));
+          necklaceCenterYNormRef.current = Math.max(0, Math.min(1, cy / Math.max(1, measureCanvas.height - 1)));
+        }
 
         // Necklace-specific anchor: top-chain region center, not the widest garment row.
         let topY = -1;
@@ -512,19 +567,24 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
       targetWidth: number,
       targetHeight: number,
       neckNorm: { x: number; y: number } | null,
-      shoulderWidthNorm: number
+      shoulderWidthNorm: number,
+      shoulderCenterNorm: number | null,
+      shoulderYNorm: number | null
     ) => {
       if (!neckNorm) return;
 
-      const neckX = neckNorm.x * targetWidth;
-      const neckY = neckNorm.y * targetHeight;
+      const centerXNorm = shoulderCenterNorm ?? neckNorm.x;
+      const neckX = centerXNorm * targetWidth;
+      const centerYNorm = shoulderYNorm ?? neckNorm.y;
       const shoulderWidthPx = Math.max(40, shoulderWidthNorm * targetWidth);
+      const shoulderYDropPx = shoulderWidthPx * NECKLACE_SHOULDER_Y_DROP_FACTOR;
+      const neckY = centerYNorm * targetHeight + shoulderYDropPx;
 
       const adjustedBaseW = shoulderWidthPx * 0.98 * manualScaleRef.current;
       const drawW = Math.max(44, Math.min(targetWidth * 0.9, adjustedBaseW));
       const drawH = drawW * (garmentImage.naturalHeight / Math.max(1, garmentImage.naturalWidth));
-      const drawX = neckX - necklaceAnchorXNormRef.current * drawW + manualOffsetXRef.current;
-      const drawY = neckY - necklaceAnchorYNormRef.current * drawH + shoulderWidthPx * 0.012 + manualOffsetYRef.current;
+      const drawX = neckX - necklaceCenterXNormRef.current * drawW + manualOffsetXRef.current;
+      const drawY = neckY - necklaceCenterYNormRef.current * drawH + manualOffsetYRef.current;
 
       if (!garmentLayerCanvasRef.current) {
         garmentLayerCanvasRef.current = document.createElement("canvas");
@@ -588,6 +648,162 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
       }
     };
 
+    const drawDebugOutlines = (
+      ctx: CanvasRenderingContext2D,
+      targetWidth: number,
+      targetHeight: number,
+      landmarks: Array<{ x: number; y: number }> | null
+    ) => {
+      if (!landmarks) return;
+
+      const getPoint = (index: number) => {
+        const p = landmarks[index];
+        if (!p) return null;
+        return { x: p.x * targetWidth, y: p.y * targetHeight };
+      };
+
+      const drawPath = (indices: number[], color: string, closePath = false, lineWidth = 2) => {
+        const pts = indices.map(getPoint).filter((p): p is { x: number; y: number } => Boolean(p));
+        if (pts.length < 2) return;
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lineWidth;
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) {
+          ctx.lineTo(pts[i].x, pts[i].y);
+        }
+        if (closePath) ctx.closePath();
+        ctx.stroke();
+        ctx.restore();
+      };
+
+      const drawCurvedChain = (indices: number[], color: string, lineWidth = 2) => {
+        const pts = indices.map(getPoint).filter((p): p is { x: number; y: number } => Boolean(p));
+        if (pts.length < 2) return;
+
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lineWidth;
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) {
+          const prev = pts[i - 1];
+          const curr = pts[i];
+          const cx = (prev.x + curr.x) / 2;
+          const cy = (prev.y + curr.y) / 2;
+          ctx.quadraticCurveTo(prev.x, prev.y, cx, cy);
+        }
+        const last = pts[pts.length - 1];
+        ctx.lineTo(last.x, last.y);
+        ctx.stroke();
+        ctx.restore();
+      };
+
+      const leftShoulder = getPoint(11);
+      const rightShoulder = getPoint(12);
+      const leftMouth = getPoint(9);
+      const rightMouth = getPoint(10);
+      const leftHip = getPoint(23);
+      const rightHip = getPoint(24);
+      const shoulderWidthPx = leftShoulder && rightShoulder
+        ? Math.max(30, Math.hypot(rightShoulder.x - leftShoulder.x, rightShoulder.y - leftShoulder.y))
+        : 80;
+
+      // Face: round/oval from ear span and eye level.
+      const leftEar = getPoint(7);
+      const rightEar = getPoint(8);
+      const nose = getPoint(0);
+      const leftEye = getPoint(2);
+      const rightEye = getPoint(5);
+      if (leftEar && rightEar && nose && leftEye && rightEye) {
+        const centerX = (leftEar.x + rightEar.x) / 2;
+        const eyeY = (leftEye.y + rightEye.y) / 2;
+        const radiusX = Math.max(18, Math.abs(rightEar.x - leftEar.x) * 0.56);
+        const radiusY = Math.max(22, Math.abs(nose.y - eyeY) * 2.1);
+
+        ctx.save();
+        ctx.strokeStyle = "#22d3ee";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(centerX, eyeY + radiusY * 0.25, radiusX, radiusY, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      } else {
+        drawPath([7, 3, 2, 1, 0, 4, 5, 6, 8, 10, 9], "#22d3ee", true, 2);
+      }
+
+      // Torso outside boundary.
+      if (leftShoulder && rightShoulder && rightHip && leftHip) {
+        ctx.save();
+        ctx.strokeStyle = "#f59e0b";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(leftShoulder.x, leftShoulder.y);
+        ctx.lineTo(rightShoulder.x, rightShoulder.y);
+        ctx.lineTo(rightHip.x, rightHip.y);
+        ctx.lineTo(leftHip.x, leftHip.y);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.restore();
+      } else {
+        drawPath([11, 12, 24, 23], "#f59e0b", true, 2);
+      }
+
+      // Arms outside contours.
+      drawCurvedChain([11, 13, 15, 17, 19, 21], "#a3e635", 2);
+      drawCurvedChain([12, 14, 16, 18, 20, 22], "#a3e635", 2);
+
+      // Neck: semi-circle based on shoulder span.
+      if (leftShoulder && rightShoulder) {
+        const centerX = (leftShoulder.x + rightShoulder.x) / 2;
+        const shoulderY = (leftShoulder.y + rightShoulder.y) / 2;
+        const topY = leftMouth && rightMouth
+          ? (leftMouth.y + rightMouth.y) / 2
+          : shoulderY - shoulderWidthPx * 0.22;
+        const centerY = topY + (shoulderY - topY) * 0.45;
+        const radiusX = shoulderWidthPx * 0.22;
+        const radiusY = Math.max(10, shoulderWidthPx * 0.12);
+
+        ctx.save();
+        ctx.strokeStyle = "#f472b6";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, Math.PI, 0, false);
+        ctx.stroke();
+        ctx.restore();
+      }
+    };
+
+    const withSuppressedMediapipeLogsSync = <T,>(task: () => T): T => {
+      const shouldDrop = (args: unknown[]) => {
+        const message = args.map((arg) => String(arg)).join(" ");
+        return MEDIAPIPE_NOISE_PATTERNS.some((pattern) => message.includes(pattern));
+      };
+
+      const originalLog = console.log;
+      const originalInfo = console.info;
+      const originalWarn = console.warn;
+
+      console.log = (...args: unknown[]) => {
+        if (!shouldDrop(args)) originalLog(...args);
+      };
+      console.info = (...args: unknown[]) => {
+        if (!shouldDrop(args)) originalInfo(...args);
+      };
+      console.warn = (...args: unknown[]) => {
+        if (!shouldDrop(args)) originalWarn(...args);
+      };
+
+      try {
+        return task();
+      } finally {
+        console.log = originalLog;
+        console.info = originalInfo;
+        console.warn = originalWarn;
+      }
+    };
+
     function predictLoop() {
       const video = videoRef.current;
       const displayCanvas = canvasRef.current;
@@ -631,11 +847,17 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
 
             if (landmarker) {
               try {
-                const results = landmarker.detectForVideo(video, startTimeMs);
+                const results = withSuppressedMediapipeLogsSync(() =>
+                  landmarker.detectForVideo(video, startTimeMs)
+                );
                 const modelLandmarks =
                   results.landmarks && results.landmarks.length > 0
                     ? results.landmarks[0]
                     : null;
+
+                latestLandmarksRef.current = modelLandmarks
+                  ? modelLandmarks.map((p) => ({ x: p.x, y: p.y }))
+                  : null;
 
                 if (modelLandmarks && modelLandmarks[11] && modelLandmarks[12]) {
                   const rawShoulderCenter =
@@ -748,6 +970,7 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
                 modelNeckNormRef.current = null;
                 modelLeftEarNormRef.current = null;
                 modelRightEarNormRef.current = null;
+                latestLandmarksRef.current = null;
                 latestSegmentationRef.current = null;
                 console.warn("Pose tracking frame failed", err);
               }
@@ -778,7 +1001,9 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
                   targetW,
                   targetH,
                   modelNeckNormRef.current,
-                  modelShoulderWidthNormRef.current
+                  modelShoulderWidthNormRef.current,
+                  modelShoulderCenterNormRef.current,
+                  modelShoulderYNormRef.current
                 );
               } else {
                 compositeEarrings(
@@ -791,6 +1016,10 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
                   modelShoulderWidthNormRef.current
                 );
               }
+            }
+
+            if (showDebugOverlay) {
+              drawDebugOutlines(processingCtx, targetW, targetH, latestLandmarksRef.current);
             }
 
             // Atomically present processed snapshot; previous frame stays visible until now.
@@ -815,25 +1044,144 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
     return () => {
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
     };
-  }, [isActive, accessoryType]);
+  }, [isActive, accessoryType, showDebugOverlay]);
+
+  if (!isWindowOpen) {
+    return null;
+  }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "15px" }}>
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        width: "100dvw",
+        height: "100dvh",
+        overflow: "hidden",
+        pointerEvents: "auto",
+        zIndex: 9999
+      }}
+    >
+      {isWindowOpen && isWindowMinimized && (
+        <button
+          onClick={() => setIsWindowMinimized(false)}
+          style={{
+            position: "absolute",
+            right: "10px",
+            bottom: "10px",
+            zIndex: 40,
+            border: "1px solid rgba(148, 163, 184, 0.5)",
+            background: "rgba(2, 6, 23, 0.9)",
+            color: "#e2e8f0",
+            borderRadius: "6px",
+            padding: "8px 12px",
+            fontSize: "12px",
+            fontWeight: 700,
+            cursor: "pointer"
+          }}
+        >
+          Try-On
+        </button>
+      )}
       <div
         style={{
-          position: "relative",
-          width: "640px",
-          height: "480px",
+          position: "absolute",
+          left: isWindowMaximized ? 0 : "50%",
+          top: isWindowMaximized ? 0 : "50%",
+          transform: isWindowMaximized ? "none" : "translate(-50%, -50%)",
+          width: isWindowMaximized ? "100dvw" : "min(92dvw, 1200px)",
+          height: isWindowMaximized ? "100dvh" : "min(88dvh, 760px)",
           background: "#000",
-          borderRadius: "8px",
+          borderRadius: isWindowMaximized ? "0" : "10px",
+          border: isWindowMaximized ? "none" : "1px solid rgba(100, 116, 139, 0.55)",
+          boxShadow: isWindowMaximized ? "none" : "0 20px 60px rgba(2,6,23,0.65)",
           overflow: "hidden",
-          display: isActive || hasSnapshot ? "block" : "none"
+          display: isWindowOpen && !isWindowMinimized && (isActive || hasSnapshot) ? "block" : "none",
+          pointerEvents: "auto"
         }}
       >
         <div
           style={{
             position: "absolute",
-            top: "10px",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: "32px",
+            zIndex: 30,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "0 8px 0 10px",
+            background: "rgba(15, 23, 42, 0.92)",
+            borderBottom: "1px solid rgba(148, 163, 184, 0.4)"
+          }}
+        >
+          <span style={{ color: "#cbd5e1", fontSize: "11px", fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+            Try-On
+          </span>
+          <div style={{ display: "flex", gap: "4px" }}>
+            <button
+              onClick={() => setIsWindowMinimized(true)}
+              title="Minimize"
+              style={{
+                width: "32px",
+                height: "24px",
+                border: "none",
+                background: "#334155",
+                color: "#e2e8f0",
+                borderRadius: "0",
+                fontSize: "13px",
+                fontWeight: 800,
+                lineHeight: 1,
+                cursor: "pointer"
+              }}
+            >
+              −
+            </button>
+            <button
+              onClick={() => setIsWindowMaximized((prev) => !prev)}
+              title={isWindowMaximized ? "Restore" : "Maximize"}
+              style={{
+                width: "32px",
+                height: "24px",
+                border: "none",
+                background: "#334155",
+                color: "#e2e8f0",
+                borderRadius: "0",
+                fontSize: "12px",
+                fontWeight: 800,
+                lineHeight: 1,
+                cursor: "pointer"
+              }}
+            >
+              □
+            </button>
+            <button
+              onClick={() => {
+                closeTryOn();
+              }}
+              title="Close"
+              style={{
+                width: "32px",
+                height: "24px",
+                border: "none",
+                background: "#b91c1c",
+                color: "#fee2e2",
+                borderRadius: "0",
+                fontSize: "13px",
+                fontWeight: 800,
+                lineHeight: 1,
+                cursor: "pointer"
+              }}
+            >
+              ×
+            </button>
+          </div>
+        </div>
+        <div
+          style={{
+            position: "absolute",
+            top: "44px",
             left: "10px",
             background: "rgba(0,0,0,0.75)",
             padding: "8px 12px",
@@ -869,7 +1217,7 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
         <div
           style={{
             position: "absolute",
-            top: "10px",
+            top: "44px",
             right: "10px",
             background: "rgba(0,0,0,0.72)",
             padding: "8px",
@@ -907,6 +1255,14 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
           <button onClick={() => adjustOffsetY(4)} style={{ padding: "6px 8px", borderRadius: "6px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.45)", fontSize: "11px", fontWeight: 800 }}>J</button>
           <button onClick={() => adjustOffsetX(-4)} style={{ padding: "6px 8px", borderRadius: "6px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.45)", fontSize: "11px", fontWeight: 800 }}>H</button>
           <button onClick={() => adjustOffsetX(4)} style={{ padding: "6px 8px", borderRadius: "6px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.45)", fontSize: "11px", fontWeight: 800 }}>K</button>
+          <label style={{ display: "flex", alignItems: "center", gap: "6px", color: "#e2e8f0", fontSize: "11px", fontWeight: 700 }}>
+            <input
+              type="checkbox"
+              checked={showDebugOverlay}
+              onChange={(e) => setShowDebugOverlay(e.target.checked)}
+            />
+            Debug
+          </label>
         </div>
 
         <video
@@ -915,8 +1271,9 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
           playsInline
           style={{
             position: "absolute",
-            width: "640px",
-            height: "480px",
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
             transform: "scaleX(-1)",
             zIndex: 1,
             visibility: "hidden"
@@ -926,8 +1283,9 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
           ref={canvasRef}
           style={{
             position: "absolute",
-            width: "640px",
-            height: "480px",
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
             transform: "scaleX(-1)",
             zIndex: 2,
             visibility: "visible"
@@ -935,17 +1293,42 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
         />
 
       </div>
-      {!isActive && <p style={{ fontSize: "14px", color: "#888" }}>{statusText}</p>}
+      {!isActive && isWindowOpen && !isWindowMinimized && (
+        <p
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            transform: "translate(-50%, -50%)",
+            fontSize: "14px",
+            color: "#cbd5e1",
+            background: "rgba(2, 6, 23, 0.7)",
+            padding: "8px 12px",
+            borderRadius: "8px",
+            margin: 0,
+            zIndex: 15
+          }}
+        >
+          {statusText}
+        </p>
+      )}
 
-      {showTouchKeyboard && (
+      {showTouchKeyboard && isWindowOpen && !isWindowMinimized && isWindowMaximized && (
         <div
           style={{
-            width: "min(100%, 640px)",
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: "100%",
+            maxHeight: "42dvh",
+            overflowY: "auto",
             background: "#0f172a",
             color: "#e2e8f0",
-            borderRadius: "10px",
+            borderRadius: "0",
             padding: "10px",
-            border: "1px solid rgba(148, 163, 184, 0.35)"
+            borderTop: "1px solid rgba(148, 163, 184, 0.35)",
+            zIndex: 20
           }}
         >
           <div style={{ fontSize: "11px", fontWeight: 700, marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.04em" }}>
@@ -972,6 +1355,14 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
               <option value="earrings">Earrings</option>
             </select>
           </div>
+          <label style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", color: "#e2e8f0", fontSize: "12px", fontWeight: 700 }}>
+            <input
+              type="checkbox"
+              checked={showDebugOverlay}
+              onChange={(e) => setShowDebugOverlay(e.target.checked)}
+            />
+            Show Debug Outlines
+          </label>
           <div
             style={{
               display: "grid",
