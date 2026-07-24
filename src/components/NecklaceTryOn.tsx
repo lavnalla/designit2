@@ -15,6 +15,8 @@ const MEDIAPIPE_NOISE_PATTERNS = [
 ];
 const BODY_MASK_THRESHOLD = 0.35;
 const GARMENT_ALPHA_THRESHOLD = 12;
+const SNAPSHOT_INTERVAL_MS = 1000;
+const LANDMARK_SMOOTHING = 0.8;
 
 type AccessoryType = "garment" | "necklace" | "earrings";
 
@@ -28,15 +30,21 @@ type SegmentationFrame = {
   height: number;
 };
 
+function lerp(prev: number, next: number, smoothing: number) {
+  return prev * smoothing + next * (1 - smoothing);
+}
+
 export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const poseLandmarkerRef = useRef<PoseLandmarker | null>(null);
   const requestRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const lastSnapshotAtRef = useRef(0);
   const latestSegmentationRef = useRef<SegmentationFrame | null>(null);
   const garmentImageRef = useRef<HTMLImageElement | null>(null);
   const garmentLayerCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const processingCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const garmentShoulderCenterNormRef = useRef<number>(0.5);
   const garmentShoulderYNormRef = useRef<number>(0.08);
   const necklaceAnchorXNormRef = useRef<number>(0.5);
@@ -49,6 +57,7 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
   const modelRightEarNormRef = useRef<{ x: number; y: number } | null>(null);
 
   const [isActive, setIsActive] = useState(false);
+  const [hasSnapshot, setHasSnapshot] = useState(false);
   const [statusText, setStatusText] = useState("Loading tracking models...");
   const [showTouchKeyboard, setShowTouchKeyboard] = useState(false);
   const [accessoryType, setAccessoryType] = useState<AccessoryType>("garment");
@@ -151,6 +160,8 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
 
   useEffect(() => {
     garmentImageRef.current = null;
+    lastSnapshotAtRef.current = 0;
+    setHasSnapshot(false);
     garmentShoulderCenterNormRef.current = 0.5;
     garmentShoulderYNormRef.current = 0.08;
     necklaceAnchorXNormRef.current = 0.5;
@@ -288,6 +299,9 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
         }
+        lastSnapshotAtRef.current = 0;
+        setHasSnapshot(false);
+        setStatusText("Capturing snapshot every 1 second...");
         setIsActive(true);
       } catch (err) {
         setStatusText("Webcam connection failed.");
@@ -400,8 +414,6 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
   }
 
   useEffect(() => {
-    let lastVideoTime = -1;
-
     const compositeGarmentIntoBody = (
       ctx: CanvasRenderingContext2D,
       frame: SegmentationFrame,
@@ -526,7 +538,6 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
       necklaceCtx.clearRect(0, 0, targetWidth, targetHeight);
       necklaceCtx.drawImage(garmentImage, drawX, drawY, drawW, drawH);
 
-      const cameraBefore = ctx.getImageData(0, 0, targetWidth, targetHeight);
       const composed = ctx.getImageData(0, 0, targetWidth, targetHeight);
       const necklaceData = necklaceCtx.getImageData(0, 0, targetWidth, targetHeight).data;
 
@@ -535,21 +546,11 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
         for (let x = 0; x < targetWidth; x++) {
           const idx = (y * targetWidth + x) * 4;
           const alpha = necklaceData[idx + 3];
-          if (alpha <= GARMENT_ALPHA_THRESHOLD) continue;
+          if (alpha === 0) continue;
 
-          const camR = cameraBefore.data[idx];
-          const camG = cameraBefore.data[idx + 1];
-          const camB = cameraBefore.data[idx + 2];
-          const camLuma = (0.2126 * camR + 0.7152 * camG + 0.0722 * camB) / 255;
-          const lightingScale = 0.75 + camLuma * 0.55;
-
-          const neckR = Math.max(0, Math.min(255, Math.round(necklaceData[idx] * lightingScale)));
-          const neckG = Math.max(0, Math.min(255, Math.round(necklaceData[idx + 1] * lightingScale)));
-          const neckB = Math.max(0, Math.min(255, Math.round(necklaceData[idx + 2] * lightingScale)));
-
-          composed.data[idx] = neckR;
-          composed.data[idx + 1] = neckG;
-          composed.data[idx + 2] = neckB;
+          composed.data[idx] = necklaceData[idx];
+          composed.data[idx + 1] = necklaceData[idx + 1];
+          composed.data[idx + 2] = necklaceData[idx + 2];
           composed.data[idx + 3] = 255;
         }
       }
@@ -589,38 +590,74 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
 
     function predictLoop() {
       const video = videoRef.current;
-      const canvas = canvasRef.current;
+      const displayCanvas = canvasRef.current;
       const landmarker = poseLandmarkerRef.current;
 
-      if (video && canvas) {
-        canvas.width = video.videoWidth || 640;
-        canvas.height = video.videoHeight || 480;
-        const ctx = canvas.getContext("2d");
+      if (video && displayCanvas) {
+        const targetW = video.videoWidth || 640;
+        const targetH = video.videoHeight || 480;
 
-        if (ctx) {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (displayCanvas.width !== targetW || displayCanvas.height !== targetH) {
+          displayCanvas.width = targetW;
+          displayCanvas.height = targetH;
+        }
 
+        if (!processingCanvasRef.current) {
+          processingCanvasRef.current = document.createElement("canvas");
+        }
+        const processingCanvas = processingCanvasRef.current;
+        if (processingCanvas.width !== targetW || processingCanvas.height !== targetH) {
+          processingCanvas.width = targetW;
+          processingCanvas.height = targetH;
+        }
+
+        const displayCtx = displayCanvas.getContext("2d");
+        const processingCtx = processingCanvas.getContext("2d");
+
+        if (displayCtx && processingCtx) {
           const hasValidVideoFrame =
             video.readyState >= 2 &&
             video.videoWidth > 0 &&
             video.videoHeight > 0;
 
-          const shouldProcessFrame = hasValidVideoFrame && video.currentTime !== lastVideoTime;
+          const now = performance.now();
+          const dueForSnapshot =
+            lastSnapshotAtRef.current === 0 ||
+            (now - lastSnapshotAtRef.current) >= SNAPSHOT_INTERVAL_MS;
+          const shouldProcessFrame = hasValidVideoFrame && dueForSnapshot;
 
           if (shouldProcessFrame) {
-            lastVideoTime = video.currentTime;
             const startTimeMs = performance.now();
 
             if (landmarker) {
               try {
                 const results = landmarker.detectForVideo(video, startTimeMs);
-                const modelLandmarks = results.landmarks && results.landmarks.length > 0
-                  ? results.landmarks[0]
-                  : null;
+                const modelLandmarks =
+                  results.landmarks && results.landmarks.length > 0
+                    ? results.landmarks[0]
+                    : null;
+
                 if (modelLandmarks && modelLandmarks[11] && modelLandmarks[12]) {
-                  modelShoulderCenterNormRef.current = (modelLandmarks[11].x + modelLandmarks[12].x) / 2;
-                  modelShoulderYNormRef.current = (modelLandmarks[11].y + modelLandmarks[12].y) / 2;
-                  modelShoulderWidthNormRef.current = Math.max(0.08, Math.abs(modelLandmarks[12].x - modelLandmarks[11].x));
+                  const rawShoulderCenter =
+                    (modelLandmarks[11].x + modelLandmarks[12].x) / 2;
+                  const rawShoulderY =
+                    (modelLandmarks[11].y + modelLandmarks[12].y) / 2;
+                  const rawShoulderWidth = Math.max(
+                    0.08,
+                    Math.abs(modelLandmarks[12].x - modelLandmarks[11].x)
+                  );
+
+                  modelShoulderCenterNormRef.current = modelShoulderCenterNormRef.current !== null
+                    ? lerp(modelShoulderCenterNormRef.current, rawShoulderCenter, LANDMARK_SMOOTHING)
+                    : rawShoulderCenter;
+                  modelShoulderYNormRef.current = modelShoulderYNormRef.current !== null
+                    ? lerp(modelShoulderYNormRef.current, rawShoulderY, LANDMARK_SMOOTHING)
+                    : rawShoulderY;
+                  modelShoulderWidthNormRef.current = lerp(
+                    modelShoulderWidthNormRef.current,
+                    rawShoulderWidth,
+                    LANDMARK_SMOOTHING
+                  );
 
                   const nose = modelLandmarks[0];
                   const mouthLeft = modelLandmarks[9];
@@ -631,29 +668,57 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
                     if (typeof mouthLeft?.y === "number") candidates.push(mouthLeft.y);
                     if (typeof mouthRight?.y === "number") candidates.push(mouthRight.y);
                     if (candidates.length === 0) {
-                      return modelShoulderYNormRef.current - modelShoulderWidthNormRef.current * 0.28;
+                      return (
+                        modelShoulderYNormRef.current -
+                        modelShoulderWidthNormRef.current * 0.28
+                      );
                     }
                     return Math.max(...candidates);
                   })();
 
-                  // Keep neck immediately below face, but never as low as shoulder line.
                   const rawNeckY = faceBottomY + modelShoulderWidthNormRef.current * 0.14;
                   const minNeckY = faceBottomY + modelShoulderWidthNormRef.current * 0.08;
                   const maxNeckY = modelShoulderYNormRef.current - modelShoulderWidthNormRef.current * 0.07;
                   const neckY = Math.min(Math.max(rawNeckY, minNeckY), maxNeckY);
 
-                  const neckX = modelShoulderCenterNormRef.current;
+                  const rawNeckX = modelShoulderCenterNormRef.current;
+                  const rawNeckYClamped = Math.max(0, neckY);
 
-                  modelNeckNormRef.current = {
-                    x: neckX,
-                    y: Math.max(0, neckY)
-                  };
-                  modelLeftEarNormRef.current = modelLandmarks[7]
-                    ? { x: modelLandmarks[7].x, y: modelLandmarks[7].y }
-                    : null;
-                  modelRightEarNormRef.current = modelLandmarks[8]
-                    ? { x: modelLandmarks[8].x, y: modelLandmarks[8].y }
-                    : null;
+                  if (modelNeckNormRef.current) {
+                    modelNeckNormRef.current = {
+                      x: lerp(modelNeckNormRef.current.x, rawNeckX, LANDMARK_SMOOTHING),
+                      y: lerp(modelNeckNormRef.current.y, rawNeckYClamped, LANDMARK_SMOOTHING)
+                    };
+                  } else {
+                    modelNeckNormRef.current = {
+                      x: rawNeckX,
+                      y: rawNeckYClamped
+                    };
+                  }
+
+                  if (modelLandmarks[7]) {
+                    const rawLeft = { x: modelLandmarks[7].x, y: modelLandmarks[7].y };
+                    modelLeftEarNormRef.current = modelLeftEarNormRef.current
+                      ? {
+                        x: lerp(modelLeftEarNormRef.current.x, rawLeft.x, LANDMARK_SMOOTHING),
+                        y: lerp(modelLeftEarNormRef.current.y, rawLeft.y, LANDMARK_SMOOTHING)
+                      }
+                      : rawLeft;
+                  } else {
+                    modelLeftEarNormRef.current = null;
+                  }
+
+                  if (modelLandmarks[8]) {
+                    const rawRight = { x: modelLandmarks[8].x, y: modelLandmarks[8].y };
+                    modelRightEarNormRef.current = modelRightEarNormRef.current
+                      ? {
+                        x: lerp(modelRightEarNormRef.current.x, rawRight.x, LANDMARK_SMOOTHING),
+                        y: lerp(modelRightEarNormRef.current.y, rawRight.y, LANDMARK_SMOOTHING)
+                      }
+                      : rawRight;
+                  } else {
+                    modelRightEarNormRef.current = null;
+                  }
                 } else {
                   modelShoulderCenterNormRef.current = null;
                   modelShoulderYNormRef.current = null;
@@ -662,9 +727,10 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
                   modelRightEarNormRef.current = null;
                 }
 
-                const segmentationMask = results.segmentationMasks && results.segmentationMasks.length > 0
-                  ? results.segmentationMasks[0]
-                  : null;
+                const segmentationMask =
+                  results.segmentationMasks && results.segmentationMasks.length > 0
+                    ? results.segmentationMasks[0]
+                    : null;
 
                 if (segmentationMask) {
                   latestSegmentationRef.current = {
@@ -686,45 +752,53 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
                 console.warn("Pose tracking frame failed", err);
               }
             }
-          }
 
-          // Base frame: render camera first, then replace body pixels with garment pixels.
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          const segmentationFrame = latestSegmentationRef.current;
+            // Snapshot-only output: redraw only when the interval capture is due.
+            processingCtx.clearRect(0, 0, targetW, targetH);
+            processingCtx.drawImage(video, 0, 0, targetW, targetH);
+            const segmentationFrame = latestSegmentationRef.current;
 
-          if (garmentImageRef.current) {
-            if (accessoryType === "garment") {
-              if (segmentationFrame) {
-                compositeGarmentIntoBody(
-                  ctx,
-                  segmentationFrame,
+            if (garmentImageRef.current) {
+              if (accessoryType === "garment") {
+                if (segmentationFrame) {
+                  compositeGarmentIntoBody(
+                    processingCtx,
+                    segmentationFrame,
+                    garmentImageRef.current,
+                    targetW,
+                    targetH,
+                    modelShoulderCenterNormRef.current,
+                    modelShoulderYNormRef.current
+                  );
+                }
+              } else if (accessoryType === "necklace") {
+                compositeNecklaceIntoNeck(
+                  processingCtx,
                   garmentImageRef.current,
-                  canvas.width,
-                  canvas.height,
-                  modelShoulderCenterNormRef.current,
-                  modelShoulderYNormRef.current
+                  targetW,
+                  targetH,
+                  modelNeckNormRef.current,
+                  modelShoulderWidthNormRef.current
+                );
+              } else {
+                compositeEarrings(
+                  processingCtx,
+                  garmentImageRef.current,
+                  targetW,
+                  targetH,
+                  modelLeftEarNormRef.current,
+                  modelRightEarNormRef.current,
+                  modelShoulderWidthNormRef.current
                 );
               }
-            } else if (accessoryType === "necklace") {
-              compositeNecklaceIntoNeck(
-                ctx,
-                garmentImageRef.current,
-                canvas.width,
-                canvas.height,
-                modelNeckNormRef.current,
-                modelShoulderWidthNormRef.current
-              );
-            } else {
-              compositeEarrings(
-                ctx,
-                garmentImageRef.current,
-                canvas.width,
-                canvas.height,
-                modelLeftEarNormRef.current,
-                modelRightEarNormRef.current,
-                modelShoulderWidthNormRef.current
-              );
             }
+
+            // Atomically present processed snapshot; previous frame stays visible until now.
+            displayCtx.drawImage(processingCanvas, 0, 0, targetW, targetH);
+
+            lastSnapshotAtRef.current = now;
+            setHasSnapshot(true);
+            setStatusText("Snapshot auto-updates every 1 second.");
           }
         }
       }
@@ -753,7 +827,7 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
           background: "#000",
           borderRadius: "8px",
           overflow: "hidden",
-          display: isActive ? "block" : "none"
+          display: isActive || hasSnapshot ? "block" : "none"
         }}
       >
         <div
@@ -773,10 +847,10 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
             lineHeight: "1.4"
           }}
         >
-          <strong>Live Garment Pixel Compositing</strong>
+          <strong>Snapshot Pixel Compositing</strong>
           <br />
           <span style={{ fontSize: "11px", color: "#cbd5e1" }}>
-            Body pixels are replaced with garment image pixels before display.
+            A new camera snapshot is captured every 1s and composited before display.
           </span>
           <br />
           <span style={{ color: "#9ca3af", fontSize: "11px" }}>
@@ -844,7 +918,8 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
             width: "640px",
             height: "480px",
             transform: "scaleX(-1)",
-            zIndex: 1
+            zIndex: 1,
+            visibility: "hidden"
           }}
         />
         <canvas
@@ -854,7 +929,8 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
             width: "640px",
             height: "480px",
             transform: "scaleX(-1)",
-            zIndex: 2
+            zIndex: 2,
+            visibility: "visible"
           }}
         />
 
