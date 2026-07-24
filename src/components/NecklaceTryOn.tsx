@@ -3,56 +3,143 @@
 import React, { useEffect, useRef, useState } from "react";
 import { PoseLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 
-const DEFAULT_NECKLACE_FILES = [
-  "necklace1.png", "necklace2.png", "necklace3.png", "necklace4.png",
-  "necklace5.png", "design1.png", "design2.png", "design3.png"
+const MEDIAPIPE_TASKS_VERSION = "0.10.35";
+const MEDIAPIPE_WASM_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_TASKS_VERSION}/wasm`;
+const MEDIAPIPE_NOISE_PATTERNS = [
+  "face_landmarker_graph.cc:180",
+  "FaceBlendshapesGraph acceleration to xnnpack by default",
+  "gl_context.cc:1118",
+  "landmark_projection_calculator.cc:81",
+  "OpenGL error checking is disabled",
+  "Created TensorFlow Lite XNNPACK delegate for CPU"
 ];
+const BODY_MASK_THRESHOLD = 0.35;
+const GARMENT_ALPHA_THRESHOLD = 12;
 
-interface NecklaceTryOnProps {
+type AccessoryType = "garment" | "necklace" | "earrings";
+
+interface BodyVisualizerProps {
   selectedImageSrc?: string | null;
 }
 
-type Landmark2D = {
-  x: number;
-  y: number;
+type SegmentationFrame = {
+  data: Float32Array;
+  width: number;
+  height: number;
 };
 
-export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) {
+export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const poseLandmarkerRef = useRef<PoseLandmarker | null>(null);
   const requestRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const imagesRef = useRef<HTMLImageElement[]>([]);
-  const latestLandmarksRef = useRef<Landmark2D[] | null>(null);
-
-  const necklaceCatalog = React.useMemo(() => {
-  if (selectedImageSrc) {
-      return [selectedImageSrc, ...DEFAULT_NECKLACE_FILES];
-  }
-    return DEFAULT_NECKLACE_FILES;
-  }, [selectedImageSrc]);
+  const latestSegmentationRef = useRef<SegmentationFrame | null>(null);
+  const garmentImageRef = useRef<HTMLImageElement | null>(null);
+  const garmentLayerCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const garmentShoulderCenterNormRef = useRef<number>(0.5);
+  const garmentShoulderYNormRef = useRef<number>(0.08);
+  const necklaceAnchorXNormRef = useRef<number>(0.5);
+  const necklaceAnchorYNormRef = useRef<number>(0.08);
+  const modelShoulderCenterNormRef = useRef<number | null>(null);
+  const modelShoulderYNormRef = useRef<number | null>(null);
+  const modelShoulderWidthNormRef = useRef<number>(0.25);
+  const modelNeckNormRef = useRef<{ x: number; y: number } | null>(null);
+  const modelLeftEarNormRef = useRef<{ x: number; y: number } | null>(null);
+  const modelRightEarNormRef = useRef<{ x: number; y: number } | null>(null);
 
   const [isActive, setIsActive] = useState(false);
   const [statusText, setStatusText] = useState("Loading tracking models...");
-  const [currentIdx, setCurrentIdx] = useState(0);
-  const [scaleMult, setScaleMult] = useState(1.0);
-  const [vertOffset, setVertOffset] = useState(0.0);
   const [showTouchKeyboard, setShowTouchKeyboard] = useState(false);
+  const [accessoryType, setAccessoryType] = useState<AccessoryType>("garment");
+  const [manualScale, setManualScale] = useState(1);
+  const [manualOffsetY, setManualOffsetY] = useState(0);
+  const [manualOffsetX, setManualOffsetX] = useState(0);
 
-  const scaleStep = 0.05;
-  const offsetStep = 0.03;
+  const manualScaleRef = useRef(1);
+  const manualOffsetYRef = useRef(0);
+  const manualOffsetXRef = useRef(0);
 
-  const nextDesign = () => setCurrentIdx((prev) => (prev + 1) % necklaceCatalog.length);
-  const prevDesign = () => setCurrentIdx((prev) => (prev - 1 + necklaceCatalog.length) % necklaceCatalog.length);
-  const moveUp = () => setVertOffset((prev) => prev - offsetStep);
-  const moveDown = () => setVertOffset((prev) => prev + offsetStep);
-  const sizeUp = () => setScaleMult((prev) => prev + scaleStep);
-  const sizeDown = () => setScaleMult((prev) => Math.max(0.1, prev - scaleStep));
-  const resetAdjustments = () => {
-    setScaleMult(1.0);
-    setVertOffset(0.0);
+  const adjustScale = (delta: number) => {
+    setManualScale((prev) => {
+      const next = Math.max(0.6, Math.min(1.6, prev + delta));
+      return Math.round(next * 1000) / 1000;
+    });
   };
+
+  const adjustOffsetY = (delta: number) => {
+    setManualOffsetY((prev) => Math.max(-120, Math.min(120, prev + delta)));
+  };
+
+  const adjustOffsetX = (delta: number) => {
+    setManualOffsetX((prev) => Math.max(-120, Math.min(120, prev + delta)));
+  };
+
+  useEffect(() => {
+    manualScaleRef.current = manualScale;
+  }, [manualScale]);
+
+  useEffect(() => {
+    manualOffsetYRef.current = manualOffsetY;
+  }, [manualOffsetY]);
+
+  useEffect(() => {
+    manualOffsetXRef.current = manualOffsetX;
+  }, [manualOffsetX]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName?.toLowerCase();
+      if (tagName === "input" || tagName === "textarea" || target?.isContentEditable) {
+        return;
+      }
+
+      if (event.key === "s" || event.key === "S") {
+        event.preventDefault();
+        saveScreenshot();
+        return;
+      }
+
+      if (event.key === "+" || event.key === "=" || event.code === "NumpadAdd") {
+        event.preventDefault();
+        adjustScale(0.03);
+        return;
+      }
+
+      if (event.key === "-" || event.code === "NumpadSubtract") {
+        event.preventDefault();
+        adjustScale(-0.03);
+        return;
+      }
+
+      if (event.key === "u" || event.key === "U" || event.code === "KeyU") {
+        event.preventDefault();
+        adjustOffsetY(-4);
+        return;
+      }
+
+      if (event.key === "j" || event.key === "J" || event.code === "KeyJ") {
+        event.preventDefault();
+        adjustOffsetY(4);
+        return;
+      }
+
+      if (event.key === "h" || event.key === "H" || event.code === "KeyH" || event.code === "ArrowLeft") {
+        event.preventDefault();
+        adjustOffsetX(-4);
+        return;
+      }
+
+      if (event.key === "k" || event.key === "K" || event.code === "KeyK" || event.code === "ArrowRight") {
+        event.preventDefault();
+        adjustOffsetX(4);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   useEffect(() => {
     const mq = window.matchMedia("(pointer: coarse), (max-width: 900px)");
@@ -61,6 +148,129 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
     mq.addEventListener("change", sync);
     return () => mq.removeEventListener("change", sync);
   }, []);
+
+  useEffect(() => {
+    garmentImageRef.current = null;
+    garmentShoulderCenterNormRef.current = 0.5;
+    garmentShoulderYNormRef.current = 0.08;
+    necklaceAnchorXNormRef.current = 0.5;
+    necklaceAnchorYNormRef.current = 0.08;
+
+    if (!selectedImageSrc) {
+      return;
+    }
+
+    const img = new window.Image();
+    if (!selectedImageSrc.startsWith("data:")) {
+      img.crossOrigin = "anonymous";
+    }
+    img.onload = () => {
+      garmentImageRef.current = img;
+
+      // Estimate garment shoulder center from the widest row in the upper garment band.
+      try {
+        const measureCanvas = document.createElement("canvas");
+        measureCanvas.width = img.naturalWidth;
+        measureCanvas.height = img.naturalHeight;
+        const measureCtx = measureCanvas.getContext("2d", { willReadFrequently: true });
+        if (!measureCtx || img.naturalWidth < 2 || img.naturalHeight < 2) {
+          return;
+        }
+
+        measureCtx.clearRect(0, 0, measureCanvas.width, measureCanvas.height);
+        measureCtx.drawImage(img, 0, 0);
+        const imageData = measureCtx.getImageData(0, 0, measureCanvas.width, measureCanvas.height);
+
+        const topBandEnd = Math.max(1, Math.floor(measureCanvas.height * 0.45));
+        let bestWidth = -1;
+        let bestCenter = measureCanvas.width / 2;
+        let bestRowY = 0;
+
+        for (let y = 0; y < topBandEnd; y++) {
+          let rowLeft = -1;
+          let rowRight = -1;
+          for (let x = 0; x < measureCanvas.width; x++) {
+            const alpha = imageData.data[(y * measureCanvas.width + x) * 4 + 3];
+            if (alpha > GARMENT_ALPHA_THRESHOLD) {
+              if (rowLeft === -1) rowLeft = x;
+              rowRight = x;
+            }
+          }
+
+          if (rowLeft !== -1 && rowRight !== -1) {
+            const rowWidth = rowRight - rowLeft + 1;
+            if (rowWidth > bestWidth) {
+              bestWidth = rowWidth;
+              bestCenter = (rowLeft + rowRight) / 2;
+              bestRowY = y;
+            }
+          }
+        }
+
+        garmentShoulderCenterNormRef.current = Math.max(0, Math.min(1, bestCenter / Math.max(1, measureCanvas.width - 1)));
+        garmentShoulderYNormRef.current = Math.max(0, Math.min(1, bestRowY / Math.max(1, measureCanvas.height - 1)));
+
+        // Necklace-specific anchor: top-chain region center, not the widest garment row.
+        let topY = -1;
+        for (let y = 0; y < measureCanvas.height; y++) {
+          let hasOpaque = false;
+          for (let x = 0; x < measureCanvas.width; x++) {
+            const alpha = imageData.data[(y * measureCanvas.width + x) * 4 + 3];
+            if (alpha > GARMENT_ALPHA_THRESHOLD) {
+              hasOpaque = true;
+              break;
+            }
+          }
+          if (hasOpaque) {
+            topY = y;
+            break;
+          }
+        }
+
+        if (topY >= 0) {
+          const topBandBottom = Math.min(measureCanvas.height - 1, topY + Math.max(2, Math.floor(measureCanvas.height * 0.2)));
+          let totalCenter = 0;
+          let rowCount = 0;
+
+          for (let y = topY; y <= topBandBottom; y++) {
+            let rowLeft = -1;
+            let rowRight = -1;
+            for (let x = 0; x < measureCanvas.width; x++) {
+              const alpha = imageData.data[(y * measureCanvas.width + x) * 4 + 3];
+              if (alpha > GARMENT_ALPHA_THRESHOLD) {
+                if (rowLeft === -1) rowLeft = x;
+                rowRight = x;
+              }
+            }
+
+            if (rowLeft !== -1 && rowRight !== -1) {
+              totalCenter += (rowLeft + rowRight) / 2;
+              rowCount += 1;
+            }
+          }
+
+          if (rowCount > 0) {
+            const necklaceCenter = totalCenter / rowCount;
+            necklaceAnchorXNormRef.current = Math.max(0, Math.min(1, necklaceCenter / Math.max(1, measureCanvas.width - 1)));
+            necklaceAnchorYNormRef.current = Math.max(0, Math.min(1, topY / Math.max(1, measureCanvas.height - 1)));
+          } else {
+            necklaceAnchorXNormRef.current = garmentShoulderCenterNormRef.current;
+            necklaceAnchorYNormRef.current = Math.max(0, garmentShoulderYNormRef.current * 0.45);
+          }
+        } else {
+          necklaceAnchorXNormRef.current = garmentShoulderCenterNormRef.current;
+          necklaceAnchorYNormRef.current = Math.max(0, garmentShoulderYNormRef.current * 0.45);
+        }
+      } catch (measureError) {
+        console.warn("Garment shoulder center measurement failed", measureError);
+      }
+    };
+    img.onerror = () => {
+      garmentImageRef.current = null;
+      console.warn("Garment image failed to load for try-on compositing");
+    };
+    img.src = selectedImageSrc;
+  }, [selectedImageSrc]);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,63 +309,59 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
   useEffect(() => {
     let active = true;
 
-    const loadImageSafe = (src: string) => {
-      return new Promise<HTMLImageElement | null>((resolve) => {
-        const img = new Image();
-        if (!src.startsWith("data:") && !src.startsWith("blob:")) {
-          img.crossOrigin = "anonymous";
-        }
-        img.onload = () => {
-          if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-            resolve(img);
-          } else {
-            resolve(null);
-          }
-        };
-        img.onerror = () => resolve(null);
-        img.src = src;
-      });
+    const withSuppressedMediapipeLogs = async <T,>(task: () => Promise<T>) => {
+      const shouldDrop = (args: unknown[]) => {
+        const message = args.map((arg) => String(arg)).join(" ");
+        return MEDIAPIPE_NOISE_PATTERNS.some((pattern) => message.includes(pattern));
+      };
+
+      const originalLog = console.log;
+      const originalInfo = console.info;
+      const originalWarn = console.warn;
+
+      console.log = (...args: unknown[]) => {
+        if (!shouldDrop(args)) originalLog(...args);
+      };
+      console.info = (...args: unknown[]) => {
+        if (!shouldDrop(args)) originalInfo(...args);
+      };
+      console.warn = (...args: unknown[]) => {
+        if (!shouldDrop(args)) originalWarn(...args);
+      };
+
+      try {
+        return await task();
+      } finally {
+        console.log = originalLog;
+        console.info = originalInfo;
+        console.warn = originalWarn;
+      }
     };
     
     async function setup() {
       try {
-        const loadedImagesRaw = await Promise.all(
-          necklaceCatalog.map(async (src) => {
-            return loadImageSafe(src);
-          })
-        );
-
-        const loadedImages = loadedImagesRaw.filter((img): img is HTMLImageElement => !!img);
-
-        if (!active) return;
-
-        if (loadedImages.length === 0) {
-          setStatusText("Failed to load try-on image.");
-          return;
-        }
-
-        imagesRef.current = loadedImages;
-        setCurrentIdx(0);
+        const vision = await withSuppressedMediapipeLogs(async () => {
+          return FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_URL);
+        });
 
         if (!poseLandmarkerRef.current) {
           setStatusText("Loading tracking engine models...");
-          const vision = await FilesetResolver.forVisionTasks(
-            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
-          );
-          
-          const landmarker = await PoseLandmarker.createFromOptions(vision, {
-            baseOptions: {
-              modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
-              delegate: "GPU"
-            },
-            runningMode: "VIDEO",
-            outputSegmentationMasks: false
+
+          const landmarker = await withSuppressedMediapipeLogs(async () => {
+            return PoseLandmarker.createFromOptions(vision, {
+              baseOptions: {
+                modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+                delegate: "GPU"
+              },
+              runningMode: "VIDEO",
+              outputSegmentationMasks: true
+            });
           });
           if (!active) return;
           poseLandmarkerRef.current = landmarker;
         }
 
-        setStatusText("Ready! Click the button to start.");
+        setStatusText("Ready! Live try-on compositing active.");
 
       } catch (error) {
         console.error(error);
@@ -168,7 +374,7 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
     return () => {
       active = false;
     };
-  }, [necklaceCatalog, selectedImageSrc]);
+  }, []);
 
   function saveScreenshot() {
     const video = videoRef.current;
@@ -187,42 +393,199 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
       sCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height);
 
       const link = document.createElement("a");
-      link.download = `studio_snapshot_${Date.now()}.png`;
+      link.download = `body_segments_${Date.now()}.png`;
       link.href = snapshotCanvas.toDataURL("image/png");
       link.click();
     }
   }
 
   useEffect(() => {
-    if (!isActive) return;
+    let lastVideoTime = -1;
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const key = e.key.toLowerCase();
-      if (key === "n") {
-        nextDesign();
-      } else if (key === "b") {
-        prevDesign();
-      } else if (key === "u") {
-        moveUp();
-      } else if (key === "j") {
-        moveDown();
-      } else if (key === "+" || e.key === "=") {
-        sizeUp();
-      } else if (key === "-") {
-        sizeDown();
-      } else if (key === "r") {
-        resetAdjustments();
-      } else if (key === "s") {
-        saveScreenshot();
+    const compositeGarmentIntoBody = (
+      ctx: CanvasRenderingContext2D,
+      frame: SegmentationFrame,
+      garmentImage: HTMLImageElement,
+      targetWidth: number,
+      targetHeight: number,
+      modelShoulderCenterNorm: number | null,
+      modelShoulderYNorm: number | null
+    ) => {
+      // Find a coarse body bounding box from segmentation to place the garment image.
+      let minMaskX = frame.width;
+      let minMaskY = frame.height;
+      let maxMaskX = -1;
+      let maxMaskY = -1;
+
+      for (let y = 0; y < frame.height; y++) {
+        const row = y * frame.width;
+        for (let x = 0; x < frame.width; x++) {
+          if (frame.data[row + x] > BODY_MASK_THRESHOLD) {
+            if (x < minMaskX) minMaskX = x;
+            if (y < minMaskY) minMaskY = y;
+            if (x > maxMaskX) maxMaskX = x;
+            if (y > maxMaskY) maxMaskY = y;
+          }
+        }
       }
+
+      if (maxMaskX < minMaskX || maxMaskY < minMaskY) {
+        return;
+      }
+
+      const bodyX = Math.max(0, Math.floor((minMaskX / frame.width) * targetWidth));
+      const bodyY = Math.max(0, Math.floor((minMaskY / frame.height) * targetHeight));
+      const bodyW = Math.max(1, Math.ceil(((maxMaskX - minMaskX + 1) / frame.width) * targetWidth));
+      const bodyH = Math.max(1, Math.ceil(((maxMaskY - minMaskY + 1) / frame.height) * targetHeight));
+
+      const modelShoulderCenterX = modelShoulderCenterNorm !== null
+        ? modelShoulderCenterNorm * targetWidth
+        : (bodyX + bodyW / 2);
+      const modelShoulderY = modelShoulderYNorm !== null
+        ? modelShoulderYNorm * targetHeight
+        : bodyY;
+      const garmentShoulderCenterNorm = garmentShoulderCenterNormRef.current;
+      const garmentShoulderYNorm = garmentShoulderYNormRef.current;
+      const garmentDrawW = bodyW;
+      const garmentDrawH = bodyH;
+      const unclampedDrawX = Math.round(modelShoulderCenterX - garmentShoulderCenterNorm * garmentDrawW);
+      const unclampedDrawY = Math.round(modelShoulderY - garmentShoulderYNorm * garmentDrawH);
+      const garmentDrawX = Math.max(-garmentDrawW + 1, Math.min(targetWidth - 1, unclampedDrawX));
+      const garmentDrawY = Math.max(-garmentDrawH + 1, Math.min(targetHeight - 1, unclampedDrawY));
+
+      if (!garmentLayerCanvasRef.current) {
+        garmentLayerCanvasRef.current = document.createElement("canvas");
+      }
+      const garmentCanvas = garmentLayerCanvasRef.current;
+      garmentCanvas.width = targetWidth;
+      garmentCanvas.height = targetHeight;
+      const garmentCtx = garmentCanvas.getContext("2d", { willReadFrequently: true });
+      if (!garmentCtx) return;
+
+      garmentCtx.clearRect(0, 0, targetWidth, targetHeight);
+      garmentCtx.drawImage(garmentImage, garmentDrawX, garmentDrawY, garmentDrawW, garmentDrawH);
+
+      const cameraFrame = ctx.getImageData(0, 0, targetWidth, targetHeight);
+      const cameraData = cameraFrame.data;
+      const garmentData = garmentCtx.getImageData(0, 0, targetWidth, targetHeight).data;
+
+      for (let y = 0; y < targetHeight; y++) {
+        const maskY = Math.min(frame.height - 1, Math.floor((y / targetHeight) * frame.height));
+        const maskRow = maskY * frame.width;
+        for (let x = 0; x < targetWidth; x++) {
+          const maskX = Math.min(frame.width - 1, Math.floor((x / targetWidth) * frame.width));
+          if (frame.data[maskRow + maskX] <= BODY_MASK_THRESHOLD) {
+            continue;
+          }
+
+          const idx = (y * targetWidth + x) * 4;
+          const garmentAlpha = garmentData[idx + 3];
+          if (garmentAlpha === 0) {
+            continue;
+          }
+
+          cameraData[idx] = garmentData[idx];
+          cameraData[idx + 1] = garmentData[idx + 1];
+          cameraData[idx + 2] = garmentData[idx + 2];
+          cameraData[idx + 3] = 255;
+        }
+      }
+
+      ctx.putImageData(cameraFrame, 0, 0);
     };
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isActive, necklaceCatalog.length]);
+    const compositeNecklaceIntoNeck = (
+      ctx: CanvasRenderingContext2D,
+      garmentImage: HTMLImageElement,
+      targetWidth: number,
+      targetHeight: number,
+      neckNorm: { x: number; y: number } | null,
+      shoulderWidthNorm: number
+    ) => {
+      if (!neckNorm) return;
 
-  useEffect(() => {
-    let lastVideoTime = -1;
+      const neckX = neckNorm.x * targetWidth;
+      const neckY = neckNorm.y * targetHeight;
+      const shoulderWidthPx = Math.max(40, shoulderWidthNorm * targetWidth);
+
+      const adjustedBaseW = shoulderWidthPx * 0.98 * manualScaleRef.current;
+      const drawW = Math.max(44, Math.min(targetWidth * 0.9, adjustedBaseW));
+      const drawH = drawW * (garmentImage.naturalHeight / Math.max(1, garmentImage.naturalWidth));
+      const drawX = neckX - necklaceAnchorXNormRef.current * drawW + manualOffsetXRef.current;
+      const drawY = neckY - necklaceAnchorYNormRef.current * drawH + shoulderWidthPx * 0.012 + manualOffsetYRef.current;
+
+      if (!garmentLayerCanvasRef.current) {
+        garmentLayerCanvasRef.current = document.createElement("canvas");
+      }
+      const necklaceCanvas = garmentLayerCanvasRef.current;
+      necklaceCanvas.width = targetWidth;
+      necklaceCanvas.height = targetHeight;
+      const necklaceCtx = necklaceCanvas.getContext("2d", { willReadFrequently: true });
+      if (!necklaceCtx) return;
+
+      necklaceCtx.clearRect(0, 0, targetWidth, targetHeight);
+      necklaceCtx.drawImage(garmentImage, drawX, drawY, drawW, drawH);
+
+      const cameraBefore = ctx.getImageData(0, 0, targetWidth, targetHeight);
+      const composed = ctx.getImageData(0, 0, targetWidth, targetHeight);
+      const necklaceData = necklaceCtx.getImageData(0, 0, targetWidth, targetHeight).data;
+
+      // Hard pixel replacement (no overlay blending): necklace pixels replace camera pixels.
+      for (let y = 0; y < targetHeight; y++) {
+        for (let x = 0; x < targetWidth; x++) {
+          const idx = (y * targetWidth + x) * 4;
+          const alpha = necklaceData[idx + 3];
+          if (alpha <= GARMENT_ALPHA_THRESHOLD) continue;
+
+          const camR = cameraBefore.data[idx];
+          const camG = cameraBefore.data[idx + 1];
+          const camB = cameraBefore.data[idx + 2];
+          const camLuma = (0.2126 * camR + 0.7152 * camG + 0.0722 * camB) / 255;
+          const lightingScale = 0.75 + camLuma * 0.55;
+
+          const neckR = Math.max(0, Math.min(255, Math.round(necklaceData[idx] * lightingScale)));
+          const neckG = Math.max(0, Math.min(255, Math.round(necklaceData[idx + 1] * lightingScale)));
+          const neckB = Math.max(0, Math.min(255, Math.round(necklaceData[idx + 2] * lightingScale)));
+
+          composed.data[idx] = neckR;
+          composed.data[idx + 1] = neckG;
+          composed.data[idx + 2] = neckB;
+          composed.data[idx + 3] = 255;
+        }
+      }
+
+      ctx.putImageData(composed, 0, 0);
+    };
+
+    const compositeEarrings = (
+      ctx: CanvasRenderingContext2D,
+      garmentImage: HTMLImageElement,
+      targetWidth: number,
+      targetHeight: number,
+      leftEar: { x: number; y: number } | null,
+      rightEar: { x: number; y: number } | null,
+      shoulderWidthNorm: number
+    ) => {
+      const shoulderWidthPx = Math.max(40, shoulderWidthNorm * targetWidth);
+      const drawW = Math.max(26, shoulderWidthPx * 0.22);
+      const drawH = drawW * (garmentImage.naturalHeight / Math.max(1, garmentImage.naturalWidth));
+
+      if (leftEar) {
+        const x = leftEar.x * targetWidth - drawW * 0.92;
+        const y = leftEar.y * targetHeight - drawH * 0.12;
+        ctx.drawImage(garmentImage, x, y, drawW, drawH);
+      }
+
+      if (rightEar) {
+        const x = rightEar.x * targetWidth - drawW * 0.08;
+        const y = rightEar.y * targetHeight - drawH * 0.12;
+        ctx.save();
+        ctx.translate(x + drawW, y);
+        ctx.scale(-1, 1);
+        ctx.drawImage(garmentImage, 0, 0, drawW, drawH);
+        ctx.restore();
+      }
+    };
 
     function predictLoop() {
       const video = videoRef.current;
@@ -230,14 +593,11 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
       const landmarker = poseLandmarkerRef.current;
 
       if (video && canvas) {
-        // Keep the draw surface valid even before metadata is fully available.
         canvas.width = video.videoWidth || 640;
         canvas.height = video.videoHeight || 480;
         const ctx = canvas.getContext("2d");
 
         if (ctx) {
-          const activeImage = imagesRef.current[currentIdx];
-
           ctx.clearRect(0, 0, canvas.width, canvas.height);
 
           const hasValidVideoFrame =
@@ -245,48 +605,125 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
             video.videoWidth > 0 &&
             video.videoHeight > 0;
 
-          if (landmarker && hasValidVideoFrame && video.currentTime !== lastVideoTime) {
+          const shouldProcessFrame = hasValidVideoFrame && video.currentTime !== lastVideoTime;
+
+          if (shouldProcessFrame) {
             lastVideoTime = video.currentTime;
-            try {
-              const startTimeMs = performance.now();
-              const results = landmarker.detectForVideo(video, startTimeMs);
-              latestLandmarksRef.current = results.landmarks && results.landmarks.length > 0
-                ? results.landmarks[0]
-                : null;
-            } catch (err) {
-              // Keep loop alive and continue drawing fallback placement.
-              latestLandmarksRef.current = null;
-              console.warn("Pose tracking frame failed", err);
+            const startTimeMs = performance.now();
+
+            if (landmarker) {
+              try {
+                const results = landmarker.detectForVideo(video, startTimeMs);
+                const modelLandmarks = results.landmarks && results.landmarks.length > 0
+                  ? results.landmarks[0]
+                  : null;
+                if (modelLandmarks && modelLandmarks[11] && modelLandmarks[12]) {
+                  modelShoulderCenterNormRef.current = (modelLandmarks[11].x + modelLandmarks[12].x) / 2;
+                  modelShoulderYNormRef.current = (modelLandmarks[11].y + modelLandmarks[12].y) / 2;
+                  modelShoulderWidthNormRef.current = Math.max(0.08, Math.abs(modelLandmarks[12].x - modelLandmarks[11].x));
+
+                  const nose = modelLandmarks[0];
+                  const mouthLeft = modelLandmarks[9];
+                  const mouthRight = modelLandmarks[10];
+                  const faceBottomY = (() => {
+                    const candidates: number[] = [];
+                    if (typeof nose?.y === "number") candidates.push(nose.y);
+                    if (typeof mouthLeft?.y === "number") candidates.push(mouthLeft.y);
+                    if (typeof mouthRight?.y === "number") candidates.push(mouthRight.y);
+                    if (candidates.length === 0) {
+                      return modelShoulderYNormRef.current - modelShoulderWidthNormRef.current * 0.28;
+                    }
+                    return Math.max(...candidates);
+                  })();
+
+                  // Keep neck immediately below face, but never as low as shoulder line.
+                  const rawNeckY = faceBottomY + modelShoulderWidthNormRef.current * 0.14;
+                  const minNeckY = faceBottomY + modelShoulderWidthNormRef.current * 0.08;
+                  const maxNeckY = modelShoulderYNormRef.current - modelShoulderWidthNormRef.current * 0.07;
+                  const neckY = Math.min(Math.max(rawNeckY, minNeckY), maxNeckY);
+
+                  const neckX = modelShoulderCenterNormRef.current;
+
+                  modelNeckNormRef.current = {
+                    x: neckX,
+                    y: Math.max(0, neckY)
+                  };
+                  modelLeftEarNormRef.current = modelLandmarks[7]
+                    ? { x: modelLandmarks[7].x, y: modelLandmarks[7].y }
+                    : null;
+                  modelRightEarNormRef.current = modelLandmarks[8]
+                    ? { x: modelLandmarks[8].x, y: modelLandmarks[8].y }
+                    : null;
+                } else {
+                  modelShoulderCenterNormRef.current = null;
+                  modelShoulderYNormRef.current = null;
+                  modelNeckNormRef.current = null;
+                  modelLeftEarNormRef.current = null;
+                  modelRightEarNormRef.current = null;
+                }
+
+                const segmentationMask = results.segmentationMasks && results.segmentationMasks.length > 0
+                  ? results.segmentationMasks[0]
+                  : null;
+
+                if (segmentationMask) {
+                  latestSegmentationRef.current = {
+                    data: segmentationMask.getAsFloat32Array(),
+                    width: segmentationMask.width,
+                    height: segmentationMask.height
+                  };
+                  segmentationMask.close();
+                } else {
+                  latestSegmentationRef.current = null;
+                }
+              } catch (err) {
+                modelShoulderCenterNormRef.current = null;
+                modelShoulderYNormRef.current = null;
+                modelNeckNormRef.current = null;
+                modelLeftEarNormRef.current = null;
+                modelRightEarNormRef.current = null;
+                latestSegmentationRef.current = null;
+                console.warn("Pose tracking frame failed", err);
+              }
             }
           }
 
-          const landmarks = latestLandmarksRef.current;
-          if (landmarks && activeImage) {
-            const nose = landmarks[0];
-            const leftShoulder = landmarks[11];
-            const rightShoulder = landmarks[12];
+          // Base frame: render camera first, then replace body pixels with garment pixels.
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const segmentationFrame = latestSegmentationRef.current;
 
-            if (nose && leftShoulder && rightShoulder) {
-              const nY = Math.trunc(nose.y * canvas.height);
-              const lsX = Math.trunc(leftShoulder.x * canvas.width);
-              const lsY = Math.trunc(leftShoulder.y * canvas.height);
-              const rsX = Math.trunc(rightShoulder.x * canvas.width);
-              const rsY = Math.trunc(rightShoulder.y * canvas.height);
-
-              const midX = Math.trunc((lsX + rsX) / 2);
-              const midY = Math.trunc((lsY + rsY) / 2);
-              const shoulderWidth = Math.abs(rsX - lsX);
-
-              const necklaceW = Math.trunc(shoulderWidth * scaleMult);
-              const aspect = activeImage.naturalHeight / activeImage.naturalWidth;
-              const necklaceH = Math.trunc(necklaceW * aspect);
-              const neckY = Math.trunc(nY + (midY - nY) * (0.62 + vertOffset));
-              const drawX = Math.trunc(midX - necklaceW / 2);
-              const drawY = Math.trunc(neckY - necklaceH / 6);
-
-              if (Number.isFinite(drawX) && Number.isFinite(drawY) && necklaceW > 0 && necklaceH > 0) {
-                ctx.drawImage(activeImage, drawX, drawY, necklaceW, necklaceH);
+          if (garmentImageRef.current) {
+            if (accessoryType === "garment") {
+              if (segmentationFrame) {
+                compositeGarmentIntoBody(
+                  ctx,
+                  segmentationFrame,
+                  garmentImageRef.current,
+                  canvas.width,
+                  canvas.height,
+                  modelShoulderCenterNormRef.current,
+                  modelShoulderYNormRef.current
+                );
               }
+            } else if (accessoryType === "necklace") {
+              compositeNecklaceIntoNeck(
+                ctx,
+                garmentImageRef.current,
+                canvas.width,
+                canvas.height,
+                modelNeckNormRef.current,
+                modelShoulderWidthNormRef.current
+              );
+            } else {
+              compositeEarrings(
+                ctx,
+                garmentImageRef.current,
+                canvas.width,
+                canvas.height,
+                modelLeftEarNormRef.current,
+                modelRightEarNormRef.current,
+                modelShoulderWidthNormRef.current
+              );
             }
           }
         }
@@ -304,9 +741,7 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
     return () => {
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
     };
-  }, [isActive, currentIdx, scaleMult, vertOffset, selectedImageSrc]);
-
-  const isCustomAsset = selectedImageSrc && currentIdx === 0;
+  }, [isActive, accessoryType]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "15px" }}>
@@ -338,14 +773,66 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
             lineHeight: "1.4"
           }}
         >
-          <strong>
-            [{currentIdx + 1}/{necklaceCatalog.length}] {isCustomAsset ? "Γ£¿ Studio Workspace Active Design (Transparent)" : necklaceCatalog[currentIdx]}
-          </strong>
+          <strong>Live Garment Pixel Compositing</strong>
           <br />
-          Scale: {scaleMult.toFixed(2)} | Offset: {vertOffset.toFixed(2)}<br />
-          <span style={{ color: "#aaa", fontSize: "11px" }}>
-            N/B: Switch | U/J: Up/Down | +/-: Size | R: Reset | S: Screenshot
+          <span style={{ fontSize: "11px", color: "#cbd5e1" }}>
+            Body pixels are replaced with garment image pixels before display.
           </span>
+          <br />
+          <span style={{ color: "#9ca3af", fontSize: "11px" }}>
+            Mode: {accessoryType}
+          </span>
+          <br />
+          <span style={{ color: "#aaa", fontSize: "11px" }}>
+            S: Take Screenshot
+          </span>
+          <br />
+          <span style={{ color: "#aaa", fontSize: "11px" }}>
+            +/-: Resize, U/J: Up/Down, H/K: Left/Right
+          </span>
+        </div>
+
+        <div
+          style={{
+            position: "absolute",
+            top: "10px",
+            right: "10px",
+            background: "rgba(0,0,0,0.72)",
+            padding: "8px",
+            borderRadius: "8px",
+            zIndex: 11,
+            pointerEvents: "auto",
+            display: "flex",
+            gap: "6px",
+            alignItems: "center",
+            flexWrap: "wrap",
+            maxWidth: "280px"
+          }}
+        >
+          <label style={{ color: "#e2e8f0", fontSize: "10px", fontWeight: 800, textTransform: "uppercase" }}>Type</label>
+          <select
+            value={accessoryType}
+            onChange={(e) => setAccessoryType(e.target.value as AccessoryType)}
+            style={{
+              padding: "6px 8px",
+              borderRadius: "6px",
+              background: "#0b1220",
+              color: "#e2e8f0",
+              border: "1px solid rgba(148, 163, 184, 0.45)",
+              fontSize: "12px",
+              fontWeight: 700
+            }}
+          >
+            <option value="garment">Garment</option>
+            <option value="necklace">Necklace</option>
+            <option value="earrings">Earrings</option>
+          </select>
+          <button onClick={() => adjustScale(0.03)} style={{ padding: "6px 8px", borderRadius: "6px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.45)", fontSize: "11px", fontWeight: 800 }}>+</button>
+          <button onClick={() => adjustScale(-0.03)} style={{ padding: "6px 8px", borderRadius: "6px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.45)", fontSize: "11px", fontWeight: 800 }}>-</button>
+          <button onClick={() => adjustOffsetY(-4)} style={{ padding: "6px 8px", borderRadius: "6px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.45)", fontSize: "11px", fontWeight: 800 }}>U</button>
+          <button onClick={() => adjustOffsetY(4)} style={{ padding: "6px 8px", borderRadius: "6px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.45)", fontSize: "11px", fontWeight: 800 }}>J</button>
+          <button onClick={() => adjustOffsetX(-4)} style={{ padding: "6px 8px", borderRadius: "6px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.45)", fontSize: "11px", fontWeight: 800 }}>H</button>
+          <button onClick={() => adjustOffsetX(4)} style={{ padding: "6px 8px", borderRadius: "6px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.45)", fontSize: "11px", fontWeight: 800 }}>K</button>
         </div>
 
         <video
@@ -386,23 +873,43 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
           }}
         >
           <div style={{ fontSize: "11px", fontWeight: 700, marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-            Mobile Keyboard
+            Controls
+          </div>
+          <div style={{ marginBottom: "8px", display: "flex", alignItems: "center", gap: "8px" }}>
+            <label style={{ fontSize: "10px", fontWeight: 700, textTransform: "uppercase", color: "#cbd5e1" }}>Type</label>
+            <select
+              value={accessoryType}
+              onChange={(e) => setAccessoryType(e.target.value as AccessoryType)}
+              style={{
+                flex: 1,
+                padding: "8px",
+                borderRadius: "8px",
+                background: "#0b1220",
+                color: "#e2e8f0",
+                border: "1px solid rgba(148, 163, 184, 0.35)",
+                fontSize: "12px",
+                fontWeight: 700
+              }}
+            >
+              <option value="garment">Garment</option>
+              <option value="necklace">Necklace</option>
+              <option value="earrings">Earrings</option>
+            </select>
           </div>
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
               gap: "8px"
             }}
           >
-            <button onClick={prevDesign} style={{ padding: "8px", borderRadius: "8px", background: "#1e293b", color: "#f8fafc", border: "1px solid #334155", fontWeight: 700 }}>B Prev</button>
-            <button onClick={nextDesign} style={{ padding: "8px", borderRadius: "8px", background: "#1e293b", color: "#f8fafc", border: "1px solid #334155", fontWeight: 700 }}>N Next</button>
-            <button onClick={sizeDown} style={{ padding: "8px", borderRadius: "8px", background: "#1e293b", color: "#f8fafc", border: "1px solid #334155", fontWeight: 700 }}>- Size</button>
-            <button onClick={sizeUp} style={{ padding: "8px", borderRadius: "8px", background: "#1e293b", color: "#f8fafc", border: "1px solid #334155", fontWeight: 700 }}>+ Size</button>
-            <button onClick={moveUp} style={{ padding: "8px", borderRadius: "8px", background: "#1e293b", color: "#f8fafc", border: "1px solid #334155", fontWeight: 700 }}>U Up</button>
-            <button onClick={moveDown} style={{ padding: "8px", borderRadius: "8px", background: "#1e293b", color: "#f8fafc", border: "1px solid #334155", fontWeight: 700 }}>J Down</button>
-            <button onClick={resetAdjustments} style={{ padding: "8px", borderRadius: "8px", background: "#334155", color: "#f8fafc", border: "1px solid #475569", fontWeight: 700 }}>R Reset</button>
-            <button onClick={saveScreenshot} style={{ padding: "8px", borderRadius: "8px", background: "#0ea5e9", color: "#082f49", border: "1px solid #38bdf8", fontWeight: 800 }}>S Shot</button>
+            <button onClick={() => adjustScale(0.03)} style={{ padding: "10px", borderRadius: "8px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.5)", fontWeight: 800 }}>+ Bigger</button>
+            <button onClick={() => adjustScale(-0.03)} style={{ padding: "10px", borderRadius: "8px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.5)", fontWeight: 800 }}>- Smaller</button>
+            <button onClick={() => adjustOffsetY(-4)} style={{ padding: "10px", borderRadius: "8px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.5)", fontWeight: 800 }}>U Move Up</button>
+            <button onClick={() => adjustOffsetY(4)} style={{ padding: "10px", borderRadius: "8px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.5)", fontWeight: 800 }}>J Move Down</button>
+            <button onClick={() => adjustOffsetX(-4)} style={{ padding: "10px", borderRadius: "8px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.5)", fontWeight: 800 }}>H Move Left</button>
+            <button onClick={() => adjustOffsetX(4)} style={{ padding: "10px", borderRadius: "8px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.5)", fontWeight: 800 }}>K Move Right</button>
+            <button onClick={saveScreenshot} style={{ padding: "10px", borderRadius: "8px", background: "#0ea5e9", color: "#082f49", border: "1px solid #38bdf8", fontWeight: 800 }}>Save Screenshot (S)</button>
           </div>
         </div>
       )}
