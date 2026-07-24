@@ -17,7 +17,7 @@ const BODY_MASK_THRESHOLD = 0.35;
 const GARMENT_ALPHA_THRESHOLD = 12;
 const SNAPSHOT_INTERVAL_MS = 1000;
 const LANDMARK_SMOOTHING = 0.8;
-const NECKLACE_SHOULDER_Y_DROP_FACTOR = 0.06;
+const NECK_SHOULDER_JOINT_BLEND = 0.9;
 
 type AccessoryType = "garment" | "necklace" | "earrings";
 
@@ -56,9 +56,11 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
   const modelShoulderYNormRef = useRef<number | null>(null);
   const modelShoulderWidthNormRef = useRef<number>(0.25);
   const modelNeckNormRef = useRef<{ x: number; y: number } | null>(null);
+  const modelNeckShoulderJointNormRef = useRef<{ x: number; y: number } | null>(null);
   const modelLeftEarNormRef = useRef<{ x: number; y: number } | null>(null);
   const modelRightEarNormRef = useRef<{ x: number; y: number } | null>(null);
   const latestLandmarksRef = useRef<Array<{ x: number; y: number }> | null>(null);
+  const isDetectionLockedByKeyboardRef = useRef(false);
 
   const [isActive, setIsActive] = useState(false);
   const [hasSnapshot, setHasSnapshot] = useState(false);
@@ -76,6 +78,17 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
   const manualScaleRef = useRef(1);
   const manualOffsetYRef = useRef(0);
   const manualOffsetXRef = useRef(0);
+
+  const lockDetectionFromKeyboard = () => {
+    if (isDetectionLockedByKeyboardRef.current) return;
+    isDetectionLockedByKeyboardRef.current = true;
+    setStatusText("Detection locked by keyboard input.");
+  };
+
+  const unlockDetection = () => {
+    isDetectionLockedByKeyboardRef.current = false;
+    setStatusText("Detection unlocked. Auto-tracking resumed.");
+  };
 
   const adjustScale = (delta: number) => {
     setManualScale((prev) => {
@@ -142,36 +155,42 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
 
       if (event.key === "+" || event.key === "=" || event.code === "NumpadAdd") {
         event.preventDefault();
+        lockDetectionFromKeyboard();
         adjustScale(0.03);
         return;
       }
 
       if (event.key === "-" || event.code === "NumpadSubtract") {
         event.preventDefault();
+        lockDetectionFromKeyboard();
         adjustScale(-0.03);
         return;
       }
 
       if (event.key === "u" || event.key === "U" || event.code === "KeyU") {
         event.preventDefault();
+        lockDetectionFromKeyboard();
         adjustOffsetY(-4);
         return;
       }
 
       if (event.key === "j" || event.key === "J" || event.code === "KeyJ") {
         event.preventDefault();
+        lockDetectionFromKeyboard();
         adjustOffsetY(4);
         return;
       }
 
       if (event.key === "h" || event.key === "H" || event.code === "KeyH" || event.code === "ArrowLeft") {
         event.preventDefault();
+        lockDetectionFromKeyboard();
         adjustOffsetX(-4);
         return;
       }
 
       if (event.key === "k" || event.key === "K" || event.code === "KeyK" || event.code === "ArrowRight") {
         event.preventDefault();
+        lockDetectionFromKeyboard();
         adjustOffsetX(4);
       }
     };
@@ -191,6 +210,7 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
   useEffect(() => {
     garmentImageRef.current = null;
     lastSnapshotAtRef.current = 0;
+    isDetectionLockedByKeyboardRef.current = false;
     setHasSnapshot(false);
     garmentShoulderCenterNormRef.current = 0.5;
     garmentShoulderYNormRef.current = 0.08;
@@ -566,6 +586,7 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
       garmentImage: HTMLImageElement,
       targetWidth: number,
       targetHeight: number,
+      neckShoulderJointNorm: { x: number; y: number } | null,
       neckNorm: { x: number; y: number } | null,
       shoulderWidthNorm: number,
       shoulderCenterNorm: number | null,
@@ -573,18 +594,20 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
     ) => {
       if (!neckNorm) return;
 
-      const centerXNorm = shoulderCenterNorm ?? neckNorm.x;
+      const centerXNorm = neckShoulderJointNorm?.x ?? shoulderCenterNorm ?? neckNorm.x;
       const neckX = centerXNorm * targetWidth;
-      const centerYNorm = shoulderYNorm ?? neckNorm.y;
+      const centerYNorm = neckShoulderJointNorm?.y ?? shoulderYNorm ?? neckNorm.y;
       const shoulderWidthPx = Math.max(40, shoulderWidthNorm * targetWidth);
-      const shoulderYDropPx = shoulderWidthPx * NECKLACE_SHOULDER_Y_DROP_FACTOR;
-      const neckY = centerYNorm * targetHeight + shoulderYDropPx;
+      const neckY = centerYNorm * targetHeight;
 
       const adjustedBaseW = shoulderWidthPx * 0.98 * manualScaleRef.current;
       const drawW = Math.max(44, Math.min(targetWidth * 0.9, adjustedBaseW));
       const drawH = drawW * (garmentImage.naturalHeight / Math.max(1, garmentImage.naturalWidth));
       const drawX = neckX - necklaceCenterXNormRef.current * drawW + manualOffsetXRef.current;
-      const drawY = neckY - necklaceCenterYNormRef.current * drawH + manualOffsetYRef.current;
+      // Blend top-chain and visual-center anchors to avoid dropping necklaces to chest level.
+      const necklaceJointYAnchorNorm =
+        necklaceAnchorYNormRef.current * 0.45 + necklaceCenterYNormRef.current * 0.55;
+      const drawY = neckY - necklaceJointYAnchorNorm * drawH + manualOffsetYRef.current;
 
       if (!garmentLayerCanvasRef.current) {
         garmentLayerCanvasRef.current = document.createElement("canvas");
@@ -844,8 +867,9 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
 
           if (shouldProcessFrame) {
             const startTimeMs = performance.now();
+            const shouldRunDetection = !isDetectionLockedByKeyboardRef.current;
 
-            if (landmarker) {
+            if (landmarker && shouldRunDetection) {
               try {
                 const results = withSuppressedMediapipeLogsSync(() =>
                   landmarker.detectForVideo(video, startTimeMs)
@@ -860,13 +884,15 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
                   : null;
 
                 if (modelLandmarks && modelLandmarks[11] && modelLandmarks[12]) {
+                  const leftShoulder = modelLandmarks[11];
+                  const rightShoulder = modelLandmarks[12];
                   const rawShoulderCenter =
-                    (modelLandmarks[11].x + modelLandmarks[12].x) / 2;
+                    (leftShoulder.x + rightShoulder.x) / 2;
                   const rawShoulderY =
-                    (modelLandmarks[11].y + modelLandmarks[12].y) / 2;
+                    (leftShoulder.y + rightShoulder.y) / 2;
                   const rawShoulderWidth = Math.max(
                     0.08,
-                    Math.abs(modelLandmarks[12].x - modelLandmarks[11].x)
+                    Math.abs(rightShoulder.x - leftShoulder.x)
                   );
 
                   modelShoulderCenterNormRef.current = modelShoulderCenterNormRef.current !== null
@@ -918,6 +944,32 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
                     };
                   }
 
+                  // Estimate the center neck-shoulder joint from both shoulder-to-neck segments.
+                  const neckCenter = modelNeckNormRef.current;
+                  if (neckCenter) {
+                    const leftJointX = neckCenter.x + (leftShoulder.x - neckCenter.x) * NECK_SHOULDER_JOINT_BLEND;
+                    const leftJointY = neckCenter.y + (leftShoulder.y - neckCenter.y) * NECK_SHOULDER_JOINT_BLEND;
+                    const rightJointX = neckCenter.x + (rightShoulder.x - neckCenter.x) * NECK_SHOULDER_JOINT_BLEND;
+                    const rightJointY = neckCenter.y + (rightShoulder.y - neckCenter.y) * NECK_SHOULDER_JOINT_BLEND;
+
+                    const rawJointCenter = {
+                      x: (leftJointX + rightJointX) / 2,
+                      y: Math.min(
+                        rawShoulderY,
+                        Math.max(neckCenter.y, (leftJointY + rightJointY) / 2)
+                      )
+                    };
+
+                    modelNeckShoulderJointNormRef.current = modelNeckShoulderJointNormRef.current
+                      ? {
+                        x: lerp(modelNeckShoulderJointNormRef.current.x, rawJointCenter.x, LANDMARK_SMOOTHING),
+                        y: lerp(modelNeckShoulderJointNormRef.current.y, rawJointCenter.y, LANDMARK_SMOOTHING)
+                      }
+                      : rawJointCenter;
+                  } else {
+                    modelNeckShoulderJointNormRef.current = null;
+                  }
+
                   if (modelLandmarks[7]) {
                     const rawLeft = { x: modelLandmarks[7].x, y: modelLandmarks[7].y };
                     modelLeftEarNormRef.current = modelLeftEarNormRef.current
@@ -945,6 +997,7 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
                   modelShoulderCenterNormRef.current = null;
                   modelShoulderYNormRef.current = null;
                   modelNeckNormRef.current = null;
+                  modelNeckShoulderJointNormRef.current = null;
                   modelLeftEarNormRef.current = null;
                   modelRightEarNormRef.current = null;
                 }
@@ -968,6 +1021,7 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
                 modelShoulderCenterNormRef.current = null;
                 modelShoulderYNormRef.current = null;
                 modelNeckNormRef.current = null;
+                modelNeckShoulderJointNormRef.current = null;
                 modelLeftEarNormRef.current = null;
                 modelRightEarNormRef.current = null;
                 latestLandmarksRef.current = null;
@@ -1000,6 +1054,7 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
                   garmentImageRef.current,
                   targetW,
                   targetH,
+                  modelNeckShoulderJointNormRef.current,
                   modelNeckNormRef.current,
                   modelShoulderWidthNormRef.current,
                   modelShoulderCenterNormRef.current,
@@ -1027,7 +1082,11 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
 
             lastSnapshotAtRef.current = now;
             setHasSnapshot(true);
-            setStatusText("Snapshot auto-updates every 1 second.");
+            if (isDetectionLockedByKeyboardRef.current) {
+              setStatusText("Snapshot auto-updates every 1 second. Detection locked by keyboard input.");
+            } else {
+              setStatusText("Snapshot auto-updates every 1 second.");
+            }
           }
         }
       }
@@ -1255,6 +1314,7 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
           <button onClick={() => adjustOffsetY(4)} style={{ padding: "6px 8px", borderRadius: "6px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.45)", fontSize: "11px", fontWeight: 800 }}>J</button>
           <button onClick={() => adjustOffsetX(-4)} style={{ padding: "6px 8px", borderRadius: "6px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.45)", fontSize: "11px", fontWeight: 800 }}>H</button>
           <button onClick={() => adjustOffsetX(4)} style={{ padding: "6px 8px", borderRadius: "6px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.45)", fontSize: "11px", fontWeight: 800 }}>K</button>
+          <button onClick={unlockDetection} style={{ padding: "6px 8px", borderRadius: "6px", background: "#0f766e", color: "#ccfbf1", border: "1px solid #14b8a6", fontSize: "11px", fontWeight: 800 }}>Unlock Detection</button>
           <label style={{ display: "flex", alignItems: "center", gap: "6px", color: "#e2e8f0", fontSize: "11px", fontWeight: 700 }}>
             <input
               type="checkbox"
@@ -1376,6 +1436,7 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
             <button onClick={() => adjustOffsetY(4)} style={{ padding: "10px", borderRadius: "8px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.5)", fontWeight: 800 }}>J Move Down</button>
             <button onClick={() => adjustOffsetX(-4)} style={{ padding: "10px", borderRadius: "8px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.5)", fontWeight: 800 }}>H Move Left</button>
             <button onClick={() => adjustOffsetX(4)} style={{ padding: "10px", borderRadius: "8px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.5)", fontWeight: 800 }}>K Move Right</button>
+            <button onClick={unlockDetection} style={{ padding: "10px", borderRadius: "8px", background: "#0f766e", color: "#ccfbf1", border: "1px solid #14b8a6", fontWeight: 800 }}>Unlock Detection</button>
             <button onClick={saveScreenshot} style={{ padding: "10px", borderRadius: "8px", background: "#0ea5e9", color: "#082f49", border: "1px solid #38bdf8", fontWeight: 800 }}>Save Screenshot (S)</button>
           </div>
         </div>
