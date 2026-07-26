@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { PoseLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 
 const MEDIAPIPE_TASKS_VERSION = "0.10.35";
@@ -18,6 +18,10 @@ const GARMENT_ALPHA_THRESHOLD = 12;
 const SNAPSHOT_INTERVAL_MS = 1000;
 const LANDMARK_SMOOTHING = 0.8;
 const NECK_SHOULDER_JOINT_BLEND = 0.9;
+const SHOULDER_FAR_WIDTH_NORM = 0.14;
+const SHOULDER_NEAR_WIDTH_NORM = 0.24;
+const MANUAL_SCALE_STEP = 0.03;
+const MANUAL_MOVE_STEP_PX = 6;
 
 type AccessoryType = "garment" | "necklace" | "earrings";
 
@@ -60,6 +64,7 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
   const modelLeftEarNormRef = useRef<{ x: number; y: number } | null>(null);
   const modelRightEarNormRef = useRef<{ x: number; y: number } | null>(null);
   const latestLandmarksRef = useRef<Array<{ x: number; y: number }> | null>(null);
+  const lastGoodLandmarksRef = useRef<Array<{ x: number; y: number }> | null>(null);
   const isDetectionLockedByKeyboardRef = useRef(false);
 
   const [isActive, setIsActive] = useState(false);
@@ -79,31 +84,64 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
   const manualOffsetYRef = useRef(0);
   const manualOffsetXRef = useRef(0);
 
-  const lockDetectionFromKeyboard = () => {
+  const lockDetectionFromKeyboard = useCallback(() => {
     if (isDetectionLockedByKeyboardRef.current) return;
     isDetectionLockedByKeyboardRef.current = true;
     setStatusText("Detection locked by keyboard input.");
-  };
+  }, []);
 
-  const unlockDetection = () => {
+  const unlockDetection = useCallback(() => {
     isDetectionLockedByKeyboardRef.current = false;
     setStatusText("Detection unlocked. Auto-tracking resumed.");
-  };
+  }, []);
 
-  const adjustScale = (delta: number) => {
+  const adjustScale = useCallback((delta: number) => {
     setManualScale((prev) => {
       const next = Math.max(0.6, Math.min(1.6, prev + delta));
       return Math.round(next * 1000) / 1000;
     });
-  };
+  }, []);
 
-  const adjustOffsetY = (delta: number) => {
+  const adjustOffsetY = useCallback((delta: number) => {
     setManualOffsetY((prev) => Math.max(-120, Math.min(120, prev + delta)));
-  };
+  }, []);
 
-  const adjustOffsetX = (delta: number) => {
+  const adjustOffsetX = useCallback((delta: number) => {
     setManualOffsetX((prev) => Math.max(-120, Math.min(120, prev + delta)));
-  };
+  }, []);
+
+  const runManualAction = useCallback((action: "scaleUp" | "scaleDown" | "moveUp" | "moveDown" | "moveLeft" | "moveRight", source: "keyboard" | "button") => {
+    if (source === "keyboard") {
+      lockDetectionFromKeyboard();
+    }
+
+    if (action === "scaleUp") {
+      adjustScale(MANUAL_SCALE_STEP);
+      return;
+    }
+
+    if (action === "scaleDown") {
+      adjustScale(-MANUAL_SCALE_STEP);
+      return;
+    }
+
+    if (action === "moveUp") {
+      adjustOffsetY(-MANUAL_MOVE_STEP_PX);
+      return;
+    }
+
+    if (action === "moveDown") {
+      adjustOffsetY(MANUAL_MOVE_STEP_PX);
+      return;
+    }
+
+    if (action === "moveLeft") {
+      adjustOffsetX(-MANUAL_MOVE_STEP_PX);
+      return;
+    }
+
+    adjustOffsetX(MANUAL_MOVE_STEP_PX);
+  }, [adjustOffsetX, adjustOffsetY, adjustScale, lockDetectionFromKeyboard]);
 
   const closeTryOn = () => {
     setIsWindowOpen(false);
@@ -153,51 +191,47 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
         return;
       }
 
-      if (event.key === "+" || event.key === "=" || event.code === "NumpadAdd") {
+      const code = event.code;
+
+      if (code === "Equal" || code === "NumpadAdd") {
         event.preventDefault();
-        lockDetectionFromKeyboard();
-        adjustScale(0.03);
+        runManualAction("scaleUp", "keyboard");
         return;
       }
 
-      if (event.key === "-" || event.code === "NumpadSubtract") {
+      if (code === "Minus" || code === "NumpadSubtract") {
         event.preventDefault();
-        lockDetectionFromKeyboard();
-        adjustScale(-0.03);
+        runManualAction("scaleDown", "keyboard");
         return;
       }
 
-      if (event.key === "u" || event.key === "U" || event.code === "KeyU") {
+      if (code === "KeyU" || code === "ArrowUp") {
         event.preventDefault();
-        lockDetectionFromKeyboard();
-        adjustOffsetY(-4);
+        runManualAction("moveUp", "keyboard");
         return;
       }
 
-      if (event.key === "j" || event.key === "J" || event.code === "KeyJ") {
+      if (code === "KeyJ" || code === "ArrowDown") {
         event.preventDefault();
-        lockDetectionFromKeyboard();
-        adjustOffsetY(4);
+        runManualAction("moveDown", "keyboard");
         return;
       }
 
-      if (event.key === "h" || event.key === "H" || event.code === "KeyH" || event.code === "ArrowLeft") {
+      if (code === "KeyH" || code === "ArrowLeft") {
         event.preventDefault();
-        lockDetectionFromKeyboard();
-        adjustOffsetX(-4);
+        runManualAction("moveLeft", "keyboard");
         return;
       }
 
-      if (event.key === "k" || event.key === "K" || event.code === "KeyK" || event.code === "ArrowRight") {
+      if (code === "KeyK" || code === "ArrowRight") {
         event.preventDefault();
-        lockDetectionFromKeyboard();
-        adjustOffsetX(4);
+        runManualAction("moveRight", "keyboard");
       }
     };
 
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
+  }, [runManualAction]);
 
   useEffect(() => {
     const mq = window.matchMedia("(pointer: coarse), (max-width: 900px)");
@@ -533,10 +567,14 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
         : bodyY;
       const garmentShoulderCenterNorm = garmentShoulderCenterNormRef.current;
       const garmentShoulderYNorm = garmentShoulderYNormRef.current;
-      const garmentDrawW = bodyW;
-      const garmentDrawH = bodyH;
-      const unclampedDrawX = Math.round(modelShoulderCenterX - garmentShoulderCenterNorm * garmentDrawW);
-      const unclampedDrawY = Math.round(modelShoulderY - garmentShoulderYNorm * garmentDrawH);
+      const garmentDrawW = Math.max(1, Math.round(bodyW * manualScaleRef.current));
+      const garmentDrawH = Math.max(1, Math.round(bodyH * manualScaleRef.current));
+      const unclampedDrawX = Math.round(
+        modelShoulderCenterX - garmentShoulderCenterNorm * garmentDrawW + manualOffsetXRef.current
+      );
+      const unclampedDrawY = Math.round(
+        modelShoulderY - garmentShoulderYNorm * garmentDrawH + manualOffsetYRef.current
+      );
       const garmentDrawX = Math.max(-garmentDrawW + 1, Math.min(targetWidth - 1, unclampedDrawX));
       const garmentDrawY = Math.max(-garmentDrawH + 1, Math.min(targetHeight - 1, unclampedDrawY));
 
@@ -685,29 +723,80 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
         return { x: p.x * targetWidth, y: p.y * targetHeight };
       };
 
-      const drawPath = (indices: number[], color: string, closePath = false, lineWidth = 2) => {
-        const pts = indices.map(getPoint).filter((p): p is { x: number; y: number } => Boolean(p));
+      const drawPath = (
+        indices: number[],
+        color: string,
+        closePath = false,
+        lineWidth = 2,
+        outerWidth = 6,
+        outerColor = "rgba(2, 6, 23, 0.92)"
+      ) => {
+        const pts = indices
+          .map(getPoint)
+          .filter((p): p is { x: number; y: number } => Boolean(p));
         if (pts.length < 2) return;
+
         ctx.save();
-        ctx.strokeStyle = color;
-        ctx.lineWidth = lineWidth;
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+
+        // Outer contour stroke (shadow/outline pass)
         ctx.beginPath();
         ctx.moveTo(pts[0].x, pts[0].y);
         for (let i = 1; i < pts.length; i++) {
           ctx.lineTo(pts[i].x, pts[i].y);
         }
         if (closePath) ctx.closePath();
+        ctx.strokeStyle = outerColor;
+        ctx.lineWidth = outerWidth;
+        ctx.stroke();
+
+        // Inner visible stroke
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) {
+          ctx.lineTo(pts[i].x, pts[i].y);
+        }
+        if (closePath) ctx.closePath();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lineWidth;
         ctx.stroke();
         ctx.restore();
       };
 
-      const drawCurvedChain = (indices: number[], color: string, lineWidth = 2) => {
-        const pts = indices.map(getPoint).filter((p): p is { x: number; y: number } => Boolean(p));
+      const drawCurvedChain = (
+        indices: number[],
+        color: string,
+        lineWidth = 2,
+        outerWidth = 6,
+        outerColor = "rgba(2, 6, 23, 0.92)"
+      ) => {
+        const pts = indices
+          .map(getPoint)
+          .filter((p): p is { x: number; y: number } => Boolean(p));
         if (pts.length < 2) return;
 
         ctx.save();
-        ctx.strokeStyle = color;
-        ctx.lineWidth = lineWidth;
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+
+        // Outer contour stroke (shadow/outline pass)
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) {
+          const prev = pts[i - 1];
+          const curr = pts[i];
+          const cx = (prev.x + curr.x) / 2;
+          const cy = (prev.y + curr.y) / 2;
+          ctx.quadraticCurveTo(prev.x, prev.y, cx, cy);
+        }
+        const lastOuter = pts[pts.length - 1];
+        ctx.lineTo(lastOuter.x, lastOuter.y);
+        ctx.strokeStyle = outerColor;
+        ctx.lineWidth = outerWidth;
+        ctx.stroke();
+
+        // Inner visible stroke
         ctx.beginPath();
         ctx.moveTo(pts[0].x, pts[0].y);
         for (let i = 1; i < pts.length; i++) {
@@ -719,6 +808,8 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
         }
         const last = pts[pts.length - 1];
         ctx.lineTo(last.x, last.y);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lineWidth;
         ctx.stroke();
         ctx.restore();
       };
@@ -733,51 +824,44 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
         ? Math.max(30, Math.hypot(rightShoulder.x - leftShoulder.x, rightShoulder.y - leftShoulder.y))
         : 80;
 
-      // Face: round/oval from ear span and eye level.
-      const leftEar = getPoint(7);
-      const rightEar = getPoint(8);
-      const nose = getPoint(0);
-      const leftEye = getPoint(2);
-      const rightEye = getPoint(5);
-      if (leftEar && rightEar && nose && leftEye && rightEye) {
-        const centerX = (leftEar.x + rightEar.x) / 2;
-        const eyeY = (leftEye.y + rightEye.y) / 2;
-        const radiusX = Math.max(18, Math.abs(rightEar.x - leftEar.x) * 0.56);
-        const radiusY = Math.max(22, Math.abs(nose.y - eyeY) * 2.1);
+      // Face outer contour.
+      drawPath([7, 3, 2, 1, 0, 4, 5, 6, 8, 10, 9], "#22d3ee", true, 2.5, 7);
 
-        ctx.save();
-        ctx.strokeStyle = "#22d3ee";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.ellipse(centerX, eyeY + radiusY * 0.25, radiusX, radiusY, 0, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
-      } else {
-        drawPath([7, 3, 2, 1, 0, 4, 5, 6, 8, 10, 9], "#22d3ee", true, 2);
-      }
-
-      // Torso outside boundary.
+      // Torso outer contour.
       if (leftShoulder && rightShoulder && rightHip && leftHip) {
         ctx.save();
-        ctx.strokeStyle = "#f59e0b";
-        ctx.lineWidth = 2;
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+
         ctx.beginPath();
         ctx.moveTo(leftShoulder.x, leftShoulder.y);
         ctx.lineTo(rightShoulder.x, rightShoulder.y);
         ctx.lineTo(rightHip.x, rightHip.y);
         ctx.lineTo(leftHip.x, leftHip.y);
         ctx.closePath();
+        ctx.strokeStyle = "rgba(2, 6, 23, 0.92)";
+        ctx.lineWidth = 7;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(leftShoulder.x, leftShoulder.y);
+        ctx.lineTo(rightShoulder.x, rightShoulder.y);
+        ctx.lineTo(rightHip.x, rightHip.y);
+        ctx.lineTo(leftHip.x, leftHip.y);
+        ctx.closePath();
+        ctx.strokeStyle = "#f59e0b";
+        ctx.lineWidth = 2.5;
         ctx.stroke();
         ctx.restore();
       } else {
-        drawPath([11, 12, 24, 23], "#f59e0b", true, 2);
+        drawPath([11, 12, 24, 23], "#f59e0b", true, 2.5, 7);
       }
 
-      // Arms outside contours.
-      drawCurvedChain([11, 13, 15, 17, 19, 21], "#a3e635", 2);
-      drawCurvedChain([12, 14, 16, 18, 20, 22], "#a3e635", 2);
+      // Arm outer contours.
+      drawCurvedChain([11, 13, 15, 17, 19, 21], "#a3e635", 2.5, 7);
+      drawCurvedChain([12, 14, 16, 18, 20, 22], "#a3e635", 2.5, 7);
 
-      // Neck: semi-circle based on shoulder span.
+      // Neck outer contour.
       if (leftShoulder && rightShoulder) {
         const centerX = (leftShoulder.x + rightShoulder.x) / 2;
         const shoulderY = (leftShoulder.y + rightShoulder.y) / 2;
@@ -789,9 +873,18 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
         const radiusY = Math.max(10, shoulderWidthPx * 0.12);
 
         ctx.save();
-        ctx.strokeStyle = "#f472b6";
-        ctx.lineWidth = 2;
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+
         ctx.beginPath();
+        ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, Math.PI, 0, false);
+        ctx.strokeStyle = "rgba(2, 6, 23, 0.92)";
+        ctx.lineWidth = 7;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.strokeStyle = "#f472b6";
+        ctx.lineWidth = 2.5;
         ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, Math.PI, 0, false);
         ctx.stroke();
         ctx.restore();
@@ -882,6 +975,9 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
                 latestLandmarksRef.current = modelLandmarks
                   ? modelLandmarks.map((p) => ({ x: p.x, y: p.y }))
                   : null;
+                if (latestLandmarksRef.current) {
+                  lastGoodLandmarksRef.current = latestLandmarksRef.current;
+                }
 
                 if (modelLandmarks && modelLandmarks[11] && modelLandmarks[12]) {
                   const leftShoulder = modelLandmarks[11];
@@ -951,12 +1047,26 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
                     const leftJointY = neckCenter.y + (leftShoulder.y - neckCenter.y) * NECK_SHOULDER_JOINT_BLEND;
                     const rightJointX = neckCenter.x + (rightShoulder.x - neckCenter.x) * NECK_SHOULDER_JOINT_BLEND;
                     const rightJointY = neckCenter.y + (rightShoulder.y - neckCenter.y) * NECK_SHOULDER_JOINT_BLEND;
+                    const projectedJointY = (leftJointY + rightJointY) / 2;
+
+                    // When the person is farther from camera (standing), lock joint Y closer to shoulder line.
+                    const farPoseFactor = Math.max(
+                      0,
+                      Math.min(
+                        1,
+                        (SHOULDER_NEAR_WIDTH_NORM - rawShoulderWidth) /
+                          (SHOULDER_NEAR_WIDTH_NORM - SHOULDER_FAR_WIDTH_NORM)
+                      )
+                    );
+                    const shoulderYWeight = 0.55 + farPoseFactor * 0.35;
+                    const shoulderBiasedJointY =
+                      projectedJointY * (1 - shoulderYWeight) + rawShoulderY * shoulderYWeight;
 
                     const rawJointCenter = {
                       x: (leftJointX + rightJointX) / 2,
                       y: Math.min(
                         rawShoulderY,
-                        Math.max(neckCenter.y, (leftJointY + rightJointY) / 2)
+                        Math.max(neckCenter.y, shoulderBiasedJointY)
                       )
                     };
 
@@ -1000,6 +1110,7 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
                   modelNeckShoulderJointNormRef.current = null;
                   modelLeftEarNormRef.current = null;
                   modelRightEarNormRef.current = null;
+                  latestLandmarksRef.current = lastGoodLandmarksRef.current;
                 }
 
                 const segmentationMask =
@@ -1024,7 +1135,6 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
                 modelNeckShoulderJointNormRef.current = null;
                 modelLeftEarNormRef.current = null;
                 modelRightEarNormRef.current = null;
-                latestLandmarksRef.current = null;
                 latestSegmentationRef.current = null;
                 console.warn("Pose tracking frame failed", err);
               }
@@ -1074,7 +1184,12 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
             }
 
             if (showDebugOverlay) {
-              drawDebugOutlines(processingCtx, targetW, targetH, latestLandmarksRef.current);
+              drawDebugOutlines(
+                processingCtx,
+                targetW,
+                targetH,
+                latestLandmarksRef.current ?? lastGoodLandmarksRef.current
+              );
             }
 
             // Atomically present processed snapshot; previous frame stays visible until now.
@@ -1308,12 +1423,12 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
             <option value="necklace">Necklace</option>
             <option value="earrings">Earrings</option>
           </select>
-          <button onClick={() => adjustScale(0.03)} style={{ padding: "6px 8px", borderRadius: "6px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.45)", fontSize: "11px", fontWeight: 800 }}>+</button>
-          <button onClick={() => adjustScale(-0.03)} style={{ padding: "6px 8px", borderRadius: "6px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.45)", fontSize: "11px", fontWeight: 800 }}>-</button>
-          <button onClick={() => adjustOffsetY(-4)} style={{ padding: "6px 8px", borderRadius: "6px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.45)", fontSize: "11px", fontWeight: 800 }}>U</button>
-          <button onClick={() => adjustOffsetY(4)} style={{ padding: "6px 8px", borderRadius: "6px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.45)", fontSize: "11px", fontWeight: 800 }}>J</button>
-          <button onClick={() => adjustOffsetX(-4)} style={{ padding: "6px 8px", borderRadius: "6px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.45)", fontSize: "11px", fontWeight: 800 }}>H</button>
-          <button onClick={() => adjustOffsetX(4)} style={{ padding: "6px 8px", borderRadius: "6px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.45)", fontSize: "11px", fontWeight: 800 }}>K</button>
+          <button onClick={() => runManualAction("scaleUp", "button")} style={{ padding: "6px 8px", borderRadius: "6px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.45)", fontSize: "11px", fontWeight: 800 }}>+</button>
+          <button onClick={() => runManualAction("scaleDown", "button")} style={{ padding: "6px 8px", borderRadius: "6px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.45)", fontSize: "11px", fontWeight: 800 }}>-</button>
+          <button onClick={() => runManualAction("moveUp", "button")} style={{ padding: "6px 8px", borderRadius: "6px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.45)", fontSize: "11px", fontWeight: 800 }}>U</button>
+          <button onClick={() => runManualAction("moveDown", "button")} style={{ padding: "6px 8px", borderRadius: "6px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.45)", fontSize: "11px", fontWeight: 800 }}>J</button>
+          <button onClick={() => runManualAction("moveLeft", "button")} style={{ padding: "6px 8px", borderRadius: "6px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.45)", fontSize: "11px", fontWeight: 800 }}>H</button>
+          <button onClick={() => runManualAction("moveRight", "button")} style={{ padding: "6px 8px", borderRadius: "6px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.45)", fontSize: "11px", fontWeight: 800 }}>K</button>
           <button onClick={unlockDetection} style={{ padding: "6px 8px", borderRadius: "6px", background: "#0f766e", color: "#ccfbf1", border: "1px solid #14b8a6", fontSize: "11px", fontWeight: 800 }}>Unlock Detection</button>
           <label style={{ display: "flex", alignItems: "center", gap: "6px", color: "#e2e8f0", fontSize: "11px", fontWeight: 700 }}>
             <input
@@ -1321,7 +1436,7 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
               checked={showDebugOverlay}
               onChange={(e) => setShowDebugOverlay(e.target.checked)}
             />
-            Debug
+            Debug (face/neck/arms/torso)
           </label>
         </div>
 
@@ -1430,12 +1545,12 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
               gap: "8px"
             }}
           >
-            <button onClick={() => adjustScale(0.03)} style={{ padding: "10px", borderRadius: "8px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.5)", fontWeight: 800 }}>+ Bigger</button>
-            <button onClick={() => adjustScale(-0.03)} style={{ padding: "10px", borderRadius: "8px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.5)", fontWeight: 800 }}>- Smaller</button>
-            <button onClick={() => adjustOffsetY(-4)} style={{ padding: "10px", borderRadius: "8px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.5)", fontWeight: 800 }}>U Move Up</button>
-            <button onClick={() => adjustOffsetY(4)} style={{ padding: "10px", borderRadius: "8px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.5)", fontWeight: 800 }}>J Move Down</button>
-            <button onClick={() => adjustOffsetX(-4)} style={{ padding: "10px", borderRadius: "8px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.5)", fontWeight: 800 }}>H Move Left</button>
-            <button onClick={() => adjustOffsetX(4)} style={{ padding: "10px", borderRadius: "8px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.5)", fontWeight: 800 }}>K Move Right</button>
+            <button onClick={() => runManualAction("scaleUp", "button")} style={{ padding: "10px", borderRadius: "8px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.5)", fontWeight: 800 }}>+ Bigger</button>
+            <button onClick={() => runManualAction("scaleDown", "button")} style={{ padding: "10px", borderRadius: "8px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.5)", fontWeight: 800 }}>- Smaller</button>
+            <button onClick={() => runManualAction("moveUp", "button")} style={{ padding: "10px", borderRadius: "8px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.5)", fontWeight: 800 }}>U Move Up</button>
+            <button onClick={() => runManualAction("moveDown", "button")} style={{ padding: "10px", borderRadius: "8px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.5)", fontWeight: 800 }}>J Move Down</button>
+            <button onClick={() => runManualAction("moveLeft", "button")} style={{ padding: "10px", borderRadius: "8px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.5)", fontWeight: 800 }}>H Move Left</button>
+            <button onClick={() => runManualAction("moveRight", "button")} style={{ padding: "10px", borderRadius: "8px", background: "#1e293b", color: "#e2e8f0", border: "1px solid rgba(148, 163, 184, 0.5)", fontWeight: 800 }}>K Move Right</button>
             <button onClick={unlockDetection} style={{ padding: "10px", borderRadius: "8px", background: "#0f766e", color: "#ccfbf1", border: "1px solid #14b8a6", fontWeight: 800 }}>Unlock Detection</button>
             <button onClick={saveScreenshot} style={{ padding: "10px", borderRadius: "8px", background: "#0ea5e9", color: "#082f49", border: "1px solid #38bdf8", fontWeight: 800 }}>Save Screenshot (S)</button>
           </div>
