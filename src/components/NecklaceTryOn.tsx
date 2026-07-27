@@ -46,6 +46,7 @@ interface OriginalGarmentMetrics {
   necklaceAnchorYNorm: number;
   necklaceCenterXNorm: number;
   necklaceCenterYNorm: number;
+  backNeckNorm: { x: number; y: number };
 }
 
 function lerp(prev: number, next: number, smoothing: number) {
@@ -476,6 +477,35 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
         let tempNecklaceAnchorXNorm = tempShoulderCenterNorm;
         let tempNecklaceAnchorYNorm = Math.max(0, tempShoulderYNorm * 0.45);
 
+        let backNeckX = measureCanvas.width / 2;
+        let backNeckY = bestShoulderY;
+        let minBackNeckSpan = measureCanvas.width;
+
+        for (let y = topY >= 0 ? topY : 0; y <= bestShoulderY; y++) {
+          let rowLeft = -1;
+          let rowRight = -1;
+          for (let x = 0; x < measureCanvas.width; x++) {
+            const alpha = imageData.data[(y * measureCanvas.width + x) * 4 + 3];
+            if (alpha > GARMENT_ALPHA_THRESHOLD) {
+              if (rowLeft === -1) rowLeft = x;
+              rowRight = x;
+            }
+          }
+          if (rowLeft !== -1 && rowRight !== -1) {
+            const span = rowRight - rowLeft;
+            if (span > 0 && span < minBackNeckSpan && span < (bestRightX - bestLeftX) * 0.6) {
+              minBackNeckSpan = span;
+              backNeckX = (rowLeft + rowRight) / 2;
+              backNeckY = y;
+            }
+          }
+        }
+
+        const tempBackNeckNorm = {
+          x: Math.max(0, Math.min(1, backNeckX / Math.max(1, measureCanvas.width - 1))),
+          y: Math.max(0, Math.min(1, backNeckY / Math.max(1, measureCanvas.height - 1)))
+        };
+
         if (topY >= 0) {
           const topBandBottom = Math.min(measureCanvas.height - 1, topY + Math.max(2, Math.floor(measureCanvas.height * 0.2)));
           let totalCenter = 0;
@@ -518,6 +548,7 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
           necklaceAnchorYNorm: tempNecklaceAnchorYNorm,
           necklaceCenterXNorm: tempNecklaceCenterXNorm,
           necklaceCenterYNorm: tempNecklaceCenterYNorm,
+          backNeckNorm: tempBackNeckNorm,
         };
 
       } catch (measureError) {
@@ -663,7 +694,7 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
   }
 
   useEffect(() => {
-    const compositeGarmentIntoBody = (
+  const compositeGarmentIntoBody = (
       ctx: CanvasRenderingContext2D,
       frame: SegmentationFrame,
       garmentImage: HTMLImageElement,
@@ -704,12 +735,27 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
       const bodyW = Math.max(1, Math.ceil(((maxMaskX - minMaskX + 1) / frame.width) * targetWidth));
       const bodyH = Math.max(1, Math.ceil(((maxMaskY - minMaskY + 1) / frame.height) * targetHeight));
 
-      const modelShoulderCenterX = modelShoulderCenterNorm !== null
-        ? modelShoulderCenterNorm * targetWidth
+      let derivedShoulderYNorm = modelShoulderYNorm;
+      let derivedShoulderCenterXNorm = modelShoulderCenterNorm;
+
+      if (landmarks && landmarks.length > 12) {
+        const leftShoulder = landmarks[11];
+        const rightShoulder = landmarks[12];
+        if (leftShoulder && rightShoulder) {
+          derivedShoulderYNorm = (leftShoulder.y + rightShoulder.y) / 2;
+          derivedShoulderCenterXNorm = (leftShoulder.x + rightShoulder.x) / 2;
+        }
+      }
+
+      const modelShoulderCenterX = derivedShoulderCenterXNorm !== null
+        ? derivedShoulderCenterXNorm * targetWidth
         : (bodyX + bodyW / 2);
-      const modelShoulderY = modelShoulderYNorm !== null
-        ? modelShoulderYNorm * targetHeight
-        : bodyY;
+      
+      const baseShoulderY = derivedShoulderYNorm !== null
+        ? derivedShoulderYNorm * targetHeight
+        : bodyY + (bodyH * 0.3);
+
+      const modelShoulderY = baseShoulderY + (bodyH * 0.05);
 
       const naturalAspect = garmentImage.naturalHeight / Math.max(1, garmentImage.naturalWidth);
       const garmentDrawW = Math.max(1, Math.round(bodyW * manualScaleRef.current));
@@ -722,18 +768,21 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
       const faceBounds = faceBoundsNorm !== null
         ? {
           left: Math.max(0, Math.floor(faceBoundsNorm.left * targetWidth)),
-          top: Math.max(0, Math.floor(faceBoundsNorm.top * targetHeight)),
+          top: Math.max(0, Math.floor(faceBoundsNorm.top * targetWidth)),
           right: Math.min(targetWidth - 1, Math.ceil(faceBoundsNorm.right * targetWidth)),
           bottom: Math.min(targetHeight - 1, Math.ceil(faceBoundsNorm.bottom * targetHeight))
         }
         : null;
 
+      const shoulderCenterNorm = metrics && metrics.shoulderCenterNorm ? metrics.shoulderCenterNorm : 0.5;
+
       const unclampedDrawX = Math.round(
-        modelShoulderCenterX - (metrics.shoulderCenterNorm * garmentDrawW) + manualOffsetXRef.current
+        modelShoulderCenterX - (shoulderCenterNorm * garmentDrawW) + manualOffsetXRef.current
       );
       
+      const garmentTopShoulderOffsetNorm = metrics && metrics.shoulderYNorm ? metrics.shoulderYNorm : 0.15;
       const baseDrawY = Math.round(
-        modelShoulderY - (metrics.shoulderYNorm * garmentDrawH) + manualOffsetYRef.current
+        modelShoulderY - (garmentTopShoulderOffsetNorm * garmentDrawH) + manualOffsetYRef.current
       );
 
       const unclampedDrawY = faceClearanceY !== null
@@ -1015,32 +1064,6 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
           if (tCtx && tempC.width > 0 && tempC.height > 0) {
             tCtx.drawImage(garmentImg, 0, 0);
             const gData = tCtx.getImageData(0, 0, tempC.width, tempC.height).data;
-            const gWidth = tempC.width;
-            const gHeight = tempC.height;
-
-            const pinkOutlinePixels: Array<{ x: number; y: number }> = [];
-            for (let gy = 1; gy < gHeight - 1; gy++) {
-              for (let gx = 1; gx < gWidth - 1; gx++) {
-                const idx = (gy * gWidth + gx) * 4 + 3;
-                if (gData[idx] > GARMENT_ALPHA_THRESHOLD) {
-                  if (
-                    gData[((gy - 1) * gWidth + gx) * 4 + 3] <= GARMENT_ALPHA_THRESHOLD ||
-                    gData[((gy + 1) * gWidth + gx) * 4 + 3] <= GARMENT_ALPHA_THRESHOLD ||
-                    gData[(gy * gWidth + (gx - 1)) * 4 + 3] <= GARMENT_ALPHA_THRESHOLD ||
-                    gData[(gy * gWidth + (gx + 1)) * 4 + 3] <= GARMENT_ALPHA_THRESHOLD
-                  ) {
-                    const mappedX = garmentDrawX + (gx / gWidth) * garmentDrawW;
-                    const mappedY = garmentDrawY + (gy / gHeight) * garmentDrawH;
-                    pinkOutlinePixels.push({ x: mappedX, y: mappedY });
-                  }
-                }
-              }
-            }
-
-            for (const p of pinkOutlinePixels) {
-              ctx.fillStyle = '#FF69B4';
-              ctx.fillRect(p.x, p.y, 2, 2);
-            }
 
             const leftSh = metrics.leftShoulderNorm;
             const rightSh = metrics.rightShoulderNorm;
@@ -1049,36 +1072,22 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
             const mappedRightShX = garmentDrawX + rightSh.x * garmentDrawW;
             const mappedRightShY = garmentDrawY + rightSh.y * garmentDrawH;
 
-            ctx.strokeStyle = '#FF1493';
-            ctx.lineWidth = 2.5;
+            ctx.strokeStyle = '#FF0000';
+            ctx.lineWidth = 3;
             ctx.beginPath();
             ctx.moveTo(mappedLeftShX, mappedLeftShY);
             ctx.lineTo(mappedRightShX, mappedRightShY);
             ctx.stroke();
 
-            ctx.fillStyle = '#FF1493';
-            ctx.fillRect(mappedLeftShX - 2, mappedLeftShY - 2, 4, 4);
-            ctx.fillRect(mappedRightShX - 2, mappedRightShY - 2, 4, 4);
-
-            const leftArmTip = metrics.leftArmTipNorm;
-            const rightArmTip = metrics.rightArmTipNorm;
-            const mappedLeftArmTipX = garmentDrawX + leftArmTip.x * garmentDrawW;
-            const mappedLeftArmTipY = garmentDrawY + leftArmTip.y * garmentDrawH;
-            const mappedRightArmTipX = garmentDrawX + rightArmTip.x * garmentDrawW;
-            const mappedRightArmTipY = garmentDrawY + rightArmTip.y * garmentDrawH;
+            const backNeck = metrics.backNeckNorm;
+            const mappedBackNeckX = garmentDrawX + backNeck.x * garmentDrawW;
+            const mappedBackNeckY = garmentDrawY + backNeck.y * garmentDrawH;
+            const neckBoxW = garmentDrawW * 0.22;
+            const neckBoxH = garmentDrawH * 0.12;
 
             ctx.strokeStyle = '#00FFFF';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(mappedLeftShX, mappedLeftShY);
-            ctx.lineTo(mappedLeftArmTipX, mappedLeftArmTipY);
-            ctx.moveTo(mappedRightShX, mappedRightShY);
-            ctx.lineTo(mappedRightArmTipX, mappedRightArmTipY);
-            ctx.stroke();
-
-            ctx.fillStyle = '#00FFFF';
-            ctx.fillRect(mappedLeftArmTipX - 3, mappedLeftArmTipY - 3, 6, 6);
-            ctx.fillRect(mappedRightArmTipX - 3, mappedRightArmTipY - 3, 6, 6);
+            ctx.lineWidth = 2.5;
+            ctx.strokeRect(mappedBackNeckX - neckBoxW / 2, mappedBackNeckY - neckBoxH / 2, neckBoxW, neckBoxH);
           }
         }
       }
@@ -1682,7 +1691,7 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
               checked={showDebugOverlay}
               onChange={(e) => setShowDebugOverlay(e.target.checked)}
             />
-            Debug (Body & Arm Tips)
+            Debug (Shoulders & Back Neck)
           </label>
         </div>
 
@@ -1782,7 +1791,7 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
               checked={showDebugOverlay}
               onChange={(e) => setShowDebugOverlay(e.target.checked)}
             />
-            Show Green Body / Red Shoulder & Arm Tips Outline
+            Show Shoulders & Back Neck Outline
           </label>
           <div
             style={{
