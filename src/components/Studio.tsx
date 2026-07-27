@@ -14,6 +14,7 @@ import {
 import ImageTracer from "imagetracerjs";
 import { removeBackground, preload } from '@imgly/background-removal';
 import { SubmissionModal } from './SubmissionModal';
+import BodySilhouetteView from "./BodySilhouetteView";
 
 const AdBanner = () => {
   useEffect(() => {
@@ -5136,6 +5137,12 @@ const extractSelection = useCallback(async (asJpeg = false) => {
 >
   {showTryOn ? "✕ Close Try-On View" : "✨ Test Live on Webcam"}
 </button>
+
+  {/* <h1>SVG Design Studio - Silhouette Feed</h1>
+      <BodySilhouetteView /> */}
+
+    
+      
         </div>
         <AdBanner />
         <SubmissionModal
