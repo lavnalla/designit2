@@ -672,7 +672,8 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
       modelShoulderCenterNorm: number | null,
       modelShoulderYNorm: number | null,
       faceBottomNorm: number | null,
-      faceBoundsNorm: { left: number; top: number; right: number; bottom: number } | null
+      faceBoundsNorm: { left: number; top: number; right: number; bottom: number } | null,
+      landmarks: Array<{ x: number; y: number }> | null
     ) => {
       const metrics = originalGarmentMetricsRef.current;
       if (!metrics) return;
@@ -757,6 +758,10 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
       const cameraData = cameraFrame.data;
       const garmentData = garmentCtx.getImageData(0, 0, targetWidth, targetHeight).data;
 
+      const modelHipY = landmarks && landmarks[23] && landmarks[24] 
+        ? ((landmarks[23].y + landmarks[24].y) / 2) * targetHeight 
+        : bodyY + bodyH * 0.85;
+
       for (let y = 0; y < targetHeight; y++) {
         const maskY = Math.min(frame.height - 1, Math.floor((y / targetHeight) * frame.height));
         const maskRow = maskY * frame.width;
@@ -769,16 +774,20 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
           }
 
           const idx = (y * targetWidth + x) * 4;
-          const garmentAlpha = garmentData[idx + 3];
+          const maskVal = frame.data[maskRow + Math.min(frame.width - 1, Math.max(0, Math.floor((x / targetWidth) * frame.width)))];
+          const isBodyPixel = maskVal > BODY_MASK_THRESHOLD;
 
-          if (garmentAlpha === 0) {
+          if (!isBodyPixel) {
             continue;
           }
 
-          cameraData[idx] = garmentData[idx];
-          cameraData[idx + 1] = garmentData[idx + 1];
-          cameraData[idx + 2] = garmentData[idx + 2];
-          cameraData[idx + 3] = 255;
+          const garmentAlpha = garmentData[idx + 3];
+          if (garmentAlpha > GARMENT_ALPHA_THRESHOLD) {
+            cameraData[idx] = garmentData[idx];
+            cameraData[idx + 1] = garmentData[idx + 1];
+            cameraData[idx + 2] = garmentData[idx + 2];
+            cameraData[idx + 3] = 255;
+          }
         }
       }
 
@@ -1391,7 +1400,8 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
                     modelShoulderCenterNormRef.current,
                     modelShoulderYNormRef.current,
                     modelFaceBottomNormRef.current,
-                    modelFaceBoundsNormRef.current
+                    modelFaceBoundsNormRef.current,
+                    latestLandmarksRef.current
                   );
                 }
               } else if (accessoryType === "necklace") {
