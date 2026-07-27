@@ -757,10 +757,6 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
       const cameraData = cameraFrame.data;
       const garmentData = garmentCtx.getImageData(0, 0, targetWidth, targetHeight).data;
 
-      const shoulderLineY = modelShoulderYNormRef.current !== null 
-        ? Math.round(modelShoulderYNormRef.current * targetHeight) 
-        : null;
-
       for (let y = 0; y < targetHeight; y++) {
         const maskY = Math.min(frame.height - 1, Math.floor((y / targetHeight) * frame.height));
         const maskRow = maskY * frame.width;
@@ -769,12 +765,6 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
             continue;
           }
           if (faceBottomY !== null && y < faceBottomY) {
-            continue;
-          }
-
-          const maskX = Math.min(frame.width - 1, Math.floor((x / targetWidth) * frame.width));
-          
-          if (shoulderLineY !== null && y < shoulderLineY && frame.data[maskRow + maskX] > BODY_MASK_THRESHOLD) {
             continue;
           }
 
