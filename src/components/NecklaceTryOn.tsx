@@ -33,7 +33,6 @@ type SegmentationFrame = {
   height: number;
 };
 
-// Store original static metrics extracted directly from the source image asset
 interface OriginalGarmentMetrics {
   shoulderCenterNorm: number;
   shoulderYNorm: number;
@@ -65,7 +64,6 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
   const garmentLayerCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const processingCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Original garment reference metrics (unaffected by transient state or scaling changes)
   const originalGarmentMetricsRef = useRef<OriginalGarmentMetrics | null>(null);
 
   const modelShoulderCenterNormRef = useRef<number | null>(null);
@@ -260,7 +258,6 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
     return () => mq.removeEventListener("change", sync);
   }, []);
 
-  // Fresh Mount Initialization & State Reset: Clears out all previous cached variations
   useEffect(() => {
     garmentImageRef.current = null;
     originalGarmentMetricsRef.current = null;
@@ -508,7 +505,6 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
           }
         }
 
-        // Cache the parsed base metrics into the immutable original reference object
         originalGarmentMetricsRef.current = {
           shoulderCenterNorm: tempShoulderCenterNorm,
           shoulderYNorm: tempShoulderYNorm,
@@ -678,7 +674,6 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
       faceBottomNorm: number | null,
       faceBoundsNorm: { left: number; top: number; right: number; bottom: number } | null
     ) => {
-      // Use original metrics instead of modified/transient states for stable alignment
       const metrics = originalGarmentMetricsRef.current;
       if (!metrics) return;
 
@@ -762,7 +757,6 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
       const cameraData = cameraFrame.data;
       const garmentData = garmentCtx.getImageData(0, 0, targetWidth, targetHeight).data;
 
-      // Determine the pixel Y-coordinate threshold for the red shoulder line
       const shoulderLineY = modelShoulderYNormRef.current !== null 
         ? Math.round(modelShoulderYNormRef.current * targetHeight) 
         : null;
@@ -771,7 +765,6 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
         const maskY = Math.min(frame.height - 1, Math.floor((y / targetHeight) * frame.height));
         const maskRow = maskY * frame.width;
         for (let x = 0; x < targetWidth; x++) {
-          // Ensure anything above the shoulders / inside the face bounds is never overridden by the garment (kept behind neck/face)
           if (faceBounds && x >= faceBounds.left && x <= faceBounds.right && y >= faceBounds.top && y <= faceBounds.bottom) {
             continue;
           }
@@ -781,13 +774,7 @@ export default function BodyVisualizer({ selectedImageSrc }: BodyVisualizerProps
 
           const maskX = Math.min(frame.width - 1, Math.floor((x / targetWidth) * frame.width));
           
-          // If outside the body silhouette, skip applying garment (leave camera feed as-is)
-          if (frame.data[maskRow + maskX] <= BODY_MASK_THRESHOLD) {
-            continue;
-          }
-
-          // Also skip if inside the body silhouette but above the red shoulder line
-          if (shoulderLineY !== null && y < shoulderLineY) {
+          if (shoulderLineY !== null && y < shoulderLineY && frame.data[maskRow + maskX] > BODY_MASK_THRESHOLD) {
             continue;
           }
 
