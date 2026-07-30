@@ -6,17 +6,21 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import NecklaceTryOn from "./NecklaceTryOn";
-import { 
-  ChevronDown, Eraser, Trash, Plus, Image as ImageIcon, Ruler, Ghost, Video, Upload, ArrowLeft, 
-  Shirt, Grid, MousePointer, PaintBucket, PenTool, Edit3, Type, Shapes, Palette, Layers, Undo2, 
-  Redo2, Download, Play, Users 
-} from "lucide-react";
+
+import type { NextConfig } from 'next';
+
 import ImageTracer from "imagetracerjs";
 import { removeBackground, preload } from '@imgly/background-removal';
 import { SubmissionModal } from './SubmissionModal';
 import BodySilhouetteView from "./BodySilhouetteView";
 
-const AdBanner = () => {
+const nextConfig: NextConfig = {
+  devIndicators: {},
+};
+
+export default nextConfig;
+
+/* const AdBanner = () => {
   useEffect(() => {
     try {
       // @ts-ignore
@@ -40,7 +44,7 @@ const AdBanner = () => {
            data-full-width-responsive="true"></ins>
     </div>
   );
-};
+}; */
 
 interface Dot { id: string; x: number; y: number; }
 interface FabricLayer {
@@ -110,7 +114,8 @@ interface MannequinMeasurements {
 
 export function Studio({ onBack }: { onBack: () => void }) {
       const [refineError, setRefineError] = useState<string | null>(null);
-    // Refine image state
+    const [showSourceWindow, setShowSourceWindow] = useState(false);
+      // Refine image state
     const [refinePrompt, setRefinePrompt] = useState("");
     const [isRefiningImage, setIsRefiningImage] = useState(false);
     // ...existing state hooks...
@@ -765,7 +770,8 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
     { value: "wool", label: "Wool" }
   ];
 
-  const [showTryOn, setShowTryOn] = useState(false); 
+  const [showTryOn, setShowTryOn] = useState(false);
+  const [showSourcePanel, setShowSourcePanel] = useState(false); 
   const [renderedWorkspaceImg, setRenderedWorkspaceImg] = useState<string | null>(null);
 
   const [mounted, setMounted] = useState(false);
@@ -808,7 +814,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [sourceDots, setSourceDots] = useState<Dot[]>([]);
   const [activeTool, setActiveTool] = useState<"cursor" | "scissor" | "pen" | "ghost" | "fill" | "erase">("cursor");
-  const [workspaceBgColor, setWorkspaceBgColor] = useState<string>('amber');
+  const [workspaceBgColor, setWorkspaceBgColor] = useState<string>('white');
   const [activeColor, setActiveColor] = useState("#27EEF5");
   const [scissorDots, setScissorDots] = useState<{x: number, y: number}[]>([]);
   const scissorTargetRef = useRef<string | null>(null);
@@ -3111,7 +3117,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       gray: 'bg-gradient-to-br from-gray-100 to-gray-200 border-gray-300',
       blue: 'bg-gradient-to-br from-blue-100 to-cyan-100 border-blue-200'
     };
-    return bgMap[workspaceBgColor] || bgMap['amber'];
+    return bgMap[workspaceBgColor] || bgMap['white'];
   };
 
 
@@ -3652,8 +3658,8 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       {aiDraping.active && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-md">
            <div className="bg-white p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4">
-              <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
-              <p className="text-sm font-black uppercase text-purple-600 animate-pulse">{aiDraping.text}</p>
+              <div className="w-12 h-12 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin"></div>
+              <p className="text-sm font-black uppercase text-yellow-600 animate-pulse">{aiDraping.text}</p>
            </div>
         </div>
       )}
@@ -3678,7 +3684,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
             </div>
             <div className="mt-8 flex gap-3">
               <button onClick={() => setShowMannequinModal(false)} className="flex-1 bg-slate-100 text-slate-600 py-3 rounded-xl text-[10px] font-black uppercase hover:bg-slate-200 transition-colors">Cancel</button>
-              <button id="add-mannequin-btn" onClick={() => createMannequinWithMeasurements(measurements)} className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white py-3 rounded-xl text-[10px] font-black uppercase hover:shadow-lg transition-all">Add to Canvas</button>
+              <button id="add-mannequin-btn" onClick={() => createMannequinWithMeasurements(measurements)} className="flex-1 bg-gradient-to-r from-yellow-500 to-amber-600 text-white py-3 rounded-xl text-[10px] font-black uppercase hover:shadow-lg transition-all">Add to Canvas</button>
             </div>
           </div>
         </div>
@@ -3694,50 +3700,50 @@ const extractSelection = useCallback(async (asJpeg = false) => {
               <button onClick={() => setShowShapesModal(false)} className="text-slate-400 hover:text-slate-600 text-3xl leading-none">&times;</button>
             </div>
             <div className="grid grid-cols-3 gap-4 max-h-[60vh] overflow-y-auto pr-2">
-              <button onClick={() => addShapeToCanvas('square')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
-                <div className="w-12 h-12 bg-slate-200 group-hover:bg-indigo-400 transition-colors mb-2"></div>
-                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Square</span>
+              <button onClick={() => addShapeToCanvas('square')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-yellow-50 rounded-xl border-2 border-transparent hover:border-yellow-200 transition-all group">
+                <div className="w-12 h-12 bg-slate-200 group-hover:bg-yellow-400 transition-colors mb-2"></div>
+                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-yellow-600">Square</span>
               </button>
-              <button onClick={() => addShapeToCanvas('circle')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
-                <div className="w-12 h-12 bg-slate-200 group-hover:bg-indigo-400 transition-colors rounded-full mb-2"></div>
-                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Circle</span>
+              <button onClick={() => addShapeToCanvas('circle')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-yellow-50 rounded-xl border-2 border-transparent hover:border-yellow-200 transition-all group">
+                <div className="w-12 h-12 bg-slate-200 group-hover:bg-yellow-400 transition-colors rounded-full mb-2"></div>
+                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-yellow-600">Circle</span>
               </button>
-              <button onClick={() => addShapeToCanvas('oval')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
-                <div className="w-12 h-8 bg-slate-200 group-hover:bg-indigo-400 transition-colors rounded-[50%] mb-2 mt-2"></div>
-                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Oval</span>
+              <button onClick={() => addShapeToCanvas('oval')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-yellow-50 rounded-xl border-2 border-transparent hover:border-yellow-200 transition-all group">
+                <div className="w-12 h-8 bg-slate-200 group-hover:bg-yellow-400 transition-colors rounded-[50%] mb-2 mt-2"></div>
+                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-yellow-600">Oval</span>
               </button>
-              <button onClick={() => addShapeToCanvas('triangle')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
-                <div className="w-0 h-0 border-l-[24px] border-l-transparent border-r-[24px] border-r-transparent border-b-[41.6px] border-b-slate-200 group-hover:border-b-indigo-400 transition-colors mb-2"></div>
-                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Triangle</span>
+              <button onClick={() => addShapeToCanvas('triangle')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-yellow-50 rounded-xl border-2 border-transparent hover:border-yellow-200 transition-all group">
+                <div className="w-0 h-0 border-l-[24px] border-l-transparent border-r-[24px] border-r-transparent border-b-[41.6px] border-b-slate-200 group-hover:border-b-yellow-400 transition-colors mb-2"></div>
+                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-yellow-600">Triangle</span>
               </button>
-              <button onClick={() => addShapeToCanvas('star')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
-                <svg className="w-12 h-12 text-slate-200 group-hover:text-indigo-400 transition-colors mb-2" fill="currentColor" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
-                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Star</span>
+              <button onClick={() => addShapeToCanvas('star')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-yellow-50 rounded-xl border-2 border-transparent hover:border-yellow-200 transition-all group">
+                <svg className="w-12 h-12 text-slate-200 group-hover:text-yellow-400 transition-colors mb-2" fill="currentColor" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-yellow-600">Star</span>
               </button>
-              <button onClick={() => addShapeToCanvas('heart')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
-                <svg className="w-12 h-12 text-slate-200 group-hover:text-indigo-400 transition-colors mb-2" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
-                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Heart</span>
+              <button onClick={() => addShapeToCanvas('heart')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-yellow-50 rounded-xl border-2 border-transparent hover:border-yellow-200 transition-all group">
+                <svg className="w-12 h-12 text-slate-200 group-hover:text-yellow-400 transition-colors mb-2" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-yellow-600">Heart</span>
               </button>
-              <button onClick={() => addShapeToCanvas('line')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
-                <svg className="w-12 h-12 text-slate-200 group-hover:text-indigo-400 transition-colors mb-2" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M4 20L20 4"/></svg>
-                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Line</span>
+              <button onClick={() => addShapeToCanvas('line')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-yellow-50 rounded-xl border-2 border-transparent hover:border-yellow-200 transition-all group">
+                <svg className="w-12 h-12 text-slate-200 group-hover:text-yellow-400 transition-colors mb-2" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M4 20L20 4"/></svg>
+                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-yellow-600">Line</span>
               </button>
-              <button onClick={() => addShapeToCanvas('curve')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
-                <svg className="w-12 h-12 text-slate-200 group-hover:text-indigo-400 transition-colors mb-2" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M4 20 Q 12 4 20 20"/></svg>
-                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Curve</span>
+              <button onClick={() => addShapeToCanvas('curve')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-yellow-50 rounded-xl border-2 border-transparent hover:border-yellow-200 transition-all group">
+                <svg className="w-12 h-12 text-slate-200 group-hover:text-yellow-400 transition-colors mb-2" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M4 20 Q 12 4 20 20"/></svg>
+                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-yellow-600">Curve</span>
               </button>
               {customAssets.map((asset) => (
                 <button 
                   key={asset.name} 
                   onClick={() => addShapeToCanvas(`asset:${asset.name}`)} 
-                  className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group"
+                  className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-yellow-50 rounded-xl border-2 border-transparent hover:border-yellow-200 transition-all group"
                 >
                     <img 
                       src={asset.path} 
                       alt={asset.name}
                       className="w-10 h-10 object-contain mb-2 drop-shadow-md"
                     />
-                    <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600 truncate w-full text-center">
+                    <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-yellow-600 truncate w-full text-center">
                       {asset.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ")}
                     </span>
                 </button>
@@ -3749,154 +3755,160 @@ const extractSelection = useCallback(async (asJpeg = false) => {
           </div>
         </div>
       )}
-      <header className="h-16 flex items-center justify-between px-2 lg:px-8 bg-gradient-to-r from-yellow-600 via-yellow-500 to-yellow-600 border-b-4 border-[#B87333] shrink-0 z-[100] shadow-md">
-        <div className="flex items-center gap-2 sm:gap-4">
-          <button id="trace-btn" onClick={() => setIsSidebarOpen(true)} className="lg:hidden bg-gradient-to-r from-yellow-500 to-yellow-600 text-white px-3 py-2 rounded-xl text-[9px] font-black uppercase shadow-md hover:shadow-lg transition-all">Trace</button>
-          <div onClick={onBack} className="flex flex-col cursor-pointer active:scale-95 px-2">
-            <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-[0.2em] text-white drop-shadow-sm">DesignIt <span className="text-[#e0f2fe] drop-shadow-[0_0_2px_rgba(255,255,255,0.8)]">♦</span></span>
-            <span className="hidden xs:block text-[7px] font-medium uppercase text-yellow-100">Studio</span>
-          </div>
-          <div className="hidden md:flex items-center gap-4">
-            <Link href="/" className="text-white hover:text-yellow-100 font-medium text-[9px] uppercase transition-colors drop-shadow-sm">
-              Home
-            </Link>
-            <Link href="/about" className="text-white hover:text-yellow-100 font-medium text-[9px] uppercase transition-colors drop-shadow-sm">
-              About
-            </Link>
-            <Link href="/contact" className="text-white hover:text-yellow-100 font-medium text-[9px] uppercase transition-colors drop-shadow-sm">
-              Contact
-            </Link>
-          </div>
-        </div>
-        <div className="absolute left-1/2 -translate-x-1/2 hidden lg:flex items-center gap-2 px-4 py-2 bg-gradient-to-br from-slate-100 to-slate-200 rounded-full border-2 border-[#B87333] shadow-lg animate-pulse">
-          <span className="text-[10px] font-black text-slate-800">Click</span>
-          <button
-            id="tutorial-btn-header"
-            onClick={runTutorial}
-            disabled={tutorialDisabled}
-            className="w-5 h-5 bg-gradient-to-br from-rose-500 to-rose-600 text-white rounded-full flex items-center justify-center text-[10px] font-black ring-1 ring-white disabled:opacity-50 disabled:cursor-not-allowed"
-            aria-label="Run interactive tutorial"
-            title="Run interactive tutorial"
-          >
-            ?
-          </button>
-          <span className="text-[10px] font-black text-slate-800">for interactive tutorial</span>
-        </div>
-          <div className="flex items-center gap-1 sm:gap-2">
-          <button id="dress-form-btn" onClick={() => setShowMannequinModal(true)} className="px-2 sm:px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-full text-[8px] sm:text-[9px] font-black uppercase shadow-md hover:shadow-lg transition-all flex items-center gap-1">
-            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C10.9 2 10 2.9 10 4s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 18h-3v-6h-2v6H9v-6H7v6H4v-8c0-1.1.9-2 2-2h12c1.1 0 2 .9 2 2v8z"/></svg>
-            <span className="hidden sm:inline">Dress Form</span>
-          </button>
-          <button id="undo-btn" onClick={undo} className="px-2 sm:px-4 py-2 bg-pink-50 text-pink-600 rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-pink-100 hover:bg-pink-100">Undo</button>
-          <button id="reset-btn" onClick={() => { if(confirm("Reset?")) { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); } }} className="px-2 sm:px-4 py-2 bg-emerald-50 text-emerald-600 rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-emerald-100 hover:bg-emerald-100">Reset</button>
-          <button id="download-btn" onClick={() => handleDownload('png')} className="px-2 sm:px-4 py-2 bg-blue-50 text-blue-600 rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-blue-100 hover:bg-blue-100">Download</button>
-          <button id="dots-btn" onClick={() => setGlobalShowDots(!globalShowDots)} className={`px-2 sm:px-4 py-2 rounded-full text-[8px] sm:text-[9px] font-black uppercase border transition-all ${globalShowDots ? 'bg-yellow-50 text-yellow-700' : 'bg-white text-slate-400'}`}>Dots</button>
-          <button id="lock-btn" onClick={() => setIsLocked(!isLocked)} className={`px-2 sm:px-4 py-2 rounded-full text-[8px] sm:text-[9px] font-black uppercase border transition-all ${isLocked ? 'bg-sky-500 text-white' : 'bg-white text-sky-500'}`}>Lock</button>
-        </div>
-      </header>
-      <div className="flex-1 flex overflow-hidden relative">
-        <aside className={`fixed lg:static inset-0 lg:w-[320px] bg-slate-50 lg:border-r-2 border-slate-200 flex flex-col z-[200] lg:z-0 transition-transform shadow-lg ${isSidebarOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}`}>
-          <div className="p-6 shrink-0 bg-white border-b-2 border-slate-200">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xs font-black uppercase text-slate-800">Source <span className="text-yellow-500">✨</span></h3>
-              <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-500 hover:text-slate-800 text-xs font-bold transition-colors">CLOSE ✕</button>
-            </div>
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              <button 
-                onClick={() => {
-                  saveForUndo();
-                  const pts: {id: string, x: number, y: number}[] = [];
-                  const fs = imgDims.width ? 300 / imgDims.width : 1; 
-                  setWorkspaceShapes(prev => [...prev, { id: `s-${Date.now()}`, img: selectedImage!, dots: [
-                    { id: `p1`, x: 0, y: 0 },
-                    { id: `p2`, x: imgDims.width, y: 0 },
-                    { id: `p3`, x: imgDims.width, y: imgDims.height },
-                    { id: `p4`, x: 0, y: imgDims.height }
-                  ], dims: { ...imgDims }, position: { x: 100, y: 100 }, scale: fs, showDots: true, erasedPaths: [], clipUpdate: Date.now(), opacity: 1 }]); 
-                  setSourceDots([]); 
-                  setIsSidebarOpen(false);
-                }}
-                className="col-span-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white py-2 rounded-md text-[9px] font-bold uppercase shadow-sm hover:shadow-md transition-all"
-              >
-                Add Original Image As-Is
-              </button>
-              <button onClick={() => fileInputRef.current?.click()} className="bg-gradient-to-br from-slate-500 to-slate-600 text-white py-1.5 px-2 rounded-md text-[8px] font-bold uppercase shadow-sm hover:shadow-md transition-all">Upload<input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="image/*" className="hidden" /></button>
-              <button id="add-btn" onClick={() => { 
-                // Sample the dots first
-                const ns = "http://www.w3.org/2000/svg"; 
-                let pts: Dot[] = []; 
-                candidates.filter(c => c.selected).forEach(c => { 
-                  const path = document.createElementNS(ns, "path"); 
-                  path.setAttribute("d", c.d); 
-                  document.body.appendChild(path); 
-                  const len = path.getTotalLength(); 
-                  for (let i = 0; i <= len; i += Math.max(3, Math.round(len / 40))) { 
-                    const p = path.getPointAtLength(i); 
-                    pts.push({ id: `p-${Math.random()}`, x: p.x, y: p.y }); 
-                  } 
-                  document.body.removeChild(path); 
-                }); 
-                // Then add to workspace
-                if (pts.length > 0) {
-                  saveForUndo(); 
-                  const fs = imgDims.width ? 150 / imgDims.width : 1; 
-                  setWorkspaceShapes(prev => [...prev, { id: `s-${Date.now()}`, img: selectedImage!, dots: [...pts], dims: { ...imgDims }, position: { x: 100, y: 100 }, scale: fs, showDots: true, erasedPaths: [], opacity: 1 }]); 
-                  setSourceDots([]); 
-                  setIsSidebarOpen(false);
-                }
-              }} disabled={candidates.filter(c => c.selected).length === 0} className="bg-gradient-to-br from-slate-800 to-slate-900 text-yellow-300 py-1.5 px-2 rounded-md text-[8px] font-bold uppercase shadow-sm hover:shadow-md transition-all disabled:opacity-30">Add to Canvas</button>
-            </div>
-            {selectedImage && (
-              <div className="mb-3">
-                <button 
-                  onClick={handleRemoveBackground} 
-                  disabled={isRemovingBg}
-                  className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white py-2 rounded-md text-[8px] font-black uppercase shadow-md hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {isRemovingBg ? (
-                    <>
-                      <span className="animate-spin">⏳</span> AI Cleaning...
-                    </>
-                  ) : (
-                    <>✨ AI Remove BG</>
-                  )}
-                </button>
-              </div>
-            )}
+      <header className="h-16 flex items-center justify-between px-2 lg:px-8 bg-white border-b border-yellow-200 shrink-0 z-[100] shadow-sm flex-wrap">
+  <div className="flex items-center gap-2 sm:gap-4">
+    <button 
+      id="trace-btn" 
+      onClick={() => setIsSidebarOpen(true)} 
+      className="lg:hidden bg-[#FFD700] text-black px-3 py-2 rounded-xl text-[9px] font-black uppercase shadow-md hover:shadow-lg transition-all border border-yellow-500"
+    >
+      Trace
+    </button>
+    <div onClick={onBack} className="flex flex-col cursor-pointer active:scale-95 px-2">
+      <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-[0.2em] text-yellow-600 drop-shadow-sm">
+        DesignIt <span className="text-yellow-400">♦</span>
+      </span>
+      <span className="hidden xs:block text-[7px] font-medium uppercase text-yellow-500">Studio</span>
+    </div>
+    <div className="hidden md:flex items-center gap-4">
+      <Link href="/" className="text-black font-bold hover:text-amber-700 text-[9px] uppercase transition-colors">
+        Home
+      </Link>
+      <Link href="/about" className="text-black font-bold hover:text-amber-700 text-[9px] uppercase transition-colors">
+        About
+      </Link>
+      <Link href="/contact" className="text-black font-bold hover:text-amber-700 text-[9px] uppercase transition-colors">
+        Contact
+      </Link>
+    </div>
+  </div>
 
-          </div>
-          <div className="flex-1 p-4 overflow-hidden flex flex-col gap-4">
-            <div className="flex-1 bg-slate-100 rounded-3xl overflow-hidden flex items-center justify-center relative border-2 border-slate-200 shadow-inner">
-              <svg 
-                id="trace-svg-container" 
-                viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} 
-                className="w-full h-full p-4"
-              >
-                {selectedImage && <image href={selectedImage} width={imgDims.width} height={imgDims.height} />}
-                {candidates.map((c, idx) => (<path key={c.id} id={idx === 0 ? "path-0-0" : c.id} d={c.d} fill={c.selected ? "rgba(251, 146, 60, 0.5)" : "transparent"} stroke={c.selected ? "#f97316" : "#cbd5e1"} strokeWidth={4} className="cursor-pointer" onClick={() => setCandidates(prev => prev.map(x => x.id === c.id ? {...x, selected: !x.selected} : x))} />))}
-                {sourceDots.map((dot) => (<circle key={dot.id} cx={dot.x} cy={dot.y} r={8} fill="#f97316" stroke="#ffffff" strokeWidth={3} opacity={0.9} />))}
-              </svg>
-            </div>
-            
-            {/* Templates moved under source */}
-            <div className="shrink-0">
-              <h4 className="text-[10px] font-black uppercase text-slate-500 mb-2">Templates</h4>
-              <div className="flex items-center gap-2 overflow-x-auto pb-2">
-                {templates.map((u, i) => (
-                  <img
-                    key={i}
-                    id={`template-${i}`}
-                    src={u}
-                    onClick={() => setSelectedImage(u)}
-                    className={`h-12 w-12 shrink-0 rounded-xl object-contain cursor-pointer border-2 transition-all ${selectedImage === u ? 'border-yellow-500 scale-105 bg-white' : 'border-transparent opacity-70 hover:opacity-100 bg-white/50'}`}
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
-        </aside>
+  <div>
+    <button
+      id="tutorial-btn-header"
+      type="button"
+      onClick={runTutorial}
+      disabled={tutorialDisabled}
+      aria-label="Run interactive tutorial"
+      title="Run interactive tutorial"
+      className="flex items-center justify-center w-8 h-8 rounded-full bg-[#FFD700] hover:bg-yellow-400 active:bg-yellow-500 text-black font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-yellow-600"
+    >
+      ?
+    </button>
+  </div>
+
+  <div className="shrink-0 p-4 pb-2 flex gap-2 items-center bg-[#FFD700] border border-yellow-500 shadow-sm z-10 sticky top-0 flex-wrap rounded-xl mx-2 mt-2">
+    <span className="text-[9px] font-black uppercase text-black">Canvas BG:</span>
+    <select
+      value={workspaceBgColor}
+      onChange={(e) => setWorkspaceBgColor(e.target.value)}
+      className="px-2 py-1 rounded text-[9px] font-bold bg-[#FFD700] border border-black text-black focus:outline-none focus:ring-2 focus:ring-black transition-all cursor-pointer"
+      style={{ color: '#000000', fontWeight: 'bold', backgroundColor: '#FFD700' }}
+    >
+      <option value="white" className="font-bold text-black bg-[#FFD700]">White</option>
+      <option value="amber" className="font-bold text-black bg-[#FFD700]">Amber</option>
+      <option value="slate" className="font-bold text-black bg-[#FFD700]">Slate</option>
+      <option value="gray" className="font-bold text-black bg-[#FFD700]">Gray</option>
+      <option value="blue" className="font-bold text-black bg-[#FFD700]">Blue</option>
+    </select>
+  </div>
+
+  <div className="flex items-center gap-1 sm:gap-2">
+    <button
+      onClick={async () => {
+        if (!showTryOn) {
+          let readyAsset: string | null = null;
+          for (let attempt = 0; attempt < 3 && !readyAsset; attempt++) {
+            readyAsset = await syncWorkspaceToTryOn();
+            if (!readyAsset) {
+              await new Promise<void>((r) => requestAnimationFrame(() => r()));
+            }
+          }
+          if (!readyAsset && selectedShape?.img && (!selectedImage || selectedShape.img !== selectedImage)) {
+            readyAsset = selectedShape.img;
+          }
+          if (!readyAsset) {
+            alert("No modified image available for try-on. Edit/select an image first.");
+            return;
+          }
+          setRenderedWorkspaceImg(readyAsset);
+          setShowTryOn(true);
+        } else {
+          setShowTryOn(false);
+          setRenderedWorkspaceImg(null);
+        }
+      }}
+      className={`px-5 py-2.5 rounded-xl font-bold text-black shadow-md transition-all active:scale-95 flex items-center gap-2 border border-black/20 ${
+        showTryOn 
+          ? 'bg-rose-400 hover:bg-rose-500' 
+          : 'bg-[#FFD700] hover:bg-yellow-400'
+      }`}
+    >
+      {showTryOn ? "✕ Close Try-On View" : "✨ Test Live on Webcam"}
+    </button>
+
+    <button 
+      id="dress-form-btn" 
+      onClick={() => setShowMannequinModal(true)} 
+      className="px-2 sm:px-4 py-2 bg-[#FFD700] text-black rounded-full text-[8px] sm:text-[9px] font-black uppercase shadow-md hover:shadow-lg transition-all flex items-center gap-1 border border-yellow-600"
+    >
+      <svg className="w-3 h-3 text-black" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M12 2C10.9 2 10 2.9 10 4s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 18h-3v-6h-2v6H9v-6H7v6H4v-8c0-1.1.9-2 2-2h12c1.1 0 2 .9 2 2v8z"/>
+      </svg>
+      <span className="hidden sm:inline">Dress Form</span>
+    </button>
+
+    <button 
+      id="undo-btn" 
+      onClick={undo} 
+      className="px-2 sm:px-4 py-2 bg-[#FFD700] text-black rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-yellow-600 hover:bg-yellow-400 font-bold"
+    >
+      Undo
+    </button>
+
+    <button 
+      id="reset-btn" 
+      onClick={() => { if(confirm("Reset?")) { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); } }} 
+      className="px-2 sm:px-4 py-2 bg-[#FFD700] text-black rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-yellow-600 hover:bg-yellow-400 font-bold"
+    >
+      Reset
+    </button>
+
+    <button 
+      id="download-btn" 
+      onClick={() => handleDownload('png')} 
+      className="px-2 sm:px-4 py-2 bg-[#FFD700] text-black rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-yellow-600 hover:bg-yellow-400 font-bold"
+    >
+      Download
+    </button>
+
+    <button 
+      id="dots-btn" 
+      onClick={() => setGlobalShowDots(!globalShowDots)} 
+      className={`px-2 sm:px-4 py-2 rounded-full text-[8px] sm:text-[9px] font-black uppercase border transition-all font-bold ${
+        globalShowDots 
+          ? 'bg-black text-[#FFD700] border-black' 
+          : 'bg-[#FFD700] text-black border-yellow-600 hover:bg-yellow-400'
+      }`}
+    >
+      Dots
+    </button>
+
+    <button 
+      id="lock-btn" 
+      onClick={() => setIsLocked(!isLocked)} 
+      className={`px-2 sm:px-4 py-2 rounded-full text-[8px] sm:text-[9px] font-black uppercase border transition-all font-bold ${
+        isLocked 
+          ? 'bg-black text-[#FFD700] border-black' 
+          : 'bg-[#FFD700] text-black border-yellow-600 hover:bg-yellow-400'
+      }`}
+    >
+      Lock
+    </button>
+  </div>
+</header>
+      <div className="flex-1 flex overflow-hidden relative">
         <main className="flex-1 bg-[#F9F9FB] relative overflow-visible">
-          {/* Top toolbar removed - Download moved into header controls */}
           {ghostCursor.active && (
             <div className="fixed pointer-events-none z-[1000] transition-all duration-700 ease-in-out flex flex-col items-center" style={{ left: ghostCursor.x, top: ghostCursor.y, transform: 'translate(-50%, -50%)' }}>
               <div className={`w-8 h-8 rounded-full border-4 border-yellow-400 bg-yellow-400/30 transition-transform ${ghostCursor.clicking ? 'scale-75' : 'scale-100'}`} />
@@ -3966,7 +3978,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                     Send to Back
                   </button>
                   {contextMenu.type === "shape" && !workspaceShapes.find(s => s.id === contextMenu.id)?.isMannequin && (
-                    <button id="drape-menu-btn" onClick={() => openDrapeModal(contextMenu.id)} className="w-full text-left px-4 py-2 hover:bg-purple-50 text-[9px] font-black uppercase border-b border-slate-100 text-purple-600">
+                    <button id="drape-menu-btn" onClick={() => openDrapeModal(contextMenu.id)} className="w-full text-left px-4 py-2 hover:bg-yellow-50 text-[9px] font-black uppercase border-b border-slate-100 text-yellow-600">
                       🎀 Drape to Mannequin
                     </button>
                   )}
@@ -4020,164 +4032,264 @@ const extractSelection = useCallback(async (asJpeg = false) => {
               )}
             </div>
           )}
-          <div className="absolute left-2 top-1/2 -translate-y-1/2 flex flex-col gap-2 p-2 bg-white/80 rounded-[2rem] shadow-xl z-50">
-            {(["cursor", "scissor", "pen", "ghost", "shapes", "fill", "erase"] as const).map((t) => (<button key={t} id={t === "shapes" ? "shapes-btn" : `${t}-tool`} onClick={() => t === "shapes" ? setShowShapesModal(true) : setActiveTool(t as any)} className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all ${activeTool === t ? 'bg-yellow-400 text-black' : 'text-slate-400 hover:bg-slate-100'}`}><span className="text-[10px] font-black uppercase">{t === "ghost" ? "👻" : t === "scissor" ? "✂️" : t.charAt(0)}</span></button>))}
-            <div className="relative mt-2">
-              <button id="color-swatch" onClick={() => setShowColorPanel(v => !v)} title="Choose color and transparency" style={{ backgroundColor: activeColor }} className="w-8 h-8 rounded-lg border border-slate-200 shadow-sm" />
-              {showColorPanel && (
-                <div className="fixed left-14 top-1/2 -translate-y-1/2 p-3 bg-white rounded shadow-xl z-50 w-[calc(100vw-4.5rem)] max-w-[16rem] sm:w-56 max-h-[75vh] sm:max-h-[85vh] overflow-y-auto">
-                  <div className="flex flex-col gap-3">
-                    {/* Top: Color Selection & Picking */}
-                    <div>
-                      <label className="text-[10px] font-black uppercase text-slate-600 mb-1 block">Color Picker</label>
-                      <input id="color-picker" type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-full h-10 p-0 cursor-pointer" />
-                    </div>
+          <div className="absolute font-bold text-black left-2 top-1/2 -translate-y-1/2 flex flex-col gap-2 p-2 bg-white/80 rounded-[2rem] shadow-xl z-50">
+  {(["source", "cursor", "scissor", "pen", "ghost", "shapes", "fill", "erase"] as const).map((t) => (
+    <button 
+      key={t} 
+      id={t === "shapes" ? "shapes-btn" : `${t}-tool`} 
+      onClick={() => {
+        if (t === "source") {
+          setShowSourceWindow(prev => !prev);
+        } else if (t === "shapes") {
+          setShowShapesModal(true);
+        } else {
+          setActiveTool(t as any);
+        }
+      }} 
+      className={`group relative h-10 flex items-center justify-center px-3 rounded-xl transition-all ${
+        t === "source" 
+          ? (showSourceWindow ? 'bg-[#FFD700] text-black border border-yellow-600' : 'bg-[#FFD700] text-black border border-yellow-500 hover:bg-yellow-400')
+          : activeTool === t ? 'bg-[#FFD700] text-black border border-yellow-600' : 'bg-[#FFD700] text-black border border-yellow-500 hover:bg-yellow-400'
+      }`}
+    >
+      <span className="text-xs font-black uppercase text-black">
+        {t === "ghost" ? "👻" : t === "scissor" ? "✂️" : t.charAt(0).toUpperCase()}
+      </span>
+      <span className="absolute left-full ml-2 px-2 py-1 bg-[#FFD700] border border-yellow-600 text-black text-xs font-black uppercase rounded shadow-md whitespace-nowrap hidden group-hover:inline-block z-50 pointer-events-none">
+        {t}
+      </span>
+    </button>
+  ))}
+  <div className="relative mt-2">
+    <button id="color-swatch" onClick={() => setShowColorPanel(v => !v)} title="Choose color and transparency" style={{ backgroundColor: activeColor }} className="w-8 h-8 rounded-lg border border-slate-200 shadow-sm" />
+    {showColorPanel && (
+      <div className="fixed left-14 top-1/2 -translate-y-1/2 p-3 bg-white rounded shadow-xl z-50 w-[calc(100vw-4.5rem)] max-w-[16rem] sm:w-56 max-h-[75vh] sm:max-h-[85vh] overflow-y-auto">
+        <div className="flex flex-col gap-3">
+          <div>
+            <label className="text-[10px] font-black uppercase text-slate-600 mb-1 block">Color Picker</label>
+            <input id="color-picker" type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-full h-10 p-0 cursor-pointer" />
+          </div>
 
-                    <div>
-                      <label className="text-[10px] font-black uppercase text-slate-600 block mb-1">Metallic</label>
-                      <div className="flex gap-2 flex-wrap">
-                        <button onClick={() => setActiveColor("#FFC125")} className="w-6 h-6 rounded-full border border-yellow-300 ring-1 ring-yellow-500/50 shadow-sm hover:scale-125 transition-all duration-300" style={{background: "conic-gradient(from 45deg, #FFDF00, #FFC125, #DAA520, #FFD700, #FFDF00)"}} title="22K Gold" />
-                        <button onClick={() => setActiveColor("#E5E4E2")} className="w-6 h-6 rounded-full border border-slate-200 ring-1 ring-slate-400/50 shadow-sm hover:scale-125 transition-all duration-300" style={{background: "conic-gradient(from 225deg, #E5E4E2, #FFFFFF, #E5E4E2, #C0C0C0, #E5E4E2)"}} title="Platinum" />
-                        <button onClick={() => setActiveColor("#C0C0C0")} className="w-6 h-6 rounded-full border border-slate-300 shadow-sm hover:scale-125 transition-all duration-300" style={{background: "linear-gradient(135deg, #E0E0E0, #C0C0C0)"}} title="Silver" />
-                        <button onClick={() => setActiveColor("#B87333")} className="w-6 h-6 rounded-full border border-orange-200 ring-1 ring-orange-400/50 shadow-sm hover:scale-125 transition-all duration-300" style={{background: "conic-gradient(from 90deg, #D2691E, #B87333, #CD7F32, #B87333)"}} title="Copper" />
-                        <button onClick={() => setActiveColor("#B76E79")} className="w-6 h-6 rounded-full border border-rose-200 ring-1 ring-rose-400/50 shadow-sm hover:scale-125 transition-all duration-300" style={{background: "conic-gradient(from 135deg, #FFC0CB, #B76E79, #E6C4C8, #B76E79)"}} title="Rose Gold" />
-                      </div>
-                    </div>
-
-                    {/* Gem Colors removed as requested */}
-
-                    <div className="relative">
-                      <label className="text-[10px] font-black uppercase text-slate-700">Cloth Type</label>
-                      <div 
-                        className="w-full mt-1 p-2 border rounded text-sm cursor-pointer flex items-center justify-between bg-white"
-                        onClick={() => {
-                          if (!showFabricDropdown) {
-                            setIsFabricLoading(true);
-                            setTimeout(() => {
-                              setShowFabricDropdown(true);
-                              setIsFabricLoading(false);
-                            }, 50);
-                          } else {
-                            setShowFabricDropdown(false);
-                          }
-                        }}
-                      >
-                        <div className="flex items-center gap-2">
-                          {selectedClothType !== 'solid' && getFabricImagePath(selectedClothType) ? (
-                            <img src={getFabricImagePath(selectedClothType)!} alt={selectedClothType} className="w-6 h-6 rounded object-cover" />
-                          ) : selectedClothType !== 'solid' ? (
-                            <div className="w-6 h-6 rounded" style={{ backgroundImage: `url(${generateTextureDataUrl(activeColor, normalizeFabric(selectedClothType), 64)})` }} />
-                          ) : (
-                            <div className="w-6 h-6 rounded" style={{ backgroundColor: activeColor }} />
-                          )}
-                          <span>{fabricOptions.find(o => o.value === selectedClothType)?.label || 'Solid'}</span>
-                        </div>
-                        {isFabricLoading ? (
-                          <span className="text-xs animate-spin">⏳</span>
-                        ) : (
-                          <span className="text-xs">▼</span>
-                        )}
-                      </div>
-                      
-                      {showFabricDropdown && (
-                        <div className="relative z-50 w-full mt-1 bg-white border rounded shadow-inner max-h-48 overflow-y-auto">
-                          {fabricOptions.map(option => (
-                            <div 
-                              key={option.value}
-                              className={`p-2 flex items-center gap-2 cursor-pointer hover:bg-slate-100 ${selectedClothType === option.value ? 'bg-slate-50' : ''}`}
-                              onClick={() => {
-                                setSelectedClothType(option.value);
-                                setShowFabricDropdown(false);
-                              }}
-                            >
-                              {option.value !== 'solid' && getFabricImagePath(option.value) ? (
-                                <img src={getFabricImagePath(option.value)!} alt={option.label} className="w-6 h-6 rounded object-cover" />
-                              ) : option.value !== 'solid' ? (
-                                <div className="w-6 h-6 rounded" style={{ backgroundImage: `url(${generateTextureDataUrl(activeColor, normalizeFabric(option.value), 64)})` }} />
-                              ) : (
-                                <div className="w-6 h-6 rounded" style={{ backgroundColor: activeColor }} />
-                              )}
-                              <span className="text-sm">{option.label}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      <div className="text-[10px] text-slate-400 mt-1">Choose a fabric look to preview when filling shapes.</div>
-                    </div>
-
-                    <hr className="border-slate-100" />
-                    
-                    {/* Bottom: Settings & Tools */}
-                    <div className="flex items-center gap-2">
-                      <label className="text-[10px] font-black uppercase text-slate-600">Pen Size</label>
-                      <input id="pen-size" type="range" min={1} max={50} value={activePenSize} onChange={e => setActivePenSize(parseInt(e.target.value, 10))} className="flex-1" />
-                      <span className="text-[10px] font-bold">{activePenSize}px</span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <label className="text-[10px] font-black uppercase text-slate-600">Fill Opacity</label>
-                      <input id="fill-opacity" type="range" min={0} max={100} value={Math.round(activeFillOpacity * 100)} onChange={e => setActiveFillOpacity(parseInt(e.target.value, 10) / 100)} className="flex-1" />
-                      <span className="text-[10px] font-bold">{Math.round(activeFillOpacity * 100)}%</span>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex flex-col">
-                        <span className="text-[10px] font-black uppercase text-slate-700">Keep original color</span>
-                        <span className="text-[10px] text-slate-400 leading-tight">Preserve underlying image colors</span>
-                      </div>
-                      <label className={`relative inline-flex items-center cursor-pointer select-none`}>
-                        <input id="keep-original-color" type="checkbox" checked={keepOriginalColor} onChange={e => setKeepOriginalColor(e.target.checked)} className="sr-only" />
-                        <div className={`${keepOriginalColor ? 'bg-gradient-to-r from-amber-500 to-orange-500' : 'bg-slate-200'} w-12 h-6 rounded-full p-1 transition-colors`}>
-                          <div className={`${keepOriginalColor ? 'translate-x-6' : 'translate-x-0'} w-4 h-4 bg-white rounded-full shadow transform transition-transform`} />
-                        </div>
-                      </label>
-                    </div>
-
-                    <div>
-                      <div className="flex justify-between items-center">
-                        <label className="text-[10px] font-black uppercase text-slate-700">Magic Erase Color</label>
-                        <span className="text-[10px] font-bold bg-slate-100 px-1.5 py-0.5 rounded">{pickThreshold}%</span>
-                      </div>
-                      <input id="pick-threshold" type="range" min={0} max={100} value={pickThreshold} onChange={e => setPickThreshold(parseInt(e.target.value, 10))} className="w-full mt-1.5" />
-                      <div className="mt-2 grid grid-cols-2 gap-2">
-                        <button onClick={() => { setPickColorMode(true); setShowColorPanel(false); }} className="px-3 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl text-[10px] font-black uppercase shadow-md hover:shadow-lg">Pick & Remove</button>
-                        <button onClick={() => { setPickColorMode(false); }} className="px-3 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-[10px] font-black uppercase">Cancel</button>
-                      </div>
-                      {pickColorMode && <div className="text-[11px] mt-2 text-slate-500 leading-tight">Click image on canvas to erase matching color.</div>}
-                    </div>
-                  </div>
-                </div>
-              )}
+          <div>
+            <label className="text-[10px] font-black uppercase text-slate-600 block mb-1">Metallic</label>
+            <div className="flex gap-2 flex-wrap">
+              <button onClick={() => setActiveColor("#FFC125")} className="w-6 h-6 rounded-full border border-yellow-300 ring-1 ring-yellow-500/50 shadow-sm hover:scale-125 transition-all duration-300" style={{background: "conic-gradient(from 45deg, #FFDF00, #FFC125, #DAA520, #FFD700, #FFDF00)"}} title="22K Gold" />
+              <button onClick={() => setActiveColor("#E5E4E2")} className="w-6 h-6 rounded-full border border-slate-200 ring-1 ring-slate-400/50 shadow-sm hover:scale-125 transition-all duration-300" style={{background: "conic-gradient(from 225deg, #E5E4E2, #FFFFFF, #E5E4E2, #C0C0C0, #E5E4E2)"}} title="Platinum" />
+              <button onClick={() => setActiveColor("#C0C0C0")} className="w-6 h-6 rounded-full border border-slate-300 shadow-sm hover:scale-125 transition-all duration-300" style={{background: "linear-gradient(135deg, #E0E0E0, #C0C0C0)"}} title="Silver" />
+              <button onClick={() => setActiveColor("#B87333")} className="w-6 h-6 rounded-full border border-orange-200 ring-1 ring-orange-400/50 shadow-sm hover:scale-125 transition-all duration-300" style={{background: "conic-gradient(from 90deg, #D2691E, #B87333, #CD7F32, #B87333)"}} title="Copper" />
+              <button onClick={() => setActiveColor("#B76E79")} className="w-6 h-6 rounded-full border border-rose-200 ring-1 ring-rose-400/50 shadow-sm hover:scale-125 transition-all duration-300" style={{background: "conic-gradient(from 135deg, #FFC0CB, #B76E79, #E6C4C8, #B76E79)"}} title="Rose Gold" />
             </div>
           </div>
-          {/* Workspace background color selector */}
 
-          <div className="shrink-0 p-4 pb-2 flex gap-2 items-center bg-white border-b border-slate-200 shadow-sm z-10 sticky top-0 flex-wrap">
-            <span className="text-[9px] font-black uppercase text-slate-600">Canvas BG:</span>
-            <button onClick={() => setWorkspaceBgColor('white')} className={`px-2 py-1 rounded text-[8px] font-bold transition-all ${workspaceBgColor === 'white' ? 'ring-2 ring-blue-500 bg-white text-slate-900' : 'bg-white border border-slate-300 text-slate-600 hover:border-slate-400'}`}>White</button>
-            <button onClick={() => setWorkspaceBgColor('amber')} className={`px-2 py-1 rounded text-[8px] font-bold transition-all ${workspaceBgColor === 'amber' ? 'ring-2 ring-blue-500 bg-amber-200 text-slate-900' : 'bg-amber-100 border border-amber-300 text-slate-600 hover:border-amber-400'}`}>Amber</button>
-            <button onClick={() => setWorkspaceBgColor('slate')} className={`px-2 py-1 rounded text-[8px] font-bold transition-all ${workspaceBgColor === 'slate' ? 'ring-2 ring-blue-500 bg-slate-300 text-white' : 'bg-slate-200 border border-slate-400 text-slate-600 hover:border-slate-500'}`}>Slate</button>
-            <button onClick={() => setWorkspaceBgColor('gray')} className={`px-2 py-1 rounded text-[8px] font-bold transition-all ${workspaceBgColor === 'gray' ? 'ring-2 ring-blue-500 bg-gray-200 text-slate-900' : 'bg-gray-100 border border-gray-300 text-slate-600 hover:border-gray-400'}`}>Gray</button>
-            <button onClick={() => setWorkspaceBgColor('blue')} className={`px-2 py-1 rounded text-[8px] font-bold transition-all ${workspaceBgColor === 'blue' ? 'ring-2 ring-blue-500 bg-blue-200 text-slate-900' : 'bg-blue-100 border border-blue-300 text-slate-600 hover:border-blue-400'}`}>Blue</button>
-
-            <div className="h-4 w-px bg-slate-200 mx-1"></div>
-
-            <button
-               onClick={() => setShowSubmissionModal(true)}
-               className="flex items-center gap-1 px-3 py-1 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-md text-[9px] font-bold uppercase shadow hover:shadow-md transition-all ml-auto"
+          <div className="relative">
+            <label className="text-[10px] font-black uppercase text-slate-700">Cloth Type</label>
+            <div 
+              className="w-full mt-1 p-2 border rounded text-sm cursor-pointer flex items-center justify-between bg-white"
+              onClick={() => {
+                if (!showFabricDropdown) {
+                  setIsFabricLoading(true);
+                  setTimeout(() => {
+                    setShowFabricDropdown(true);
+                    setIsFabricLoading(false);
+                  }, 50);
+                } else {
+                  setShowFabricDropdown(false);
+                }
+              }}
             >
-              <Users size={10} />
-              Submit to Community
-            </button>
+              <div className="flex items-center gap-2">
+                {selectedClothType !== 'solid' && getFabricImagePath(selectedClothType) ? (
+                  <img src={getFabricImagePath(selectedClothType)!} alt={selectedClothType} className="w-6 h-6 rounded object-cover" />
+                ) : selectedClothType !== 'solid' ? (
+                  <div className="w-6 h-6 rounded" style={{ backgroundImage: `url(${generateTextureDataUrl(activeColor, normalizeFabric(selectedClothType), 64)})` }} />
+                ) : (
+                  <div className="w-6 h-6 rounded" style={{ backgroundColor: activeColor }} />
+                )}
+                <span>{fabricOptions.find(o => o.value === selectedClothType)?.label || 'Solid'}</span>
+              </div>
+              {isFabricLoading ? (
+                <span className="text-xs animate-spin">⏳</span>
+              ) : (
+                <span className="text-xs">▼</span>
+              )}
+            </div>
+            
+            {showFabricDropdown && (
+              <div className="relative z-50 w-full mt-1 bg-white border rounded shadow-inner max-h-48 overflow-y-auto">
+                {fabricOptions.map(option => (
+                  <div 
+                    key={option.value}
+                    className={`p-2 flex items-center gap-2 cursor-pointer hover:bg-slate-100 ${selectedClothType === option.value ? 'bg-slate-50' : ''}`}
+                    onClick={() => {
+                      setSelectedClothType(option.value);
+                      setShowFabricDropdown(false);
+                    }}
+                  >
+                    {option.value !== 'solid' && getFabricImagePath(option.value) ? (
+                      <img src={getFabricImagePath(option.value)!} alt={option.label} className="w-6 h-6 rounded object-cover" />
+                    ) : option.value !== 'solid' ? (
+                      <div className="w-6 h-6 rounded" style={{ backgroundImage: `url(${generateTextureDataUrl(activeColor, normalizeFabric(option.value), 64)})` }} />
+                    ) : (
+                      <div className="w-6 h-6 rounded" style={{ backgroundColor: activeColor }} />
+                    )}
+                    <span className="text-sm">{option.label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="text-[10px] text-slate-400 mt-1">Choose a fabric look to preview when filling shapes.</div>
           </div>
-          <div ref={canvasRef} className="w-full h-[calc(100vh-140px)] pb-[100px] md:pb-[120px] p-2 lg:p-8 overflow-auto" onPointerDown={(e) => {  
-            // REST OF EXISTING LOGIC
+
+          <hr className="border-slate-100" />
+          
+          <div className="flex items-center gap-2">
+            <label className="text-[10px] font-black uppercase text-slate-600">Pen Size</label>
+            <input id="pen-size" type="range" min={1} max={50} value={activePenSize} onChange={e => setActivePenSize(parseInt(e.target.value, 10))} className="flex-1" />
+            <span className="text-[10px] font-bold">{activePenSize}px</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-[10px] font-black uppercase text-slate-600">Fill Opacity</label>
+            <input id="fill-opacity" type="range" min={0} max={100} value={Math.round(activeFillOpacity * 100)} onChange={e => setActiveFillOpacity(parseInt(e.target.value, 10) / 100)} className="flex-1" />
+            <span className="text-[10px] font-bold">{Math.round(activeFillOpacity * 100)}%</span>
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col">
+              <span className="text-[10px] font-black uppercase text-slate-700">Keep original color</span>
+              <span className="text-[10px] text-slate-400 leading-tight">Preserve underlying image colors</span>
+            </div>
+            <label className={`relative inline-flex items-center cursor-pointer select-none`}>
+              <input id="keep-original-color" type="checkbox" checked={keepOriginalColor} onChange={e => setKeepOriginalColor(e.target.checked)} className="sr-only" />
+              <div className={`${keepOriginalColor ? 'bg-gradient-to-r from-yellow-500 to-amber-600' : 'bg-slate-200'} w-12 h-6 rounded-full p-1 transition-colors`}>
+                <div className={`${keepOriginalColor ? 'translate-x-6' : 'translate-x-0'} w-4 h-4 bg-white rounded-full shadow transform transition-transform`} />
+              </div>
+            </label>
+          </div>
+
+          <div>
+            <div className="flex justify-between items-center">
+              <label className="text-[10px] font-black uppercase text-slate-700">Magic Erase Color</label>
+              <span className="text-[10px] font-bold bg-slate-100 px-1.5 py-0.5 rounded">{pickThreshold}%</span>
+            </div>
+            <input id="pick-threshold" type="range" min={0} max={100} value={pickThreshold} onChange={e => setPickThreshold(parseInt(e.target.value, 10))} className="w-full mt-1.5" />
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button onClick={() => { setPickColorMode(true); setShowColorPanel(false); }} className="px-3 py-2 bg-gradient-to-r from-yellow-500 to-amber-600 text-white rounded-xl text-[10px] font-black uppercase shadow-md hover:shadow-lg">Pick & Remove</button>
+              <button onClick={() => { setPickColorMode(false); }} className="px-3 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-[10px] font-black uppercase">Cancel</button>
+            </div>
+            {pickColorMode && <div className="text-[11px] mt-2 text-slate-500 leading-tight">Click image on canvas to erase matching color.</div>}
+          </div>
+        </div>
+      </div>
+    )}
+  </div>
+</div>
+{showSourceWindow && (
+  <aside className={`fixed lg:static inset-0 lg:ml-20 lg:w-[320px] bg-slate-50 lg:border-r-2 border-slate-200 flex flex-col z-[200] lg:z-0 transition-transform shadow-lg ${isSidebarOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}`}>
+    <div className="p-6 shrink-0 bg-white border-b-2 border-slate-200">
+      <div className="flex justify-between items-center mb-6">
+        <h3 className="text-xs font-black uppercase text-slate-800">Source <span className="text-yellow-500">✨</span></h3>
+        <button onClick={() => setShowSourceWindow(false)} className="lg:hidden text-slate-500 hover:text-slate-800 text-xs font-bold transition-colors">CLOSE ✕</button>
+      </div>
+      <div className="grid grid-cols-2 gap-2 mb-3">
+        <button 
+          onClick={() => {
+            saveForUndo();
+            const pts: {id: string, x: number, y: number}[] = [];
+            const fs = imgDims.width ? 300 / imgDims.width : 1; 
+            setWorkspaceShapes(prev => [...prev, { id: `s-${Date.now()}`, img: selectedImage!, dots: [
+              { id: `p1`, x: 0, y: 0 },
+              { id: `p2`, x: imgDims.width, y: 0 },
+              { id: `p3`, x: imgDims.width, y: imgDims.height },
+              { id: `p4`, x: 0, y: imgDims.height }
+            ], dims: { ...imgDims }, position: { x: 100, y: 100 }, scale: fs, showDots: true, erasedPaths: [], clipUpdate: Date.now(), opacity: 1 }]); 
+            setSourceDots([]); 
+            setShowSourceWindow(false);
+          }}
+          className="col-span-2 bg-gradient-to-r from-yellow-500 to-amber-600 text-white py-2 rounded-md text-[9px] font-bold uppercase shadow-sm hover:shadow-md transition-all"
+        >
+          Add Original Image As-Is
+        </button>
+        <button onClick={() => fileInputRef.current?.click()} className="bg-gradient-to-br from-slate-500 to-slate-600 text-white py-1.5 px-2 rounded-md text-[8px] font-bold uppercase shadow-sm hover:shadow-md transition-all">Upload<input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="image/*" className="hidden" /></button>
+        <button id="add-btn" onClick={() => { 
+          const ns = "http://www.w3.org/2000/svg"; 
+          let pts: Dot[] = []; 
+          candidates.filter(c => c.selected).forEach(c => { 
+            const path = document.createElementNS(ns, "path"); 
+            path.setAttribute("d", c.d); 
+            document.body.appendChild(path); 
+            const len = path.getTotalLength(); 
+            for (let i = 0; i <= len; i += Math.max(3, Math.round(len / 40))) { 
+              const p = path.getPointAtLength(i); 
+              pts.push({ id: `p-${Math.random()}`, x: p.x, y: p.y }); 
+            } 
+            document.body.removeChild(path); 
+          }); 
+          if (pts.length > 0) {
+            saveForUndo(); 
+            const fs = imgDims.width ? 150 / imgDims.width : 1; 
+            setWorkspaceShapes(prev => [...prev, { id: `s-${Date.now()}`, img: selectedImage!, dots: [...pts], dims: { ...imgDims }, position: { x: 100, y: 100 }, scale: fs, showDots: true, erasedPaths: [], opacity: 1 }]); 
+            setSourceDots([]); 
+            setShowSourceWindow(false);
+          }
+        }} disabled={candidates.filter(c => c.selected).length === 0} className="bg-gradient-to-br from-slate-800 to-slate-900 text-yellow-300 py-1.5 px-2 rounded-md text-[8px] font-bold uppercase shadow-sm hover:shadow-md transition-all disabled:opacity-30">Add to Canvas</button>
+      </div>
+      {selectedImage && (
+        <div className="mb-3">
+          <button 
+            onClick={handleRemoveBackground} 
+            disabled={isRemovingBg}
+            className="w-full bg-gradient-to-r from-yellow-500 to-amber-600 text-white py-2 rounded-md text-[8px] font-black uppercase shadow-md hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {isRemovingBg ? (
+              <>
+                <span className="animate-spin">⏳</span> AI Cleaning...
+              </>
+            ) : (
+              <>✨ AI Remove BG</>
+            )}
+          </button>
+        </div>
+      )}
+    </div>
+    <div className="flex-1 p-4 overflow-hidden flex flex-col gap-4">
+      <div className="flex-1 bg-slate-100 rounded-3xl overflow-hidden flex items-center justify-center relative border-2 border-slate-200 shadow-inner">
+        <svg 
+          id="trace-svg-container" 
+          viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} 
+          className="w-full h-full p-4"
+        >
+          {selectedImage && <image href={selectedImage} width={imgDims.width} height={imgDims.height} />}
+          {candidates.map((c, idx) => (<path key={c.id} id={idx === 0 ? "path-0-0" : c.id} d={c.d} fill={c.selected ? "rgba(251, 191, 36, 0.5)" : "transparent"} stroke={c.selected ? "#f59e0b" : "#cbd5e1"} strokeWidth={4} className="cursor-pointer" onClick={() => setCandidates(prev => prev.map(x => x.id === c.id ? {...x, selected: !x.selected} : x))} />))}
+          {sourceDots.map((dot) => (<circle key={dot.id} cx={dot.x} cy={dot.y} r={8} fill="#f59e0b" stroke="#ffffff" strokeWidth={3} opacity={0.9} />))}
+        </svg>
+      </div>
+      
+      <div className="shrink-0">
+        <h4 className="text-[10px] font-black uppercase text-slate-500 mb-2">Templates</h4>
+        <div className="flex items-center gap-2 overflow-x-auto pb-2">
+          {templates.map((u, i) => (
+            <img
+              key={i}
+              id={`template-${i}`}
+              src={u}
+              onClick={() => setSelectedImage(u)}
+              className={`h-12 w-12 shrink-0 rounded-xl object-contain cursor-pointer border-2 transition-all ${selectedImage === u ? 'border-yellow-500 scale-105 bg-white' : 'border-transparent opacity-70 hover:opacity-100 bg-white/50'}`}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  </aside>
+)}
+
+          
+          <div ref={canvasRef} className="w-full h-[calc(100vh)] pb md:pb p-2 lg:p-8 overflow-auto" onPointerDown={(e) => {  
             isPointerDownRef.current = true; 
             const c = getCoords(e); 
             const pointerButton = (e.nativeEvent as PointerEvent).button;
             const isPrimaryPointer = pointerButton === 0;
             
-            // Start selection rectangle
             if (activeTool === "cursor" && isPrimaryPointer) {
               setSelectionRect({ x1: c.x, y1: c.y, x2: c.x, y2: c.y });
             }
@@ -4228,7 +4340,6 @@ const extractSelection = useCallback(async (asJpeg = false) => {
             } 
           }} onPointerMove={(e) => { const c = getCoords(e); 
             
-            // Update selection rectangle
             if (selectionRect && isPointerDownRef.current) {
               setSelectionRect(prev => prev ? { ...prev, x2: c.x, y2: c.y } : null);
             }
@@ -4252,7 +4363,6 @@ const extractSelection = useCallback(async (asJpeg = false) => {
               } else if (draggingShapeId && !isLocked) { 
                 const shape = workspaceShapes.find(s => s.id === draggingShapeId);
                 if (shape?.groupId) {
-                  // Move all items in the group
                   const deltaX = c.x - dragOffset.x - shape.position.x;
                   const deltaY = c.y - dragOffset.y - shape.position.y;
                   setWorkspaceShapes(prev => prev.map(s => s.groupId === shape.groupId ? { ...s, position: { x: s.position.x + deltaX, y: s.position.y + deltaY } } : s));
@@ -4263,7 +4373,6 @@ const extractSelection = useCallback(async (asJpeg = false) => {
               } else if (draggingStrokeId && !isLocked) {
                 const stroke = strokes.find(st => st.id === draggingStrokeId);
                 if (stroke?.groupId) {
-                  // Move all items in the group
                   const deltaX = c.x - dragOffset.x;
                   const deltaY = c.y - dragOffset.y;
                   setWorkspaceShapes(prev => prev.map(s => s.groupId === stroke.groupId ? { ...s, position: { x: s.position.x + deltaX, y: s.position.y + deltaY } } : s));
@@ -4280,23 +4389,19 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                 
                 if (shape) {
                   if (shape.groupId) {
-                    // Get all items in the group and calculate group center
                     const groupShapes = workspaceShapes.filter(s => s.groupId === shape.groupId);
                     const groupStrokes = strokes.filter(st => st.groupId === shape.groupId);
                     
-                    // Calculate scale factor (ratio, not delta)
                     const currentDist = Math.hypot(c.x - shape.position.x, c.y - shape.position.y);
                     const prevDist = Math.hypot(dragOffset.x - shape.position.x, dragOffset.y - shape.position.y);
                     const scaleFactor = prevDist === 0 ? 1 : currentDist / prevDist;
                     
-                    // Find group bounding box center
                     const allX = groupShapes.flatMap(s => s.dots.map(d => s.position.x + d.x * s.scale));
                     const allY = groupShapes.flatMap(s => s.dots.map(d => s.position.y + d.y * s.scale));
                     groupStrokes.forEach(st => st.points.forEach(p => { allX.push(p.x); allY.push(p.y); }));
                     const centerX = (Math.min(...allX) + Math.max(...allX)) / 2;
                     const centerY = (Math.min(...allY) + Math.max(...allY)) / 2;
                     
-                    // Resize and reposition shapes relative to center
                     setWorkspaceShapes(prev => prev.map(s => {
                       if (s.groupId === shape.groupId) {
                         const dx = s.position.x - centerX;
@@ -4313,7 +4418,6 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                       return s;
                     }));
                     
-                    // Resize and reposition strokes relative to center
                     setStrokes(prev => prev.map(st => {
                       if (st.groupId === shape.groupId) {
                         return {
@@ -4333,23 +4437,19 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                   }
                 } else if (stroke) {
                   if (stroke.groupId) {
-                    // Get all items in the group and calculate group center
                     const groupShapes = workspaceShapes.filter(s => s.groupId === stroke.groupId);
                     const groupStrokes = strokes.filter(st => st.groupId === stroke.groupId);
                     
-                    // Find group bounding box center
                     const allX = groupShapes.flatMap(s => s.dots.map(d => s.position.x + d.x * s.scale));
                     const allY = groupShapes.flatMap(s => s.dots.map(d => s.position.y + d.y * s.scale));
                     groupStrokes.forEach(st => st.points.forEach(p => { allX.push(p.x); allY.push(p.y); }));
                     const centerX = (Math.min(...allX) + Math.max(...allX)) / 2;
                     const centerY = (Math.min(...allY) + Math.max(...allY)) / 2;
                     
-                    // Calculate scale factor (ratio, not delta)
                     const currentDist = Math.hypot(c.x - centerX, c.y - centerY);
                     const prevDist = Math.hypot(dragOffset.x - centerX, dragOffset.y - centerY);
                     const scaleFactor = prevDist === 0 ? 1 : currentDist / prevDist;
                     
-                    // Resize and reposition shapes relative to center
                     setWorkspaceShapes(prev => prev.map(s => {
                       if (s.groupId === stroke.groupId) {
                         const dx = s.position.x - centerX;
@@ -4366,7 +4466,6 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                       return s;
                     }));
                     
-                    // Resize and reposition strokes relative to center
                     setStrokes(prev => prev.map(st => {
                       if (st.groupId === stroke.groupId) {
                         return {
@@ -4381,7 +4480,6 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                       return st;
                     }));
                   } else {
-                    // Resize single stroke
                     const allX = stroke.points.map(p => p.x);
                     const allY = stroke.points.map(p => p.y);
                     const centerX = (Math.min(...allX) + Math.max(...allX)) / 2;
@@ -4415,7 +4513,6 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                   const centerX = shape.position.x + (shape.dims.width / 2) * shape.scale;
                   const centerY = shape.position.y + (shape.dims.height / 2) * shape.scale;
                   const angle = Math.atan2(c.y - centerY, c.x - centerX) * (180 / Math.PI);
-                  // Add 90 degrees because the handle is at the top
                   setWorkspaceShapes(prev => prev.map(s => s.id === rotatingId ? { ...s, rotation: angle + 90 } : s));
                 } else if (stroke) {
                   const allX = stroke.points.map(p => p.x);
@@ -4455,7 +4552,6 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                    return;
                 }
 
-              // Show context menu for selection rectangle only on right-click
               if (selectionRect && Math.abs(selectionRect.x2 - selectionRect.x1) > 10 && Math.abs(selectionRect.y2 - selectionRect.y1) > 10) {
                 if (((e.nativeEvent) as PointerEvent).button === 2 || e.pointerType === 'touch') {
                   setContextMenu({ x: e.clientX, y: e.clientY, id: 'selection', type: 'selection' });
@@ -4481,7 +4577,6 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                 }
               }}
             >
-              {/* Render shapes and strokes together sorted by zIndex */}
               {[...workspaceShapes.map(s => ({ ...s, type: 'shape' as const })), ...strokes.map(s => ({ ...s, type: 'stroke' as const }))]
                 .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0))
                 .map((item, idx) => {
@@ -4493,8 +4588,6 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                     const shapeFabricAreas = shape.fabricPasteAreas && shape.fabricPasteAreas.length > 0
                       ? shape.fabricPasteAreas
                       : (shape.fabricPasteArea ? [shape.fabricPasteArea] : []);
-                    // Match pasted fabric to the same local rectangle as the shape image.
-                    // The group scale/rotation (orange handle logic) is applied uniformly to both.
                     const fabricWidth = Math.max(1, shape.dims.width);
                     const fabricHeight = Math.max(1, shape.dims.height);
                     const fabricX = 0;
@@ -5062,89 +5155,10 @@ const extractSelection = useCallback(async (asJpeg = false) => {
           
 
           </div>
-          {/* Tutorial UI Assist Controls */}
-          <button onClick={runTutorial} disabled={tutorialDisabled} className="fixed bottom-4 right-6 z-[1000] w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-500 text-white rounded-full font-black shadow-2xl border-4 border-white hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">?</button>
-        </main>
+           </main>
 
         </div>
-        {/* Footer Refine UI */}
-        <div className="w-full flex flex-col md:flex-row items-center gap-2 px-4 py-3 bg-white border-t border-slate-200 shadow-inner z-50 sticky bottom-0">
-          {refineError && (
-            <div className="w-full text-red-600 text-xs mb-1 text-center">{refineError}</div>
-          )}
-          <input
-            type="text"
-            placeholder="Enter prompt to refine image..."
-            value={refinePrompt}
-            onChange={e => setRefinePrompt(e.target.value)}
-            className="flex-1 border border-slate-300 rounded-md px-3 py-2 text-sm"
-            disabled={isRefiningImage}
-          />
-          <button
-            onClick={handleRefineImage}
-            disabled={isRefiningImage || !refinePrompt || !selectedShape}
-            className="px-5 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-md text-sm font-bold uppercase shadow-md hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {isRefiningImage ? (
-              <>
-                <span className="animate-spin">⏳</span> Refining...
-              </>
-            ) : (
-              <>🪄 Refine Image</>
-            )}
-          </button>
-          <button
-  onClick={async () => {
-    if (!showTryOn) {
-      console.log("🎒 [STUDIO] Preparing image-only asset for try-on...");
-
-      // Always prefer a rendered snapshot of current edits (not the raw source image URL).
-      let readyAsset: string | null = null;
-      for (let attempt = 0; attempt < 3 && !readyAsset; attempt++) {
-        readyAsset = await syncWorkspaceToTryOn();
-        if (!readyAsset) {
-          // Allow one frame for pending image/DOM updates, then retry.
-          await new Promise<void>((r) => requestAnimationFrame(() => r()));
-        }
-      }
-
-      // Last-resort fallback only if it's clearly a non-original modified image.
-      if (!readyAsset && selectedShape?.img && (!selectedImage || selectedShape.img !== selectedImage)) {
-        readyAsset = selectedShape.img;
-      }
-      
-      if (!readyAsset) {
-        alert("No modified image available for try-on. Edit/select an image first.");
-        return;
-      }
-
-      // Ensure Try-On always receives a concrete image payload.
-      setRenderedWorkspaceImg(readyAsset);
-
-      // 2. Turn on the try-on UI container structure first
-      setShowTryOn(true);
-    } else {
-      // Clear assets cleanly when turning the mode off
-      setShowTryOn(false);
-      setRenderedWorkspaceImg(null);
-    }
-  }}
-  className={`px-5 py-2.5 rounded-xl font-bold text-white shadow-md transition-all active:scale-95 flex items-center gap-2 ${
-    showTryOn 
-      ? 'bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700' 
-      : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'
-  }`}
->
-  {showTryOn ? "✕ Close Try-On View" : "✨ Test Live on Webcam"}
-</button>
-
-  {/* <h1>SVG Design Studio - Silhouette Feed</h1>
-      <BodySilhouetteView /> */}
-
-    
-      
-        </div>
-        <AdBanner />
+        
         <SubmissionModal
           isOpen={showSubmissionModal}
           onClose={() => setShowSubmissionModal(false)}
