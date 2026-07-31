@@ -20,6 +20,47 @@ const nextConfig: NextConfig = {
 
 export default nextConfig;
 
+const toolbarControlClass = "h-10 min-w-[8.5rem] px-4 rounded-full text-[9px] font-black uppercase border transition-all font-bold flex items-center justify-center whitespace-nowrap";
+const toolbarSelectClass = "h-10 min-w-[8.5rem] px-4 rounded-full text-[9px] font-black uppercase border border-black/20 bg-cyan-300 text-cyan-950 focus:outline-none focus:ring-2 focus:ring-cyan-900 transition-all cursor-pointer";
+const toolbarCanvasWrapperClass = `${toolbarControlClass} gap-2 bg-white border-slate-300 shadow-sm px-3 min-w-[12.5rem]`;
+const toolbarButtonBaseClass = `${toolbarControlClass} shadow-md`;
+const toolbarButtonInteractiveClass = `${toolbarButtonBaseClass} active:scale-95`;
+const leftToolButtonBaseClass = "group relative h-10 flex items-center justify-center px-3 rounded-xl transition-all border text-black";
+const leftToolColorMap = {
+  source: {
+    idle: { backgroundColor: '#fef08a', borderColor: '#eab308', color: '#000000' },
+    active: { backgroundColor: '#fde68a', borderColor: '#f59e0b', color: '#000000' },
+  },
+  cursor: {
+    idle: { backgroundColor: '#f9a8d4', borderColor: '#ec4899', color: '#000000' },
+    active: { backgroundColor: '#f472b6', borderColor: '#db2777', color: '#000000' },
+  },
+  scissor: {
+    idle: { backgroundColor: '#93c5fd', borderColor: '#3b82f6', color: '#000000' },
+    active: { backgroundColor: '#60a5fa', borderColor: '#2563eb', color: '#000000' },
+  },
+  pen: {
+    idle: { backgroundColor: '#86efac', borderColor: '#22c55e', color: '#000000' },
+    active: { backgroundColor: '#4ade80', borderColor: '#16a34a', color: '#000000' },
+  },
+  ghost: {
+    idle: { backgroundColor: '#c4b5fd', borderColor: '#8b5cf6', color: '#000000' },
+    active: { backgroundColor: '#a78bfa', borderColor: '#7c3aed', color: '#000000' },
+  },
+  shapes: {
+    idle: { backgroundColor: '#fecaca', borderColor: '#f87171', color: '#000000' },
+    active: { backgroundColor: '#fca5a5', borderColor: '#ef4444', color: '#000000' },
+  },
+  fill: {
+    idle: { backgroundColor: '#fed7aa', borderColor: '#fb923c', color: '#000000' },
+    active: { backgroundColor: '#fdba74', borderColor: '#f97316', color: '#000000' },
+  },
+  erase: {
+    idle: { backgroundColor: '#bfdbfe', borderColor: '#60a5fa', color: '#000000' },
+    active: { backgroundColor: '#93c5fd', borderColor: '#3b82f6', color: '#000000' },
+  },
+} as const;
+
 /* const AdBanner = () => {
   useEffect(() => {
     try {
@@ -3791,25 +3832,25 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       disabled={tutorialDisabled}
       aria-label="Run interactive tutorial"
       title="Run interactive tutorial"
-      className="flex items-center justify-center w-8 h-8 rounded-full bg-[#FFD700] hover:bg-yellow-400 active:bg-yellow-500 text-black font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-yellow-600"
+      className="flex items-center justify-center w-8 h-8 rounded-full bg-sky-300 hover:bg-sky-400 active:bg-sky-500 text-sky-950 font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-sky-700"
     >
       ?
     </button>
   </div>
 
-  <div className="shrink-0 p-4 pb-2 flex gap-2 items-center bg-[#FFD700] border border-yellow-500 shadow-sm z-10 sticky top-0 flex-wrap rounded-xl mx-2 mt-2">
+  <div className={toolbarCanvasWrapperClass}>
     <span className="text-[9px] font-black uppercase text-black">Canvas BG:</span>
     <select
       value={workspaceBgColor}
       onChange={(e) => setWorkspaceBgColor(e.target.value)}
-      className="px-2 py-1 rounded text-[9px] font-bold bg-[#FFD700] border border-black text-black focus:outline-none focus:ring-2 focus:ring-black transition-all cursor-pointer"
-      style={{ color: '#000000', fontWeight: 'bold', backgroundColor: '#FFD700' }}
+      className={toolbarSelectClass}
+      style={{ color: '#083344', fontWeight: 'bold', backgroundColor: '#67e8f9', minWidth: '0', width: '100%' }}
     >
-      <option value="white" className="font-bold text-black bg-[#FFD700]">White</option>
-      <option value="amber" className="font-bold text-black bg-[#FFD700]">Amber</option>
-      <option value="slate" className="font-bold text-black bg-[#FFD700]">Slate</option>
-      <option value="gray" className="font-bold text-black bg-[#FFD700]">Gray</option>
-      <option value="blue" className="font-bold text-black bg-[#FFD700]">Blue</option>
+      <option value="white" className="font-bold text-cyan-950 bg-cyan-200">White</option>
+      <option value="amber" className="font-bold text-cyan-950 bg-cyan-200">Amber</option>
+      <option value="slate" className="font-bold text-cyan-950 bg-cyan-200">Slate</option>
+      <option value="gray" className="font-bold text-cyan-950 bg-cyan-200">Gray</option>
+      <option value="blue" className="font-bold text-cyan-950 bg-cyan-200">Blue</option>
     </select>
   </div>
 
@@ -3838,11 +3879,10 @@ const extractSelection = useCallback(async (asJpeg = false) => {
           setRenderedWorkspaceImg(null);
         }
       }}
-      className={`px-5 py-2.5 rounded-xl font-bold text-black shadow-md transition-all active:scale-95 flex items-center gap-2 border border-black/20 ${
-        showTryOn 
-          ? 'bg-rose-400 hover:bg-rose-500' 
-          : 'bg-[#FFD700] hover:bg-yellow-400'
-      }`}
+      className={`${toolbarButtonInteractiveClass} gap-2`}
+      style={showTryOn
+        ? { backgroundColor: '#fde68a', borderColor: '#f59e0b', color: '#000000' }
+        : { backgroundColor: '#fef08a', borderColor: '#eab308', color: '#000000' }}
     >
       {showTryOn ? "✕ Close Try-On View" : "✨ Test Live on Webcam"}
     </button>
@@ -3850,7 +3890,8 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     <button 
       id="dress-form-btn" 
       onClick={() => setShowMannequinModal(true)} 
-      className="px-2 sm:px-4 py-2 bg-[#FFD700] text-black rounded-full text-[8px] sm:text-[9px] font-black uppercase shadow-md hover:shadow-lg transition-all flex items-center gap-1 border border-yellow-600"
+      className={`${toolbarButtonBaseClass} hover:shadow-lg gap-1`}
+      style={{ backgroundColor: '#f9a8d4', borderColor: '#ec4899', color: '#000000' }}
     >
       <svg className="w-3 h-3 text-black" fill="currentColor" viewBox="0 0 24 24">
         <path d="M12 2C10.9 2 10 2.9 10 4s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 18h-3v-6h-2v6H9v-6H7v6H4v-8c0-1.1.9-2 2-2h12c1.1 0 2 .9 2 2v8z"/>
@@ -3861,7 +3902,8 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     <button 
       id="undo-btn" 
       onClick={undo} 
-      className="px-2 sm:px-4 py-2 bg-[#FFD700] text-black rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-yellow-600 hover:bg-yellow-400 font-bold"
+      className={toolbarButtonBaseClass}
+      style={{ backgroundColor: '#93c5fd', borderColor: '#3b82f6', color: '#000000' }}
     >
       Undo
     </button>
@@ -3869,7 +3911,8 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     <button 
       id="reset-btn" 
       onClick={() => { if(confirm("Reset?")) { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); } }} 
-      className="px-2 sm:px-4 py-2 bg-[#FFD700] text-black rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-yellow-600 hover:bg-yellow-400 font-bold"
+      className={toolbarButtonBaseClass}
+      style={{ backgroundColor: '#86efac', borderColor: '#22c55e', color: '#000000' }}
     >
       Reset
     </button>
@@ -3877,7 +3920,8 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     <button 
       id="download-btn" 
       onClick={() => handleDownload('png')} 
-      className="px-2 sm:px-4 py-2 bg-[#FFD700] text-black rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-yellow-600 hover:bg-yellow-400 font-bold"
+      className={toolbarButtonBaseClass}
+      style={{ backgroundColor: '#c4b5fd', borderColor: '#8b5cf6', color: '#000000' }}
     >
       Download
     </button>
@@ -3885,11 +3929,10 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     <button 
       id="dots-btn" 
       onClick={() => setGlobalShowDots(!globalShowDots)} 
-      className={`px-2 sm:px-4 py-2 rounded-full text-[8px] sm:text-[9px] font-black uppercase border transition-all font-bold ${
-        globalShowDots 
-          ? 'bg-black text-[#FFD700] border-black' 
-          : 'bg-[#FFD700] text-black border-yellow-600 hover:bg-yellow-400'
-      }`}
+      className={`${toolbarButtonInteractiveClass} gap-2`}
+      style={globalShowDots
+        ? { backgroundColor: '#fca5a5', borderColor: '#ef4444', color: '#000000' }
+        : { backgroundColor: '#fecaca', borderColor: '#f87171', color: '#000000' }}
     >
       Dots
     </button>
@@ -3897,11 +3940,10 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     <button 
       id="lock-btn" 
       onClick={() => setIsLocked(!isLocked)} 
-      className={`px-2 sm:px-4 py-2 rounded-full text-[8px] sm:text-[9px] font-black uppercase border transition-all font-bold ${
-        isLocked 
-          ? 'bg-black text-[#FFD700] border-black' 
-          : 'bg-[#FFD700] text-black border-yellow-600 hover:bg-yellow-400'
-      }`}
+      className={`${toolbarButtonInteractiveClass} gap-2`}
+      style={isLocked
+        ? { backgroundColor: '#fdba74', borderColor: '#f97316', color: '#000000' }
+        : { backgroundColor: '#fed7aa', borderColor: '#fb923c', color: '#000000' }}
     >
       Lock
     </button>
@@ -4046,16 +4088,18 @@ const extractSelection = useCallback(async (asJpeg = false) => {
           setActiveTool(t as any);
         }
       }} 
-      className={`group relative h-10 flex items-center justify-center px-3 rounded-xl transition-all ${
-        t === "source" 
-          ? (showSourceWindow ? 'bg-[#FFD700] text-black border border-yellow-600' : 'bg-[#FFD700] text-black border border-yellow-500 hover:bg-yellow-400')
-          : activeTool === t ? 'bg-[#FFD700] text-black border border-yellow-600' : 'bg-[#FFD700] text-black border border-yellow-500 hover:bg-yellow-400'
-      }`}
+      className={leftToolButtonBaseClass}
+      style={t === "source"
+        ? (showSourceWindow ? leftToolColorMap.source.active : leftToolColorMap.source.idle)
+        : activeTool === t
+          ? leftToolColorMap[t].active
+          : leftToolColorMap[t].idle}
     >
       <span className="text-xs font-black uppercase text-black">
         {t === "ghost" ? "👻" : t === "scissor" ? "✂️" : t.charAt(0).toUpperCase()}
       </span>
-      <span className="absolute left-full ml-2 px-2 py-1 bg-[#FFD700] border border-yellow-600 text-black text-xs font-black uppercase rounded shadow-md whitespace-nowrap hidden group-hover:inline-block z-50 pointer-events-none">
+      <span className="absolute left-full ml-2 px-2 py-1 text-black text-xs font-black uppercase rounded shadow-md whitespace-nowrap hidden group-hover:inline-block z-50 pointer-events-none"
+        style={t === "source" ? leftToolColorMap.source.idle : leftToolColorMap[t].idle}>
         {t}
       </span>
     </button>
