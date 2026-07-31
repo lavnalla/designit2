@@ -13,7 +13,24 @@ interface MetricData {
 
 interface NecklaceTryOnProps {
   selectedImageSrc: string;
+  mode?: "garment" | "necklace";
   onClose?: () => void;
+}
+
+interface OverlayBounds {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  width: number;
+  height: number;
+}
+
+interface NecklaceAnchorPoints {
+  leftNeckX: number;
+  rightNeckX: number;
+  neckY: number;
+  centerX: number;
 }
 
 declare global {
@@ -24,7 +41,7 @@ declare global {
   }
 }
 
-export default function NecklaceTryOn({ selectedImageSrc, onClose }: NecklaceTryOnProps) {
+export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onClose }: NecklaceTryOnProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -33,6 +50,8 @@ export default function NecklaceTryOn({ selectedImageSrc, onClose }: NecklaceTry
   const latestPoseLandmarksRef = useRef<any>(null);
   const latestFaceLandmarksRef = useRef<any>(null);
   const garmentImageRef = useRef<HTMLImageElement | null>(null);
+  const overlayBoundsRef = useRef<OverlayBounds | null>(null);
+  const necklaceAnchorsRef = useRef<NecklaceAnchorPoints | null>(null);
 
   // Engines stored as refs so they can be explicitly destroyed on close
   const activeCameraRef = useRef<any>(null);
@@ -96,6 +115,80 @@ export default function NecklaceTryOn({ selectedImageSrc, onClose }: NecklaceTry
         const processedImg = new Image();
         processedImg.onload = () => {
           garmentImageRef.current = processedImg;
+
+          const boundsCtx = localCropC.getContext("2d", { willReadFrequently: true });
+          if (!boundsCtx) {
+            overlayBoundsRef.current = null;
+            return;
+          }
+
+          const imageData = boundsCtx.getImageData(0, 0, localCropC.width, localCropC.height).data;
+          let minX = localCropC.width;
+          let maxX = 0;
+          let minY = localCropC.height;
+          let maxY = 0;
+
+          for (let y = 0; y < localCropC.height; y += 1) {
+            for (let x = 0; x < localCropC.width; x += 1) {
+              const alpha = imageData[(y * localCropC.width + x) * 4 + 3];
+              if (alpha < 16) continue;
+              minX = Math.min(minX, x);
+              maxX = Math.max(maxX, x);
+              minY = Math.min(minY, y);
+              maxY = Math.max(maxY, y);
+            }
+          }
+
+          if (minX <= maxX && minY <= maxY) {
+            const bounds = {
+              minX,
+              maxX,
+              minY,
+              maxY,
+              width: Math.max(1, maxX - minX),
+              height: Math.max(1, maxY - minY),
+            };
+            overlayBoundsRef.current = bounds;
+
+            const scanTop = bounds.minY;
+            const scanBottom = Math.min(localCropC.height - 1, bounds.minY + Math.max(8, Math.floor(bounds.height * 0.35)));
+            let bestRow = -1;
+            let widestSpan = 0;
+            let bestLeft = bounds.minX;
+            let bestRight = bounds.maxX;
+
+            for (let y = scanTop; y <= scanBottom; y += 1) {
+              let rowLeft = -1;
+              let rowRight = -1;
+
+              for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
+                const alpha = imageData[(y * localCropC.width + x) * 4 + 3];
+                if (alpha < 16) continue;
+                if (rowLeft === -1) rowLeft = x;
+                rowRight = x;
+              }
+
+              if (rowLeft === -1 || rowRight === -1) continue;
+
+              const span = rowRight - rowLeft;
+              if (span > widestSpan) {
+                widestSpan = span;
+                bestRow = y;
+                bestLeft = rowLeft;
+                bestRight = rowRight;
+              }
+            }
+
+            necklaceAnchorsRef.current = {
+              leftNeckX: bestLeft,
+              rightNeckX: bestRight,
+              neckY: bestRow === -1 ? bounds.minY : bestRow,
+              centerX: (bestLeft + bestRight) / 2,
+            };
+          } else {
+            overlayBoundsRef.current = null;
+            necklaceAnchorsRef.current = null;
+          }
         };
         processedImg.src = localCropC.toDataURL();
       }
@@ -163,11 +256,6 @@ export default function NecklaceTryOn({ selectedImageSrc, onClose }: NecklaceTry
           const w = targetWidth;
           const h = targetHeight;
 
-          camMaskCtx.clearRect(0, 0, w, h);
-          camMaskCtx.save();
-          camMaskCtx.drawImage(currentCamMask, 0, 0, w, h);
-          camMaskCtx.globalCompositeOperation = "source-in";
-
           const croppedImageElement = garmentImageRef.current;
 
           if (croppedImageElement) {
@@ -182,69 +270,106 @@ export default function NecklaceTryOn({ selectedImageSrc, onClose }: NecklaceTry
             const torsoWidth = maxX - minX;
             const torsoHeight = maxY - minY;
 
-            let customTopAnchor = minY;
-            if (faceLandmarks && faceLandmarks[152]) {
-              const chinY = faceLandmarks[152].y * h;
-              customTopAnchor = chinY + torsoHeight * 0.05;
+            if (mode === "necklace" && necklaceAnchorsRef.current) {
+              const leftShoulder = lm[11];
+              const rightShoulder = lm[12];
+              const chin = faceLandmarks?.[152];
+
+              if (leftShoulder && rightShoulder && chin) {
+                const leftShoulderX = leftShoulder.x * w;
+                const rightShoulderX = rightShoulder.x * w;
+                const leftShoulderY = leftShoulder.y * h;
+                const rightShoulderY = rightShoulder.y * h;
+                const chinX = chin.x * w;
+                const chinY = chin.y * h;
+                const chainStartX = leftShoulderX + (chinX - leftShoulderX) * 0.4;
+                const chainStartY = leftShoulderY + (chinY - leftShoulderY) * 0.3;
+                const chainEndX = rightShoulderX - (rightShoulderX - chinX) * 0.4;
+                const chainEndY = rightShoulderY + (chinY - rightShoulderY) * 0.3;
+                const liveNeckWidth = Math.max(1, Math.abs(chainEndX - chainStartX));
+                const controlX = chinX;
+                const sourceAnchors = necklaceAnchorsRef.current;
+                const sourceNeckWidth = Math.max(1, sourceAnchors.rightNeckX - sourceAnchors.leftNeckX);
+                const scale = (liveNeckWidth / sourceNeckWidth) * manualScaleRef.current;
+                const drawW = croppedImageElement.width * scale;
+                const drawH = croppedImageElement.height * scale;
+                const drawX = controlX - sourceAnchors.centerX * scale + manualOffsetXRef.current;
+                const drawY = Math.min(chainStartY, chainEndY) - sourceAnchors.neckY * scale + manualOffsetYRef.current;
+
+                canvasCtx.drawImage(croppedImageElement, drawX, drawY, drawW, drawH);
+              }
             } else {
-              customTopAnchor = minY - torsoHeight * 0.22;
+              camMaskCtx.clearRect(0, 0, w, h);
+              camMaskCtx.save();
+              camMaskCtx.drawImage(currentCamMask, 0, 0, w, h);
+              camMaskCtx.globalCompositeOperation = "source-in";
+
+              let customTopAnchor = minY;
+              if (faceLandmarks && faceLandmarks[152]) {
+                const chinY = faceLandmarks[152].y * h;
+                customTopAnchor = chinY + torsoHeight * 0.05;
+              } else {
+                customTopAnchor = minY - torsoHeight * 0.22;
+              }
+
+              const drawX = minX - torsoWidth * 0.25 + manualOffsetXRef.current;
+              const drawY = customTopAnchor - h * 0.05 + manualOffsetYRef.current - (h * 0.05);
+              const drawW = torsoWidth * 1.5 * manualScaleRef.current;
+              const drawH = (maxY - customTopAnchor + torsoHeight * 0.4);
+
+              camMaskCtx.drawImage(croppedImageElement, drawX, drawY, drawW, drawH);
+              camMaskCtx.restore();
             }
-
-            const drawX = minX - torsoWidth * 0.25 + manualOffsetXRef.current;
-            const drawY = customTopAnchor - h * 0.05 + manualOffsetYRef.current - (h * 0.05); // 5% shift lift
-            const drawW = torsoWidth * 1.5 * manualScaleRef.current;
-            const drawH = (maxY - customTopAnchor + torsoHeight * 0.4);
-
-            camMaskCtx.drawImage(croppedImageElement, drawX, drawY, drawW, drawH);
           } else {
             camMaskCtx.fillStyle = "rgba(0, 50, 255, 0.4)";
             camMaskCtx.fillRect(0, 0, w, h);
           }
-          camMaskCtx.restore();
 
-          camMaskCtx.save();
-          camMaskCtx.globalCompositeOperation = "destination-out";
-          if (faceLandmarks) {
-            const nose = faceLandmarks[1];
-            const forehead = faceLandmarks[10];
-            const chin = faceLandmarks[152];
+          if (mode !== "necklace") {
+            camMaskCtx.save();
+            camMaskCtx.globalCompositeOperation = "destination-out";
+            if (faceLandmarks) {
+              const nose = faceLandmarks[1];
+              const forehead = faceLandmarks[10];
+              const chin = faceLandmarks[152];
 
-            if (nose && forehead && chin) {
-              const headCenterX = nose.x * w;
-              const headCenterY = nose.y * h;
-              const headRadius = Math.abs(chin.y - forehead.y) * h * 0.65;
+              if (nose && forehead && chin) {
+                const headCenterX = nose.x * w;
+                const headCenterY = nose.y * h;
+                const headRadius = Math.abs(chin.y - forehead.y) * h * 0.65;
 
-              camMaskCtx.beginPath();
-              camMaskCtx.arc(headCenterX, headCenterY, headRadius, 0, 2 * Math.PI);
-              camMaskCtx.fillStyle = "black";
-              camMaskCtx.fill();
+                camMaskCtx.beginPath();
+                camMaskCtx.arc(headCenterX, headCenterY, headRadius, 0, 2 * Math.PI);
+                camMaskCtx.fillStyle = "black";
+                camMaskCtx.fill();
+              }
             }
+            camMaskCtx.restore();
+
+            camMaskCtx.save();
+            camMaskCtx.globalCompositeOperation = "source-over";
+            const pattern = camMaskCtx.createPattern(video, "no-repeat");
+            if (pattern) {
+              camMaskCtx.strokeStyle = pattern;
+              camMaskCtx.lineWidth = 45;
+
+              if (lm[15]) {
+                camMaskCtx.beginPath();
+                camMaskCtx.arc(lm[15].x * w, lm[15].y * h, 25, 0, 2 * Math.PI);
+                camMaskCtx.fillStyle = pattern;
+                camMaskCtx.fill();
+              }
+              if (lm[16]) {
+                camMaskCtx.beginPath();
+                camMaskCtx.arc(lm[16].x * w, lm[16].y * h, 25, 0, 2 * Math.PI);
+                camMaskCtx.fillStyle = pattern;
+                camMaskCtx.fill();
+              }
+            }
+            camMaskCtx.restore();
+
+            canvasCtx.drawImage(camMaskCanvas, 0, 0, w, h);
           }
-          camMaskCtx.restore();
-
-          camMaskCtx.save();
-          camMaskCtx.globalCompositeOperation = "source-over";
-          const pattern = camMaskCtx.createPattern(video, "no-repeat");
-          if (pattern) {
-            camMaskCtx.strokeStyle = pattern;
-            camMaskCtx.lineWidth = 45;
-
-            if (lm[15]) {
-              camMaskCtx.beginPath();
-              camMaskCtx.arc(lm[15].x * w, lm[15].y * h, 25, 0, 2 * Math.PI);
-              camMaskCtx.fillStyle = pattern;
-              camMaskCtx.fill();
-            }
-            if (lm[16]) {
-              camMaskCtx.beginPath();
-              camMaskCtx.arc(lm[16].x * w, lm[16].y * h, 25, 0, 2 * Math.PI);
-              camMaskCtx.fillStyle = pattern;
-              camMaskCtx.fill();
-            }
-          }
-          camMaskCtx.restore();
-
-          canvasCtx.drawImage(camMaskCanvas, 0, 0, w, h);
         }
       }
       requestFrameId = requestAnimationFrame(renderLoop);
@@ -378,7 +503,7 @@ export default function NecklaceTryOn({ selectedImageSrc, onClose }: NecklaceTry
       latestFaceLandmarksRef.current = null;
       frameProcessingRef.current = false;
     };
-  }, [scriptsLoaded, isMinimized, isClosed, onClose]);
+  }, [scriptsLoaded, isMinimized, isClosed, mode, onClose]);
 
   const handleCloseFittingRoom = () => {
     setIsMinimized(false);

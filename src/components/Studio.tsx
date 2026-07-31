@@ -814,6 +814,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   const [showTryOn, setShowTryOn] = useState(false);
   const [showSourcePanel, setShowSourcePanel] = useState(false); 
   const [renderedWorkspaceImg, setRenderedWorkspaceImg] = useState<string | null>(null);
+  const [tryOnMode, setTryOnMode] = useState<"garment" | "necklace">("garment");
 
   const [mounted, setMounted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -3855,6 +3856,27 @@ const extractSelection = useCallback(async (asJpeg = false) => {
   </div>
 
   <div className="flex items-center gap-1 sm:gap-2">
+    <div className="flex items-center rounded-xl border-2 border-slate-300 overflow-hidden bg-white shadow-sm">
+      <button
+        onClick={() => setTryOnMode("garment")}
+        className="px-3 py-2 text-[9px] font-black uppercase transition-colors"
+        style={tryOnMode === "garment"
+          ? { backgroundColor: '#fef08a', color: '#000000' }
+          : { backgroundColor: '#ffffff', color: '#475569' }}
+      >
+        Garment
+      </button>
+      <button
+        onClick={() => setTryOnMode("necklace")}
+        className="px-3 py-2 text-[9px] font-black uppercase transition-colors border-l-2 border-slate-300"
+        style={tryOnMode === "necklace"
+          ? { backgroundColor: '#fbcfe8', color: '#000000' }
+          : { backgroundColor: '#ffffff', color: '#475569' }}
+      >
+        Necklace
+      </button>
+    </div>
+
     <button
       onClick={async () => {
         if (!showTryOn) {
@@ -5242,6 +5264,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                         <NecklaceTryOn
                           key={`${renderedWorkspaceImg.length}-${renderedWorkspaceImg.slice(-64)}`}
                           selectedImageSrc={renderedWorkspaceImg}
+                          mode={tryOnMode}
                           onClose={() => {
                             setShowTryOn(false);
                             setRenderedWorkspaceImg(null);
