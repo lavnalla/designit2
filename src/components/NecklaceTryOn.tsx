@@ -13,6 +13,7 @@ interface MetricData {
 
 interface NecklaceTryOnProps {
   selectedImageSrc: string;
+  onClose?: () => void;
 }
 
 declare global {
@@ -23,7 +24,7 @@ declare global {
   }
 }
 
-export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) {
+export default function NecklaceTryOn({ selectedImageSrc, onClose }: NecklaceTryOnProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -38,6 +39,8 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
   const selfieSegmentationRef = useRef<any>(null);
   const holisticRef = useRef<any>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const sessionIdRef = useRef(0);
+  const frameProcessingRef = useRef(false);
 
   // Manual Adjustments placeholders
   const manualOffsetXRef = useRef<number>(0);
@@ -45,18 +48,18 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
   const manualScaleRef = useRef<number>(1.0);
 
   // Track script load and full-screen minimized states
-  const [scriptsLoaded, setScriptsLoaded] = useState({
-    camera: false,
-    selfie: false,
-    holistic: false,
-  });
-  const [isLoaded, setIsModelLoaded] = useState(false);
+  const [scriptsLoaded, setScriptsLoaded] = useState(() => ({
+    camera: typeof window !== "undefined" && Boolean(window.Camera),
+    selfie: typeof window !== "undefined" && Boolean(window.SelfieSegmentation),
+    holistic: typeof window !== "undefined" && Boolean(window.Holistic),
+  }));
   const [isMinimized, setIsMinimized] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
 
   const targetWidth = 640;
   const targetHeight = 480;
   const BODY_MASK_THRESHOLD = 50;
+  const isLoaded = scriptsLoaded.camera && scriptsLoaded.selfie && scriptsLoaded.holistic;
 
   const metrics: MetricData = {
     shoulderCenterNorm: 0.5,
@@ -102,10 +105,13 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
 
   useEffect(() => {
     if (isClosed || isMinimized) return;
-    if (!scriptsLoaded.camera || !scriptsLoaded.selfie || !scriptsLoaded.holistic) return;
-    if (!videoRef.current || !canvasRef.current || !window.Camera || !window.SelfieSegmentation || !window.Holistic) return;
+    if (!scriptsLoaded.selfie || !scriptsLoaded.holistic) return;
+    if (!videoRef.current || !canvasRef.current || !window.SelfieSegmentation || !window.Holistic) return;
 
+    sessionIdRef.current += 1;
+    const sessionId = sessionIdRef.current;
     let requestFrameId: number;
+    let cancelled = false;
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -140,8 +146,6 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
       latestPoseLandmarksRef.current = results.poseLandmarks;
       latestFaceLandmarksRef.current = results.faceLandmarks;
     });
-
-    setIsModelLoaded(true);
 
     function renderLoop() {
       // FIXED: Added an implicit guard check to instantly kill the animation loop if the session closes
@@ -246,36 +250,142 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
       requestFrameId = requestAnimationFrame(renderLoop);
     }
 
-    // Capture the raw camera media stream reference directly to disable it cleanly later
-    activeCameraRef.current = new window.Camera(video, {
-      onFrame: async () => {
-        if (selfieSegmentationRef.current) await selfieSegmentationRef.current.send({ image: video });
-        if (holisticRef.current) await holisticRef.current.send({ image: video });
-      },
-      width: targetWidth,
-      height: targetHeight,
-    });
+    const processFrame = async () => {
+        if (sessionIdRef.current !== sessionId || frameProcessingRef.current) {
+          return;
+        }
 
-    activeCameraRef.current.start().then(() => {
-      if (video.srcObject) {
-        streamRef.current = video.srcObject as MediaStream;
+        frameProcessingRef.current = true;
+
+        try {
+          if (sessionIdRef.current !== sessionId) {
+            return;
+          }
+
+          if (selfieSegmentationRef.current) {
+            await selfieSegmentationRef.current.send({ image: video });
+          }
+
+          if (sessionIdRef.current !== sessionId) {
+            return;
+          }
+
+          if (holisticRef.current) {
+            await holisticRef.current.send({ image: video });
+          }
+        } catch {
+          if (sessionIdRef.current === sessionId) {
+            setIsClosed(true);
+            onClose?.();
+          }
+        } finally {
+          frameProcessingRef.current = false;
+        }
+      };
+
+    const startCamera = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: targetWidth },
+            height: { ideal: targetHeight },
+            facingMode: "user",
+          },
+          audio: false,
+        });
+
+        if (cancelled || sessionIdRef.current !== sessionId) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        streamRef.current = stream;
+        video.srcObject = stream;
+        await video.play();
+
+        if (cancelled || sessionIdRef.current !== sessionId) {
+          return;
+        }
+
+        activeCameraRef.current = {
+          stop: () => {
+            stream.getTracks().forEach((track) => track.stop());
+          },
+        };
+
+        const tick = async () => {
+          if (cancelled || sessionIdRef.current !== sessionId) {
+            return;
+          }
+
+          await processFrame();
+
+          if (!cancelled && sessionIdRef.current === sessionId) {
+            requestFrameId = requestAnimationFrame(() => {
+              void tick();
+            });
+          }
+        };
+
+        renderLoop();
+        void tick();
+      } catch {
+        if (!cancelled && sessionIdRef.current === sessionId) {
+          setIsClosed(true);
+          onClose?.();
+        }
       }
-    });
-    
-    renderLoop();
+    };
+
+    void startCamera();
 
     // CLEANUP LIFECYCLE: This forces everything running in memory to stop completely on close
     return () => {
+      cancelled = true;
+      sessionIdRef.current += 1;
       cancelAnimationFrame(requestFrameId);
-      setIsModelLoaded(false);
       
       if (activeCameraRef.current) {
-        try { activeCameraRef.current.stop(); } catch(e){}
+        try { activeCameraRef.current.stop(); } catch {}
         activeCameraRef.current = null;
       }
       
-      // FIXED: Forcibly stop the webcam tracks to release hardware locks instantly
-if (streamRef.current) {streamRef.current.getTracks().forEach((track) => {track.stop();track.enabled = false;});streamRef.current = null;}if (videoRef.current) {videoRef.current.srcObject = null;videoRef.current.load();}if (selfieSegmentationRef.current) {try { selfieSegmentationRef.current.close(); } catch(e){}selfieSegmentationRef.current = null;}if (holisticRef.current) {try { holisticRef.current.close(); } catch(e){}holisticRef.current = null;}latestSegmentationRef.current = null;latestPoseLandmarksRef.current = null;latestFaceLandmarksRef.current = null;};}, [scriptsLoaded, isMinimized, isClosed]);const handleCloseFittingRoom = () => {setIsClosed(true);setScriptsLoaded({ camera: false, selfie: false, holistic: false });};
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => {
+          track.stop();
+          track.enabled = false;
+        });
+        streamRef.current = null;
+      }
+
+      if (video) {
+        video.srcObject = null;
+        video.load();
+      }
+
+      if (selfieSegmentationRef.current) {
+        try { selfieSegmentationRef.current.close(); } catch {}
+        selfieSegmentationRef.current = null;
+      }
+
+      if (holisticRef.current) {
+        try { holisticRef.current.close(); } catch {}
+        holisticRef.current = null;
+      }
+
+      latestSegmentationRef.current = null;
+      latestPoseLandmarksRef.current = null;
+      latestFaceLandmarksRef.current = null;
+      frameProcessingRef.current = false;
+    };
+  }, [scriptsLoaded, isMinimized, isClosed, onClose]);
+
+  const handleCloseFittingRoom = () => {
+    setIsMinimized(false);
+    setIsClosed(true);
+    onClose?.();
+  };
+
   if (isClosed) return null;
 
   return (
