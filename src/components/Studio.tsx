@@ -5242,6 +5242,10 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                         <NecklaceTryOn
                           key={`${renderedWorkspaceImg.length}-${renderedWorkspaceImg.slice(-64)}`}
                           selectedImageSrc={renderedWorkspaceImg}
+                          onClose={() => {
+                            setShowTryOn(false);
+                            setRenderedWorkspaceImg(null);
+                          }}
                         />
                       </div>
                     ) : (
