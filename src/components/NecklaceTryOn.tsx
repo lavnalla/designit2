@@ -74,6 +74,7 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
   }));
   const [isMinimized, setIsMinimized] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
+  const [scaleVersion, setScaleVersion] = useState(0);
 
   const targetWidth = 640;
   const targetHeight = 480;
@@ -511,6 +512,22 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
     onClose?.();
   };
 
+  const adjustScale = (delta: number) => {
+    const nextScale = Math.min(2.5, Math.max(0.4, manualScaleRef.current + delta));
+    manualScaleRef.current = Number(nextScale.toFixed(2));
+    setScaleVersion((prev) => prev + 1);
+  };
+
+  const adjustVerticalOffset = (delta: number) => {
+    manualOffsetYRef.current += delta;
+    setScaleVersion((prev) => prev + 1);
+  };
+
+  const adjustHorizontalOffset = (delta: number) => {
+    manualOffsetXRef.current += delta;
+    setScaleVersion((prev) => prev + 1);
+  };
+
   if (isClosed) return null;
 
   return (
@@ -593,6 +610,144 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
             
             {/* MINIMIZE AND CLOSE CONTROLS */}
             <div style={{ display: "flex", gap: "12px" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  background: "#111827",
+                  border: "1px solid #374151",
+                  borderRadius: "8px",
+                  padding: "4px 8px"
+                }}
+              >
+                <button
+                  onClick={() => adjustScale(-0.1)}
+                  title="Decrease Image Size"
+                  style={{
+                    background: "#1f2937",
+                    color: "#fff",
+                    border: "1px solid #4b5563",
+                    borderRadius: "6px",
+                    padding: "4px 10px",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: "bold"
+                  }}
+                >
+                  -
+                </button>
+                <span style={{ color: "#fff", fontSize: "12px", minWidth: "42px", textAlign: "center" }}>
+                  {Math.round(manualScaleRef.current * 100)}%
+                </span>
+                <button
+                  onClick={() => adjustScale(0.1)}
+                  title="Increase Image Size"
+                  style={{
+                    background: "#1f2937",
+                    color: "#fff",
+                    border: "1px solid #4b5563",
+                    borderRadius: "6px",
+                    padding: "4px 10px",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: "bold"
+                  }}
+                >
+                  +
+                </button>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  background: "#111827",
+                  border: "1px solid #374151",
+                  borderRadius: "8px",
+                  padding: "4px 8px"
+                }}
+              >
+                <button
+                  onClick={() => adjustVerticalOffset(-5)}
+                  title="Move Image Up"
+                  style={{
+                    background: "#1f2937",
+                    color: "#fff",
+                    border: "1px solid #4b5563",
+                    borderRadius: "6px",
+                    padding: "4px 10px",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: "bold"
+                  }}
+                >
+                  ↑
+                </button>
+                <button
+                  onClick={() => adjustVerticalOffset(5)}
+                  title="Move Image Down"
+                  style={{
+                    background: "#1f2937",
+                    color: "#fff",
+                    border: "1px solid #4b5563",
+                    borderRadius: "6px",
+                    padding: "4px 10px",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: "bold"
+                  }}
+                >
+                  ↓
+                </button>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  background: "#111827",
+                  border: "1px solid #374151",
+                  borderRadius: "8px",
+                  padding: "4px 8px"
+                }}
+              >
+                <button
+                  onClick={() => adjustHorizontalOffset(-5)}
+                  title="Move Image Left"
+                  style={{
+                    background: "#1f2937",
+                    color: "#fff",
+                    border: "1px solid #4b5563",
+                    borderRadius: "6px",
+                    padding: "4px 10px",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: "bold"
+                  }}
+                >
+                  ←
+                </button>
+                <button
+                  onClick={() => adjustHorizontalOffset(5)}
+                  title="Move Image Right"
+                  style={{
+                    background: "#1f2937",
+                    color: "#fff",
+                    border: "1px solid #4b5563",
+                    borderRadius: "6px",
+                    padding: "4px 10px",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: "bold"
+                  }}
+                >
+                  →
+                </button>
+              </div>
+
               <button
                 onClick={() => setIsMinimized(true)}
                 title="Minimize Window"
@@ -654,6 +809,7 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
                 boxShadow: "0 12px 36px rgba(0,0,0,0.5)"
               }}
             />
+            <span style={{ display: "none" }}>{scaleVersion}</span>
           </div>
         </div>
       )}
