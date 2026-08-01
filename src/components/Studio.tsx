@@ -124,6 +124,13 @@ interface Stroke {
   points: { id: string; x: number; y: number }[]; 
   color: string; 
   width: number; 
+  strokeStyle?: 'solid' | 'mesh';
+  strokeRole?: 'default' | 'mesh-horizontal' | 'mesh-vertical';
+  meshOffset?: number;
+  meshPattern?: {
+    horizontalLines: number;
+    verticalLines: number;
+  };
   fabricFillSrc?: string;
   fabricFillWidth?: number;
   fabricFillHeight?: number;
@@ -152,6 +159,11 @@ interface MannequinMeasurements {
   shoulderWidth: number;
   neckCircumference: number;
 }
+
+const DEFAULT_MESH_PATTERN = {
+  horizontalLines: 3,
+  verticalLines: 4,
+} as const;
 
 export function Studio({ onBack }: { onBack: () => void }) {
       const [refineError, setRefineError] = useState<string | null>(null);
@@ -726,6 +738,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
     { value: "solid", label: "Solid" },
     { value: "gem", label: "Gem/Crystal" },
     { value: "metallic", label: "Metallic" },
+    { value: "mesh", label: "Mesh" },
     { value: "acetate", label: "Acetate" },
     { value: "bamboo", label: "Bamboo Fabric" },
     { value: "batik", label: "Batik" },
@@ -863,6 +876,8 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   const scissorTargetRef = useRef<string | null>(null);
   const [activePenSize, setActivePenSize] = useState<number>(4);
   const [activeFillOpacity, setActiveFillOpacity] = useState<number>(1);
+  const [meshHorizontalLines, setMeshHorizontalLines] = useState<number>(DEFAULT_MESH_PATTERN.horizontalLines);
+  const [meshVerticalLines, setMeshVerticalLines] = useState<number>(DEFAULT_MESH_PATTERN.verticalLines);
   const [keepOriginalColor, setKeepOriginalColor] = useState<boolean>(false);
   const [selectedClothType, setSelectedClothType] = useState<string>('solid');
   const [pickColorMode, setPickColorMode] = useState<boolean>(false);
@@ -901,7 +916,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   }, []);
   const workspaceShapesRef = useRef<DistortableShape[]>([]);
   const isPointerDownRef = useRef(false);
-  const penRef = useRef<{ pointerId: number; lastX: number; lastY: number; strokeId: string } | null>(null);
+  const penRef = useRef<{ pointerId: number; lastX: number; lastY: number; strokeIds: string[]; meshGroupId?: string; pendingMesh?: boolean; color?: string; width?: number } | null>(null);
   const PEN_SPACING = 30; 
   const ERASE_RADIUS = 15;
 
@@ -1926,6 +1941,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
     }
 
     const isGem = ['emerald', 'pear', 'marquise', 'oval'].includes(type);
+    const normalizedClothType = isGem ? 'gem' : (selectedClothType || undefined);
     const newStroke: Stroke = {
       id: `st-${Date.now()}`,
       points: pts,
@@ -1934,12 +1950,17 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
       closed: type !== 'line' && type !== 'curve',
       baseFill: (type !== 'line' && type !== 'curve' && !isGem) ? '#ffffff' : undefined,
       fillColor: isGem ? activeColor : undefined,
-      clothType: isGem ? 'gem' : (selectedClothType || undefined)
+      clothType: normalizedClothType,
+      strokeStyle: normalizedClothType === 'mesh' ? 'mesh' : 'solid',
+      meshPattern: normalizedClothType === 'mesh' ? {
+        horizontalLines: meshHorizontalLines,
+        verticalLines: meshVerticalLines,
+      } : undefined,
     };
     
     setStrokes(prev => [...prev, newStroke]);
     setShowShapesModal(false);
-  }, [activeColor, saveForUndo, selectedClothType]);
+  }, [activeColor, saveForUndo, selectedClothType, meshHorizontalLines, meshVerticalLines]);
 
   const createMannequinWithMeasurements = useCallback((measures: MannequinMeasurements) => {
     saveForUndo();
@@ -3243,6 +3264,116 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     return close ? d + " Z" : d;
   };
 
+  const getMeshPattern = (stroke?: Stroke) => ({
+    horizontalLines: Math.max(1, stroke?.meshPattern?.horizontalLines ?? DEFAULT_MESH_PATTERN.horizontalLines),
+    verticalLines: Math.max(1, stroke?.meshPattern?.verticalLines ?? DEFAULT_MESH_PATTERN.verticalLines),
+  });
+
+  const isMeshStroke = (stroke?: Stroke) => normalizeFabric(stroke?.clothType || '') === 'mesh' && stroke?.strokeStyle === 'mesh';
+
+  const applyMeshPatternToSelection = useCallback((nextPattern: { horizontalLines: number; verticalLines: number }) => {
+    if (selectedShapeId) {
+      setWorkspaceShapes(prev => prev.map(shape => shape.id === selectedShapeId
+        ? { ...shape, clothType: 'mesh' }
+        : shape
+      ));
+    }
+
+    setStrokes(prev => prev.map(stroke => {
+      const isSelectedStroke = stroke.id === selectedShapeId;
+      const alreadyMesh = normalizeFabric(stroke.clothType || '') === 'mesh';
+      if (!isSelectedStroke && !alreadyMesh) return stroke;
+      return {
+        ...stroke,
+        clothType: 'mesh',
+        strokeStyle: 'mesh',
+        meshPattern: {
+          horizontalLines: nextPattern.horizontalLines,
+          verticalLines: nextPattern.verticalLines,
+        },
+      };
+    }));
+  }, [selectedShapeId]);
+
+  const getPerpendicularUnitVector = (dx: number, dy: number) => {
+    const length = Math.hypot(dx, dy);
+    if (length <= 0.0001) {
+      return { x: 0, y: 1 };
+    }
+
+    return {
+      x: -dy / length,
+      y: dx / length,
+    };
+  };
+
+  const createMeshStrokeSet = useCallback((x: number, y: number, color: string, width: number, zIndex: number) => {
+    const horizontalLines = Math.max(1, meshHorizontalLines);
+    const spacing = Math.max(width * 1.35, 10);
+    const centerOffset = (horizontalLines - 1) / 2;
+    const groupId = `mesh-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const strokesForMesh: Stroke[] = [];
+
+    for (let index = 0; index < horizontalLines; index += 1) {
+      const offset = (index - centerOffset) * spacing;
+      const startX = x;
+      const startY = y + offset;
+
+      strokesForMesh.push({
+        id: `st-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`,
+        points: [{ id: `pt-${Date.now()}-${index}`, x: startX, y: startY }],
+        color,
+        width,
+        zIndex,
+        visible: true,
+        clothType: undefined,
+        strokeStyle: 'solid',
+        strokeRole: 'mesh-horizontal',
+        meshOffset: offset,
+        meshPattern: {
+          horizontalLines,
+          verticalLines: meshVerticalLines,
+        },
+        groupId,
+      });
+    }
+
+    return {
+      groupId,
+      spacing,
+      strokes: strokesForMesh,
+    };
+  }, [meshHorizontalLines, meshVerticalLines]);
+
+  const createMeshVerticalConnector = useCallback((color: string, width: number, zIndex: number, groupId: string, sourceStrokes: Stroke[]) => {
+    const horizontalStrokePoints = sourceStrokes
+      .filter((stroke) => stroke.groupId === groupId && stroke.strokeRole === 'mesh-horizontal')
+      .map((stroke) => stroke.points[stroke.points.length - 1])
+      .filter((point): point is { id: string; x: number; y: number } => !!point);
+
+    if (horizontalStrokePoints.length <= 1) return null;
+
+    const points = horizontalStrokePoints.map((point, index) => ({
+      id: `pt-${Date.now()}-v-${index}-${Math.random().toString(36).slice(2, 5)}`,
+      x: point.x,
+      y: point.y,
+    }));
+
+    return {
+      id: `st-${Date.now()}-v-${Math.random().toString(36).slice(2, 6)}`,
+      points,
+      color,
+      width: Math.max(1, width * 0.7),
+      visible: true,
+      clothType: undefined,
+      strokeStyle: 'solid' as const,
+      strokeRole: 'mesh-vertical',
+      groupId,
+      zIndex,
+      closed: false,
+    } as Stroke;
+  }, []);
+
   // Export current workspace as PNG/JPG by serializing the SVG, inlining images, and drawing to a canvas
   const downloadImage = async (type: 'png' | 'jpg' = 'png') => {
     if (typeof window === 'undefined' || typeof document === 'undefined') return;
@@ -4281,6 +4412,45 @@ const extractSelection = useCallback(async (asJpeg = false) => {
             <div className="text-[10px] text-slate-400 mt-1">Choose a fabric look to preview when filling shapes.</div>
           </div>
 
+          {selectedClothType === 'mesh' && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="text-[10px] font-black uppercase text-slate-700">Mesh Stroke</div>
+              <div className="mt-2 flex items-center gap-2">
+                <label className="text-[10px] font-black uppercase text-slate-600 w-20">Horizontal</label>
+                <input
+                  type="range"
+                  min={1}
+                  max={12}
+                  value={meshHorizontalLines}
+                  onChange={e => {
+                    const horizontalLines = parseInt(e.target.value, 10);
+                    setMeshHorizontalLines(horizontalLines);
+                    applyMeshPatternToSelection({ horizontalLines, verticalLines: meshVerticalLines });
+                  }}
+                  className="flex-1"
+                />
+                <span className="text-[10px] font-bold w-6 text-right">{meshHorizontalLines}</span>
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <label className="text-[10px] font-black uppercase text-slate-600 w-20">Vertical</label>
+                <input
+                  type="range"
+                  min={1}
+                  max={12}
+                  value={meshVerticalLines}
+                  onChange={e => {
+                    const verticalLines = parseInt(e.target.value, 10);
+                    setMeshVerticalLines(verticalLines);
+                    applyMeshPatternToSelection({ horizontalLines: meshHorizontalLines, verticalLines });
+                  }}
+                  className="flex-1"
+                />
+                <span className="text-[10px] font-bold w-6 text-right">{meshVerticalLines}</span>
+              </div>
+              <div className="mt-2 text-[10px] text-slate-500">Use this to create outlines like 3 horizontal and 4 vertical mesh lines.</div>
+            </div>
+          )}
+
           <hr className="border-slate-100" />
           
           <div className="flex items-center gap-2">
@@ -4475,8 +4645,35 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                 ...strokes.map(s => s.zIndex || 0),
                 0
               );
-              setStrokes(prev => [...prev, { id: sid, points: [{ id: `pt-${Date.now()}`, x: c.x, y: c.y }], color: activeColor, width: activePenSize, zIndex: maxZ + 1, visible: activeTool === "pen" }]);
-              penRef.current = { pointerId: e.pointerId, lastX: c.x, lastY: c.y, strokeId: sid };
+              const meshEnabled = normalizeFabric(selectedClothType) === 'mesh';
+              if (meshEnabled) {
+                const meshStrokeSet = createMeshStrokeSet(c.x, c.y, activeColor, activePenSize, maxZ + 1);
+                setStrokes(prev => [...prev, ...meshStrokeSet.strokes]);
+                penRef.current = {
+                  pointerId: e.pointerId,
+                  lastX: c.x,
+                  lastY: c.y,
+                  strokeIds: meshStrokeSet.strokes.map(stroke => stroke.id),
+                  meshGroupId: meshStrokeSet.groupId,
+                  pendingMesh: false,
+                  color: activeColor,
+                  width: activePenSize,
+                };
+              } else {
+                setStrokes(prev => [...prev, {
+                  id: sid,
+                  points: [{ id: `pt-${Date.now()}`, x: c.x, y: c.y }],
+                  color: activeColor,
+                  width: activePenSize,
+                  zIndex: maxZ + 1,
+                  visible: activeTool === "pen",
+                  clothType: undefined,
+                  strokeStyle: 'solid',
+                  strokeRole: 'default',
+                  meshPattern: undefined,
+                }]);
+                penRef.current = { pointerId: e.pointerId, lastX: c.x, lastY: c.y, strokeIds: [sid] };
+              }
               e.currentTarget.setPointerCapture(e.pointerId);
               return;
             } 
@@ -4500,7 +4697,47 @@ const extractSelection = useCallback(async (asJpeg = false) => {
               });
             }
 
-            if (activeTool === "erase" && isPointerDownRef.current) sweepErase(c.x, c.y); if ((activeTool === "pen" || activeTool === "ghost") && penRef.current && e.pointerId === penRef.current.pointerId) { if (Math.hypot(c.x - penRef.current!.lastX, c.y - penRef.current!.lastY) >= PEN_SPACING) { setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { id: `pt-${Date.now()}`, x: c.x, y: c.y }] } : s));
+            if (activeTool === "erase" && isPointerDownRef.current) sweepErase(c.x, c.y); if ((activeTool === "pen" || activeTool === "ghost") && penRef.current && e.pointerId === penRef.current.pointerId) { if (Math.hypot(c.x - penRef.current!.lastX, c.y - penRef.current!.lastY) >= PEN_SPACING) { setStrokes(prev => {
+              const deltaX = c.x - penRef.current!.lastX;
+              const deltaY = c.y - penRef.current!.lastY;
+              const normal = getPerpendicularUnitVector(deltaX, deltaY);
+              const updated = prev.map((stroke) => {
+                if (!penRef.current!.strokeIds.includes(stroke.id)) return stroke;
+                const signedOffset = stroke.meshOffset || 0;
+                const isFirstExtension = stroke.points.length === 1;
+                const nextX = c.x + normal.x * signedOffset;
+                const nextY = c.y + normal.y * signedOffset;
+                const reseededStartX = penRef.current!.lastX + normal.x * signedOffset;
+                const reseededStartY = penRef.current!.lastY + normal.y * signedOffset;
+                return {
+                  ...stroke,
+                  points: isFirstExtension
+                    ? [
+                        { ...stroke.points[0], x: reseededStartX, y: reseededStartY },
+                        {
+                          id: `pt-${Date.now()}-${stroke.id}`,
+                          x: nextX,
+                          y: nextY,
+                        },
+                      ]
+                    : [...stroke.points, {
+                        id: `pt-${Date.now()}-${stroke.id}`,
+                        x: nextX,
+                        y: nextY,
+                      }],
+                };
+              });
+
+              if (penRef.current?.meshGroupId) {
+                const currentMaxZ = Math.max(...updated.map(item => item.zIndex || 0), 0);
+                const verticalConnector = createMeshVerticalConnector(activeColor, activePenSize, currentMaxZ + 1, penRef.current.meshGroupId, updated);
+                if (verticalConnector) {
+                  return [...updated, verticalConnector];
+                }
+              }
+
+              return updated;
+            });
                 penRef.current!.lastX = c.x;
                 penRef.current!.lastY = c.y;
               } } else if (draggingStrokeDot) { setStrokes(prev => prev.map(s => s.id === draggingStrokeDot.strokeId ? { ...s, points: s.points.map(p => p.id === draggingStrokeDot.dotId ? { ...p, x: c.x, y: c.y } : p) } : s));
@@ -4913,6 +5150,15 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                     const strokeW = Math.max(1, maxX - minX);
                     const strokeH = Math.max(1, maxY - minY);
                     const transform = `rotate(${s.rotation || 0} ${centerX} ${centerY})`;
+                    const meshPattern = getMeshPattern(s);
+                    const meshStrokeInset = Math.max(6, s.width * 1.5);
+                    const meshMinX = minX - meshStrokeInset;
+                    const meshMaxX = maxX + meshStrokeInset;
+                    const meshMinY = minY - meshStrokeInset;
+                    const meshMaxY = maxY + meshStrokeInset;
+                    const meshPatternWidth = Math.max(meshMaxX - meshMinX, s.width * (meshPattern.verticalLines + 1), 12);
+                    const meshPatternHeight = Math.max(meshMaxY - meshMinY, s.width * (meshPattern.horizontalLines + 1), 12);
+                    const meshStroke = isMeshStroke(s);
                     return (
                     <g key={s.id} data-stroke-id={s.id} data-group-id={s.groupId || ''} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
                       {s.baseFill && <path d={strokePathD} fill={s.baseFill} pointerEvents="none" strokeLinecap="round" strokeLinejoin="round" />}
@@ -5067,6 +5313,11 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                               )}
                             </pattern>
                             )}
+                            {meshStroke && (
+                              <clipPath id={`mesh-stroke-clip-${s.id}`}>
+                                <path d={generatePathData(s.points, s.closed ?? false)} stroke="white" strokeWidth={Math.max(s.width * 3, 12)} strokeLinecap="round" strokeLinejoin="round" fill={s.closed ? 'white' : 'none'} />
+                              </clipPath>
+                            )}
                           </defs>
                           {s.clothType === 'gem' ?
                           (
@@ -5212,18 +5463,59 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                                 <path d={generatePathData(s.points, true)} fill="none" stroke="white" strokeWidth={2} strokeOpacity="0.3" transform="scale(0.95)" transform-origin="center" />
                             </g>
                           ) : (
-                              <path d={generatePathData(s.points, s.closed ?? false)}
-                                stroke={s.visible === false ? (globalShowDots ? s.color : "transparent") : s.color}
-                                strokeWidth={s.width}
-                                fill={`url(#pt-stroke-${s.id})`}
-                                strokeLinecap="round" strokeLinejoin="round"
-                                strokeDasharray={s.visible === false ? "5,5" : undefined}
-                                opacity={s.visible === false ? 0.3 : 1}
-                              />
+                              <>
+                                {meshStroke ? (
+                                  <g clipPath={`url(#mesh-stroke-clip-${s.id})`} opacity={s.visible === false ? 0.3 : 1}>
+                                    <rect x={meshMinX} y={meshMinY} width={meshPatternWidth} height={meshPatternHeight} fill="transparent" />
+                                    {Array.from({ length: meshPattern.horizontalLines }, (_, idx) => {
+                                      const y = meshMinY + ((idx + 1) * meshPatternHeight) / (meshPattern.horizontalLines + 1);
+                                      return <line key={`mesh-grid-h-${s.id}-${idx}`} x1={meshMinX} y1={y} x2={meshMaxX} y2={y} stroke={s.color} strokeWidth={Math.max(1.5, s.width * 0.45)} strokeDasharray={s.visible === false ? "5,5" : undefined} strokeLinecap="round" />;
+                                    })}
+                                    {Array.from({ length: meshPattern.verticalLines }, (_, idx) => {
+                                      const x = meshMinX + ((idx + 1) * meshPatternWidth) / (meshPattern.verticalLines + 1);
+                                      return <line key={`mesh-grid-v-${s.id}-${idx}`} x1={x} y1={meshMinY} x2={x} y2={meshMaxY} stroke={s.color} strokeWidth={Math.max(1.5, s.width * 0.45)} strokeDasharray={s.visible === false ? "5,5" : undefined} strokeLinecap="round" />;
+                                    })}
+                                  </g>
+                                ) : (
+                                  <path d={generatePathData(s.points, s.closed ?? false)}
+                                    stroke={s.visible === false ? (globalShowDots ? s.color : "transparent") : s.color}
+                                    strokeWidth={s.width}
+                                    fill={`url(#pt-stroke-${s.id})`}
+                                    strokeLinecap="round" strokeLinejoin="round"
+                                    strokeDasharray={s.visible === false ? "5,5" : undefined}
+                                    opacity={s.visible === false ? 0.3 : 1}
+                                  />
+                                )}
+                              </>
                             )}
                         </>
                       ) : (
-                        <path d={generatePathData(s.points, s.closed ?? false)} stroke={s.visible === false ? (globalShowDots ? s.color : "transparent") : s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={s.visible === false ? "5,5" : undefined} opacity={s.visible === false ? 0.3 : 1} onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }} />
+                        <>
+                          {meshStroke && (
+                            <defs>
+                              <clipPath id={`mesh-stroke-clip-${s.id}`}>
+                                <path d={generatePathData(s.points, s.closed ?? false)} stroke="white" strokeWidth={Math.max(s.width * 3, 12)} strokeLinecap="round" strokeLinejoin="round" fill={s.closed ? 'white' : 'none'} />
+                              </clipPath>
+                            </defs>
+                          )}
+                          {meshStroke ? (
+                            <g onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType), strokeStyle: normalizeFabric(selectedClothType) === 'mesh' ? 'mesh' : st.strokeStyle, meshPattern: normalizeFabric(selectedClothType) === 'mesh' ? { horizontalLines: meshHorizontalLines, verticalLines: meshVerticalLines } : st.meshPattern } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
+                              <g clipPath={`url(#mesh-stroke-clip-${s.id})`} opacity={s.visible === false ? 0.3 : 1}>
+                                <rect x={meshMinX} y={meshMinY} width={meshPatternWidth} height={meshPatternHeight} fill="transparent" />
+                                {Array.from({ length: meshPattern.horizontalLines }, (_, idx) => {
+                                  const y = meshMinY + ((idx + 1) * meshPatternHeight) / (meshPattern.horizontalLines + 1);
+                                  return <line key={`mesh-basic-h-${s.id}-${idx}`} x1={meshMinX} y1={y} x2={meshMaxX} y2={y} stroke={s.color} strokeWidth={Math.max(1.5, s.width * 0.45)} strokeDasharray={s.visible === false ? "5,5" : undefined} strokeLinecap="round" />;
+                                })}
+                                {Array.from({ length: meshPattern.verticalLines }, (_, idx) => {
+                                  const x = meshMinX + ((idx + 1) * meshPatternWidth) / (meshPattern.verticalLines + 1);
+                                  return <line key={`mesh-basic-v-${s.id}-${idx}`} x1={x} y1={meshMinY} x2={x} y2={meshMaxY} stroke={s.color} strokeWidth={Math.max(1.5, s.width * 0.45)} strokeDasharray={s.visible === false ? "5,5" : undefined} strokeLinecap="round" />;
+                                })}
+                              </g>
+                            </g>
+                          ) : (
+                            <path d={generatePathData(s.points, s.closed ?? false)} stroke={s.visible === false ? (globalShowDots ? s.color : "transparent") : s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={s.visible === false ? "5,5" : undefined} opacity={s.visible === false ? 0.3 : 1} onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType), strokeStyle: normalizeFabric(selectedClothType) === 'mesh' ? 'mesh' : st.strokeStyle, meshPattern: normalizeFabric(selectedClothType) === 'mesh' ? { horizontalLines: meshHorizontalLines, verticalLines: meshVerticalLines } : st.meshPattern } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }} />
+                          )}
+                        </>
                       )}
                       {globalShowDots && s.points.map((p) => (
                         <circle key={p.id} cx={p.x} cy={p.y} r={8} fill={s.color} onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingStrokeDot({ strokeId: s.id, dotId: p.id }); } }} />
