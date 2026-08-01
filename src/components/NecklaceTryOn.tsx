@@ -33,6 +33,48 @@ interface NecklaceAnchorPoints {
   centerX: number;
 }
 
+function getNecklacePlacement(
+  landmarks: Array<{ x: number; y: number }>,
+  width: number,
+  height: number,
+  chin?: { x: number; y: number },
+) {
+  const leftShoulder = landmarks[11];
+  const rightShoulder = landmarks[12];
+  if (!leftShoulder || !rightShoulder) return null;
+
+  const leftShoulderX = leftShoulder.x * width;
+  const rightShoulderX = rightShoulder.x * width;
+  const leftShoulderY = leftShoulder.y * height;
+  const rightShoulderY = rightShoulder.y * height;
+  const shoulderSpan = Math.max(1, Math.abs(rightShoulderX - leftShoulderX));
+  const shoulderMidX = (leftShoulderX + rightShoulderX) / 2;
+  const shoulderMidY = (leftShoulderY + rightShoulderY) / 2;
+
+  if (chin) {
+    const chinX = chin.x * width;
+    const chinY = chin.y * height;
+
+    return {
+      chainStartX: leftShoulderX + (chinX - leftShoulderX) * 0.4,
+      chainStartY: leftShoulderY + (chinY - leftShoulderY) * 0.3,
+      chainEndX: rightShoulderX - (rightShoulderX - chinX) * 0.4,
+      chainEndY: rightShoulderY + (chinY - rightShoulderY) * 0.3,
+      controlX: chinX,
+    };
+  }
+
+  const fallbackNeckY = shoulderMidY - shoulderSpan * 0.18;
+
+  return {
+    chainStartX: leftShoulderX + shoulderSpan * 0.18,
+    chainStartY: fallbackNeckY,
+    chainEndX: rightShoulderX - shoulderSpan * 0.18,
+    chainEndY: fallbackNeckY,
+    controlX: shoulderMidX,
+  };
+}
+
 declare global {
   interface Window {
     Camera: any;
@@ -296,23 +338,12 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
             const torsoHeight = maxY - minY;
 
             if (mode === "necklace" && necklaceAnchorsRef.current) {
-              const leftShoulder = lm[11];
-              const rightShoulder = lm[12];
               const chin = faceLandmarks?.[152];
+              const placement = getNecklacePlacement(lm, w, h, chin);
 
-              if (leftShoulder && rightShoulder && chin) {
-                const leftShoulderX = leftShoulder.x * w;
-                const rightShoulderX = rightShoulder.x * w;
-                const leftShoulderY = leftShoulder.y * h;
-                const rightShoulderY = rightShoulder.y * h;
-                const chinX = chin.x * w;
-                const chinY = chin.y * h;
-                const chainStartX = leftShoulderX + (chinX - leftShoulderX) * 0.4;
-                const chainStartY = leftShoulderY + (chinY - leftShoulderY) * 0.3;
-                const chainEndX = rightShoulderX - (rightShoulderX - chinX) * 0.4;
-                const chainEndY = rightShoulderY + (chinY - rightShoulderY) * 0.3;
+              if (placement) {
+                const { chainStartX, chainStartY, chainEndX, chainEndY, controlX } = placement;
                 const liveNeckWidth = Math.max(1, Math.abs(chainEndX - chainStartX));
-                const controlX = chinX;
                 const sourceAnchors = necklaceAnchorsRef.current;
                 const sourceNeckWidth = Math.max(1, sourceAnchors.rightNeckX - sourceAnchors.leftNeckX);
                 const scale = (liveNeckWidth / sourceNeckWidth) * manualScaleRef.current;
