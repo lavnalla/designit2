@@ -738,7 +738,6 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
     { value: "solid", label: "Solid" },
     { value: "gem", label: "Gem/Crystal" },
     { value: "metallic", label: "Metallic" },
-    { value: "mesh", label: "Mesh" },
     { value: "acetate", label: "Acetate" },
     { value: "bamboo", label: "Bamboo Fabric" },
     { value: "batik", label: "Batik" },
@@ -875,6 +874,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   const [scissorDots, setScissorDots] = useState<{x: number, y: number}[]>([]);
   const scissorTargetRef = useRef<string | null>(null);
   const [activePenSize, setActivePenSize] = useState<number>(4);
+  const [activePenStrokeType, setActivePenStrokeType] = useState<'solid' | 'mesh'>('solid');
   const [activeFillOpacity, setActiveFillOpacity] = useState<number>(1);
   const [meshHorizontalLines, setMeshHorizontalLines] = useState<number>(DEFAULT_MESH_PATTERN.horizontalLines);
   const [meshVerticalLines, setMeshVerticalLines] = useState<number>(DEFAULT_MESH_PATTERN.verticalLines);
@@ -884,6 +884,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   const [pickThreshold, setPickThreshold] = useState<number>(12);
   const [showColorPanel, setShowColorPanel] = useState(false);
   const [showFabricDropdown, setShowFabricDropdown] = useState(false);
+  const [showPenStrokeDropdown, setShowPenStrokeDropdown] = useState(false);
   const [isFabricLoading, setIsFabricLoading] = useState(false);
   const [globalShowDots, setGlobalShowDots] = useState(true);
   const [isLocked, setIsLocked] = useState(false); 
@@ -3345,34 +3346,55 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     };
   }, [meshHorizontalLines, meshVerticalLines]);
 
-  const createMeshVerticalConnector = useCallback((color: string, width: number, zIndex: number, groupId: string, sourceStrokes: Stroke[]) => {
-    const horizontalStrokePoints = sourceStrokes
+  const createMeshVerticalConnectors = useCallback((
+    color: string,
+    width: number,
+    zIndex: number,
+    groupId: string,
+    sourceStrokes: Stroke[],
+    start: { x: number; y: number },
+    end: { x: number; y: number },
+  ) => {
+    const horizontalStrokes = sourceStrokes
       .filter((stroke) => stroke.groupId === groupId && stroke.strokeRole === 'mesh-horizontal')
-      .map((stroke) => stroke.points[stroke.points.length - 1])
-      .filter((point): point is { id: string; x: number; y: number } => !!point);
+      .sort((a, b) => (a.meshOffset || 0) - (b.meshOffset || 0));
 
-    if (horizontalStrokePoints.length <= 1) return null;
+    if (horizontalStrokes.length <= 1) return [] as Stroke[];
 
-    const points = horizontalStrokePoints.map((point, index) => ({
-      id: `pt-${Date.now()}-v-${index}-${Math.random().toString(36).slice(2, 5)}`,
-      x: point.x,
-      y: point.y,
-    }));
+    const verticalLines = Math.max(1, meshVerticalLines);
+    const connectors: Stroke[] = [];
 
-    return {
-      id: `st-${Date.now()}-v-${Math.random().toString(36).slice(2, 6)}`,
-      points,
-      color,
-      width: Math.max(1, width * 0.7),
-      visible: true,
-      clothType: undefined,
-      strokeStyle: 'solid' as const,
-      strokeRole: 'mesh-vertical',
-      groupId,
-      zIndex,
-      closed: false,
-    } as Stroke;
-  }, []);
+    for (let index = 0; index < verticalLines; index += 1) {
+      const t = verticalLines === 1 ? 0.5 : index / (verticalLines - 1);
+      const points = horizontalStrokes.map((stroke, row) => {
+        const offset = stroke.meshOffset || 0;
+        const x = start.x + (end.x - start.x) * t;
+        const y = start.y + (end.y - start.y) * t;
+        const normal = getPerpendicularUnitVector(end.x - start.x, end.y - start.y);
+        return {
+          id: `pt-${Date.now()}-v-${index}-${row}-${Math.random().toString(36).slice(2, 5)}`,
+          x: x + normal.x * offset,
+          y: y + normal.y * offset,
+        };
+      });
+
+      connectors.push({
+        id: `st-${Date.now()}-v-${index}-${Math.random().toString(36).slice(2, 6)}`,
+        points,
+        color,
+        width: Math.max(1, width * 0.7),
+        visible: true,
+        clothType: undefined,
+        strokeStyle: 'solid',
+        strokeRole: 'mesh-vertical',
+        groupId,
+        zIndex: zIndex + index,
+        closed: false,
+      });
+    }
+
+    return connectors;
+  }, [meshVerticalLines]);
 
   // Export current workspace as PNG/JPG by serializing the SVG, inlining images, and drawing to a canvas
   const downloadImage = async (type: 'png' | 'jpg' = 'png') => {
@@ -4412,46 +4434,80 @@ const extractSelection = useCallback(async (asJpeg = false) => {
             <div className="text-[10px] text-slate-400 mt-1">Choose a fabric look to preview when filling shapes.</div>
           </div>
 
-          {selectedClothType === 'mesh' && (
+          <hr className="border-slate-100" />
+
+          {(activeTool === 'pen' || activeTool === 'ghost') && (
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <div className="text-[10px] font-black uppercase text-slate-700">Mesh Stroke</div>
-              <div className="mt-2 flex items-center gap-2">
-                <label className="text-[10px] font-black uppercase text-slate-600 w-20">Horizontal</label>
-                <input
-                  type="range"
-                  min={1}
-                  max={12}
-                  value={meshHorizontalLines}
-                  onChange={e => {
-                    const horizontalLines = parseInt(e.target.value, 10);
-                    setMeshHorizontalLines(horizontalLines);
-                    applyMeshPatternToSelection({ horizontalLines, verticalLines: meshVerticalLines });
-                  }}
-                  className="flex-1"
-                />
-                <span className="text-[10px] font-bold w-6 text-right">{meshHorizontalLines}</span>
+              <label className="text-[10px] font-black uppercase text-slate-700">Pen Stroke Type</label>
+              <div className="relative mt-2">
+                <div
+                  className="w-full p-2 border rounded text-sm cursor-pointer flex items-center justify-between bg-white"
+                  onClick={() => setShowPenStrokeDropdown(prev => !prev)}
+                >
+                  <span>{activePenStrokeType === 'mesh' ? 'Mesh' : 'Solid'}</span>
+                  <span className="text-xs">▼</span>
+                </div>
+
+                {showPenStrokeDropdown && (
+                  <div className="relative z-50 w-full mt-1 bg-white border rounded shadow-inner overflow-hidden">
+                    {[
+                      { value: 'solid', label: 'Solid' },
+                      { value: 'mesh', label: 'Mesh' },
+                    ].map(option => (
+                      <div
+                        key={option.value}
+                        className={`p-2 cursor-pointer hover:bg-slate-100 ${activePenStrokeType === option.value ? 'bg-slate-50' : ''}`}
+                        onClick={() => {
+                          setActivePenStrokeType(option.value as 'solid' | 'mesh');
+                          setShowPenStrokeDropdown(false);
+                        }}
+                      >
+                        <span className="text-sm">{option.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="mt-2 flex items-center gap-2">
-                <label className="text-[10px] font-black uppercase text-slate-600 w-20">Vertical</label>
-                <input
-                  type="range"
-                  min={1}
-                  max={12}
-                  value={meshVerticalLines}
-                  onChange={e => {
-                    const verticalLines = parseInt(e.target.value, 10);
-                    setMeshVerticalLines(verticalLines);
-                    applyMeshPatternToSelection({ horizontalLines: meshHorizontalLines, verticalLines });
-                  }}
-                  className="flex-1"
-                />
-                <span className="text-[10px] font-bold w-6 text-right">{meshVerticalLines}</span>
-              </div>
-              <div className="mt-2 text-[10px] text-slate-500">Use this to create outlines like 3 horizontal and 4 vertical mesh lines.</div>
+
+              {activePenStrokeType === 'mesh' && (
+                <>
+                  <div className="mt-3 flex items-center gap-2">
+                    <label className="text-[10px] font-black uppercase text-slate-600 w-20">Horizontal</label>
+                    <input
+                      type="range"
+                      min={1}
+                      max={12}
+                      value={meshHorizontalLines}
+                      onChange={e => {
+                        const horizontalLines = parseInt(e.target.value, 10);
+                        setMeshHorizontalLines(horizontalLines);
+                        applyMeshPatternToSelection({ horizontalLines, verticalLines: meshVerticalLines });
+                      }}
+                      className="flex-1"
+                    />
+                    <span className="text-[10px] font-bold w-6 text-right">{meshHorizontalLines}</span>
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <label className="text-[10px] font-black uppercase text-slate-600 w-20">Vertical</label>
+                    <input
+                      type="range"
+                      min={1}
+                      max={12}
+                      value={meshVerticalLines}
+                      onChange={e => {
+                        const verticalLines = parseInt(e.target.value, 10);
+                        setMeshVerticalLines(verticalLines);
+                        applyMeshPatternToSelection({ horizontalLines: meshHorizontalLines, verticalLines });
+                      }}
+                      className="flex-1"
+                    />
+                    <span className="text-[10px] font-bold w-6 text-right">{meshVerticalLines}</span>
+                  </div>
+                  <div className="mt-2 text-[10px] text-slate-500">Draw pen strokes as mesh instead of a single line.</div>
+                </>
+              )}
             </div>
           )}
-
-          <hr className="border-slate-100" />
           
           <div className="flex items-center gap-2">
             <label className="text-[10px] font-black uppercase text-slate-600">Pen Size</label>
@@ -4645,7 +4701,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                 ...strokes.map(s => s.zIndex || 0),
                 0
               );
-              const meshEnabled = normalizeFabric(selectedClothType) === 'mesh';
+              const meshEnabled = activePenStrokeType === 'mesh';
               if (meshEnabled) {
                 const meshStrokeSet = createMeshStrokeSet(c.x, c.y, activeColor, activePenSize, maxZ + 1);
                 setStrokes(prev => [...prev, ...meshStrokeSet.strokes]);
@@ -4730,9 +4786,17 @@ const extractSelection = useCallback(async (asJpeg = false) => {
 
               if (penRef.current?.meshGroupId) {
                 const currentMaxZ = Math.max(...updated.map(item => item.zIndex || 0), 0);
-                const verticalConnector = createMeshVerticalConnector(activeColor, activePenSize, currentMaxZ + 1, penRef.current.meshGroupId, updated);
-                if (verticalConnector) {
-                  return [...updated, verticalConnector];
+                const verticalConnectors = createMeshVerticalConnectors(
+                  activeColor,
+                  activePenSize,
+                  currentMaxZ + 1,
+                  penRef.current.meshGroupId,
+                  updated,
+                  { x: penRef.current.lastX, y: penRef.current.lastY },
+                  { x: c.x, y: c.y },
+                );
+                if (verticalConnectors.length > 0) {
+                  return [...updated, ...verticalConnectors];
                 }
               }
 
