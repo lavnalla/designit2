@@ -156,6 +156,7 @@ interface MannequinMeasurements {
 export function Studio({ onBack }: { onBack: () => void }) {
       const [refineError, setRefineError] = useState<string | null>(null);
     const [showSourceWindow, setShowSourceWindow] = useState(false);
+    const [showTopPanelMenu, setShowTopPanelMenu] = useState(false);
       // Refine image state
     const [refinePrompt, setRefinePrompt] = useState("");
     const [isRefiningImage, setIsRefiningImage] = useState(false);
@@ -3855,7 +3856,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     </select>
   </div>
 
-  <div className="flex items-center gap-1 sm:gap-2">
+  <div className="flex items-center gap-1 sm:gap-2 relative">
     <div className="flex items-center rounded-xl border-2 border-slate-300 overflow-hidden bg-white shadow-sm">
       <button
         onClick={() => setTryOnMode("garment")}
@@ -3909,10 +3910,84 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       {showTryOn ? "✕ Close Try-On View" : "✨ Test Live on Webcam"}
     </button>
 
+    <div className="relative md:hidden">
+      <button
+        type="button"
+        onClick={() => setShowTopPanelMenu((prev) => !prev)}
+        className={`${toolbarButtonBaseClass} min-w-0 px-3`}
+        style={{ backgroundColor: '#fce7f3', borderColor: '#ec4899', color: '#831843' }}
+        aria-expanded={showTopPanelMenu}
+        aria-controls="studio-top-panel-menu"
+      >
+        More
+      </button>
+      {showTopPanelMenu && (
+        <div
+          id="studio-top-panel-menu"
+          className="absolute right-0 top-[calc(100%+0.5rem)] z-[250] w-[12rem] rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl"
+        >
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => { setShowMannequinModal(true); setShowTopPanelMenu(false); }}
+              className={`${toolbarButtonBaseClass} min-w-0 w-full gap-1`}
+              style={{ backgroundColor: '#f9a8d4', borderColor: '#ec4899', color: '#000000' }}
+            >
+              Dress Form
+            </button>
+            <button
+              type="button"
+              onClick={() => { undo(); setShowTopPanelMenu(false); }}
+              className={`${toolbarButtonBaseClass} min-w-0 w-full`}
+              style={{ backgroundColor: '#93c5fd', borderColor: '#3b82f6', color: '#000000' }}
+            >
+              Undo
+            </button>
+            <button
+              type="button"
+              onClick={() => { if(confirm("Reset?")) { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); } setShowTopPanelMenu(false); }}
+              className={`${toolbarButtonBaseClass} min-w-0 w-full`}
+              style={{ backgroundColor: '#86efac', borderColor: '#22c55e', color: '#000000' }}
+            >
+              Reset
+            </button>
+            <button
+              type="button"
+              onClick={() => { handleDownload('png'); setShowTopPanelMenu(false); }}
+              className={`${toolbarButtonBaseClass} min-w-0 w-full`}
+              style={{ backgroundColor: '#c4b5fd', borderColor: '#8b5cf6', color: '#000000' }}
+            >
+              Download
+            </button>
+            <button
+              type="button"
+              onClick={() => { setGlobalShowDots(!globalShowDots); setShowTopPanelMenu(false); }}
+              className={`${toolbarButtonInteractiveClass} min-w-0 w-full`}
+              style={globalShowDots
+                ? { backgroundColor: '#fca5a5', borderColor: '#ef4444', color: '#000000' }
+                : { backgroundColor: '#fecaca', borderColor: '#f87171', color: '#000000' }}
+            >
+              Dots
+            </button>
+            <button
+              type="button"
+              onClick={() => { setIsLocked(!isLocked); setShowTopPanelMenu(false); }}
+              className={`${toolbarButtonInteractiveClass} min-w-0 w-full`}
+              style={isLocked
+                ? { backgroundColor: '#fdba74', borderColor: '#f97316', color: '#000000' }
+                : { backgroundColor: '#fed7aa', borderColor: '#fb923c', color: '#000000' }}
+            >
+              Lock
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+
     <button 
       id="dress-form-btn" 
       onClick={() => setShowMannequinModal(true)} 
-      className={`${toolbarButtonBaseClass} hover:shadow-lg gap-1`}
+      className={`${toolbarButtonBaseClass} hover:shadow-lg gap-1 hidden md:flex`}
       style={{ backgroundColor: '#f9a8d4', borderColor: '#ec4899', color: '#000000' }}
     >
       <svg className="w-3 h-3 text-black" fill="currentColor" viewBox="0 0 24 24">
@@ -3924,7 +3999,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     <button 
       id="undo-btn" 
       onClick={undo} 
-      className={toolbarButtonBaseClass}
+      className={`${toolbarButtonBaseClass} hidden md:flex`}
       style={{ backgroundColor: '#93c5fd', borderColor: '#3b82f6', color: '#000000' }}
     >
       Undo
@@ -3933,7 +4008,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     <button 
       id="reset-btn" 
       onClick={() => { if(confirm("Reset?")) { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); } }} 
-      className={toolbarButtonBaseClass}
+      className={`${toolbarButtonBaseClass} hidden md:flex`}
       style={{ backgroundColor: '#86efac', borderColor: '#22c55e', color: '#000000' }}
     >
       Reset
@@ -3942,7 +4017,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     <button 
       id="download-btn" 
       onClick={() => handleDownload('png')} 
-      className={toolbarButtonBaseClass}
+      className={`${toolbarButtonBaseClass} hidden md:flex`}
       style={{ backgroundColor: '#c4b5fd', borderColor: '#8b5cf6', color: '#000000' }}
     >
       Download
@@ -3951,7 +4026,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     <button 
       id="dots-btn" 
       onClick={() => setGlobalShowDots(!globalShowDots)} 
-      className={`${toolbarButtonInteractiveClass} gap-2`}
+      className={`${toolbarButtonInteractiveClass} gap-2 hidden md:flex`}
       style={globalShowDots
         ? { backgroundColor: '#fca5a5', borderColor: '#ef4444', color: '#000000' }
         : { backgroundColor: '#fecaca', borderColor: '#f87171', color: '#000000' }}
@@ -3962,7 +4037,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     <button 
       id="lock-btn" 
       onClick={() => setIsLocked(!isLocked)} 
-      className={`${toolbarButtonInteractiveClass} gap-2`}
+      className={`${toolbarButtonInteractiveClass} gap-2 hidden md:flex`}
       style={isLocked
         ? { backgroundColor: '#fdba74', borderColor: '#f97316', color: '#000000' }
         : { backgroundColor: '#fed7aa', borderColor: '#fb923c', color: '#000000' }}
@@ -4350,7 +4425,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
 )}
 
           
-          <div ref={canvasRef} className="w-full h-[calc(100vh)] pb md:pb p-2 lg:p-8 overflow-auto" onPointerDown={(e) => {  
+          <div ref={canvasRef} className="w-full h-[calc(100vh)] pb md:pb p-2 lg:p-8 overflow-auto touch-none" onPointerDown={(e) => {  
             isPointerDownRef.current = true; 
             const c = getCoords(e); 
             const pointerButton = (e.nativeEvent as PointerEvent).button;
@@ -4361,6 +4436,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
             }
             
             if (activeTool === "scissor") {
+              e.preventDefault();
               let shapeId = (e.target as SVGElement).getAttribute('data-shape-id');
               if (!shapeId) {
                 for (let i = workspaceShapesRef.current.length - 1; i >= 0; i--) {
@@ -4392,8 +4468,8 @@ const extractSelection = useCallback(async (asJpeg = false) => {
               return;
             }
 
-            if (activeTool === "erase") { saveForUndo(); sweepErase(c.x, c.y); } 
-            if (activeTool === "pen" || activeTool === "ghost") { saveForUndo(); const sid = `st-${Date.now()}`; 
+            if (activeTool === "erase") { e.preventDefault(); saveForUndo(); sweepErase(c.x, c.y); } 
+            if (activeTool === "pen" || activeTool === "ghost") { e.preventDefault(); saveForUndo(); const sid = `st-${Date.now()}`; 
               const maxZ = Math.max(
                 ...workspaceShapes.map(s => s.zIndex || 0),
                 ...strokes.map(s => s.zIndex || 0),
@@ -4405,6 +4481,9 @@ const extractSelection = useCallback(async (asJpeg = false) => {
               return;
             } 
           }} onPointerMove={(e) => { const c = getCoords(e); 
+            if ((activeTool === "pen" || activeTool === "ghost" || activeTool === "erase" || activeTool === "scissor") && isPointerDownRef.current) {
+              e.preventDefault();
+            }
             
             if (selectionRect && isPointerDownRef.current) {
               setSelectionRect(prev => prev ? { ...prev, x2: c.x, y2: c.y } : null);

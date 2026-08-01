@@ -75,11 +75,35 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
   const [isMinimized, setIsMinimized] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
   const [scaleVersion, setScaleVersion] = useState(0);
+  const [showMobileControlsMenu, setShowMobileControlsMenu] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState(
+    typeof window === "undefined" ? 1024 : window.innerWidth,
+  );
 
   const targetWidth = 640;
   const targetHeight = 480;
   const BODY_MASK_THRESHOLD = 50;
+  const NECKLACE_STARTUP_SCALE = 0.8;
+  const NECKLACE_STARTUP_Y_OFFSET = -targetHeight * 0.02;
   const isLoaded = scriptsLoaded.camera && scriptsLoaded.selfie && scriptsLoaded.holistic;
+  const isMobile = viewportWidth <= 768;
+
+  useEffect(() => {
+    manualScaleRef.current = mode === "necklace" ? NECKLACE_STARTUP_SCALE : 1;
+    manualOffsetYRef.current = mode === "necklace" ? NECKLACE_STARTUP_Y_OFFSET : 0;
+  }, [mode, NECKLACE_STARTUP_SCALE, NECKLACE_STARTUP_Y_OFFSET]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const onResize = () => setViewportWidth(window.innerWidth);
+    onResize();
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      window.removeEventListener("resize", onResize);
+    };
+  }, []);
 
   const metrics: MetricData = {
     shoulderCenterNorm: 0.5,
@@ -528,6 +552,39 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
     setScaleVersion((prev) => prev + 1);
   };
 
+  const mobileControlButtonStyle: React.CSSProperties = {
+    background: "#1f2937",
+    color: "#fff",
+    border: "1px solid #4b5563",
+    borderRadius: "6px",
+    padding: "4px 8px",
+    cursor: "pointer",
+    fontSize: "12px",
+    fontWeight: "bold",
+  };
+
+  const mobileControlActionButtonStyle: React.CSSProperties = {
+    background: "#222",
+    color: "#fff",
+    border: "1px solid #444",
+    borderRadius: "6px",
+    padding: "6px 10px",
+    cursor: "pointer",
+    fontSize: "12px",
+    fontWeight: "bold",
+  };
+
+  const mobileControlDangerButtonStyle: React.CSSProperties = {
+    background: "#ef4444",
+    color: "#fff",
+    border: "none",
+    borderRadius: "6px",
+    padding: "6px 10px",
+    cursor: "pointer",
+    fontSize: "12px",
+    fontWeight: "bold",
+  };
+
   if (isClosed) return null;
 
   return (
@@ -554,16 +611,17 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
           onClick={() => setIsMinimized(false)}
           style={{
             position: "fixed",
-            bottom: "20px",
-            right: "20px",
+            bottom: isMobile ? "14px" : "20px",
+            right: isMobile ? "14px" : "20px",
             background: "#3b82f6",
             color: "#fff",
-            padding: "12px 24px",
+            padding: isMobile ? "10px 16px" : "12px 24px",
             borderRadius: "50px",
             border: "none",
             boxShadow: "0 4px 14px rgba(0,0,0,0.4)",
             cursor: "pointer",
             fontWeight: "bold",
+            fontSize: isMobile ? "13px" : "14px",
             zIndex: 99999
           }}
         >
@@ -583,7 +641,7 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
             background: "#111", 
             display: "flex", 
             flexDirection: "column", 
-            justifyContent: "center", 
+            justifyContent: "flex-start", 
             alignItems: "center", 
             zIndex: 9999
           }}
@@ -596,191 +654,321 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
               left: 0, 
               width: "100%", 
               display: "flex", 
+              flexDirection: isMobile ? "column" : "row",
               justifyContent: "space-between", 
-              alignItems: "center", 
-              padding: "15px 30px", 
+              alignItems: isMobile ? "stretch" : "center", 
+              gap: isMobile ? "10px" : "0",
+              padding: isMobile ? "10px 12px" : "15px 30px", 
               background: "rgba(0,0,0,0.6)",
               boxSizing: "border-box"
             }}
           >
-            <div style={{ color: "#fff", fontWeight: "bold", fontSize: "16px" }}>
+            <div style={{ color: "#fff", fontWeight: "bold", fontSize: isMobile ? "13px" : "16px", lineHeight: 1.25 }}>
               {"Virtual Fitting Room - Live Studio Preview"}
-              {!isLoaded && <span style={{ marginLeft: "15px", color: "#a3a3a3", fontSize: "13px" }}>{"Loading Textures..."}</span>}
+              {!isLoaded && <span style={{ marginLeft: isMobile ? "8px" : "15px", color: "#a3a3a3", fontSize: isMobile ? "11px" : "13px" }}>{"Loading Textures..."}</span>}
             </div>
             
             {/* MINIMIZE AND CLOSE CONTROLS */}
-            <div style={{ display: "flex", gap: "12px" }}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  background: "#111827",
-                  border: "1px solid #374151",
-                  borderRadius: "8px",
-                  padding: "4px 8px"
-                }}
-              >
+            {isMobile ? (
+              <div style={{ position: "relative", display: "flex", justifyContent: "flex-end" }}>
                 <button
-                  onClick={() => adjustScale(-0.1)}
-                  title="Decrease Image Size"
+                  onClick={() => setShowMobileControlsMenu((prev) => !prev)}
+                  title="Open Controls"
                   style={{
-                    background: "#1f2937",
+                    background: "#111827",
                     color: "#fff",
-                    border: "1px solid #4b5563",
-                    borderRadius: "6px",
-                    padding: "4px 10px",
+                    border: "1px solid #374151",
+                    borderRadius: "8px",
+                    padding: "6px 10px",
                     cursor: "pointer",
-                    fontSize: "14px",
+                    fontSize: "12px",
                     fontWeight: "bold"
                   }}
                 >
-                  -
+                  {showMobileControlsMenu ? "▴ Controls" : "☰ Controls"}
                 </button>
-                <span style={{ color: "#fff", fontSize: "12px", minWidth: "42px", textAlign: "center" }}>
-                  {Math.round(manualScaleRef.current * 100)}%
-                </span>
-                <button
-                  onClick={() => adjustScale(0.1)}
-                  title="Increase Image Size"
+
+                {showMobileControlsMenu && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "calc(100% + 8px)",
+                      right: 0,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "8px",
+                      background: "#111827",
+                      border: "1px solid #374151",
+                      borderRadius: "10px",
+                      padding: "8px",
+                      minWidth: "180px",
+                      maxWidth: "calc(100vw - 24px)",
+                      maxHeight: "calc(100vh - 140px)",
+                      overflowY: "auto",
+                      boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
+                      zIndex: 10000
+                    }}
+                  >
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      <div style={{ color: "#fff", fontSize: "11px", fontWeight: "bold", textTransform: "uppercase", opacity: 0.8 }}>
+                        Size
+                      </div>
+                      <div style={{ display: "flex", gap: "6px" }}>
+                        <button
+                          onClick={() => { setShowMobileControlsMenu(false); adjustScale(-0.1); }}
+                          title="Decrease Image Size"
+                          style={{ ...mobileControlButtonStyle, flex: 1 }}
+                        >
+                          −
+                        </button>
+                        <span style={{ color: "#fff", fontSize: "12px", minWidth: "42px", textAlign: "center", alignSelf: "center" }}>
+                          {Math.round(manualScaleRef.current * 100)}%
+                        </span>
+                        <button
+                          onClick={() => { setShowMobileControlsMenu(false); adjustScale(0.1); }}
+                          title="Increase Image Size"
+                          style={{ ...mobileControlButtonStyle, flex: 1 }}
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      <div style={{ color: "#fff", fontSize: "11px", fontWeight: "bold", textTransform: "uppercase", opacity: 0.8 }}>
+                        Vertical
+                      </div>
+                      <div style={{ display: "flex", gap: "6px" }}>
+                        <button
+                          onClick={() => { setShowMobileControlsMenu(false); adjustVerticalOffset(-5); }}
+                          title="Move Image Up"
+                          style={{ ...mobileControlButtonStyle, flex: 1 }}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          onClick={() => { setShowMobileControlsMenu(false); adjustVerticalOffset(5); }}
+                          title="Move Image Down"
+                          style={{ ...mobileControlButtonStyle, flex: 1 }}
+                        >
+                          ↓
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      <div style={{ color: "#fff", fontSize: "11px", fontWeight: "bold", textTransform: "uppercase", opacity: 0.8 }}>
+                        Horizontal
+                      </div>
+                      <div style={{ display: "flex", gap: "6px" }}>
+                        <button
+                          onClick={() => { setShowMobileControlsMenu(false); adjustHorizontalOffset(-5); }}
+                          title="Move Image Left"
+                          style={{ ...mobileControlButtonStyle, flex: 1 }}
+                        >
+                          ←
+                        </button>
+                        <button
+                          onClick={() => { setShowMobileControlsMenu(false); adjustHorizontalOffset(5); }}
+                          title="Move Image Right"
+                          style={{ ...mobileControlButtonStyle, flex: 1 }}
+                        >
+                          →
+                        </button>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => { setShowMobileControlsMenu(false); setIsMinimized(true); }}
+                      title="Minimize Window"
+                      style={{ ...mobileControlActionButtonStyle, width: "100%" }}
+                    >
+                      {"➖ Minimize"}
+                    </button>
+                    <button
+                      onClick={() => { setShowMobileControlsMenu(false); handleCloseFittingRoom(); }}
+                      title="Close Fitting Room"
+                      style={{ ...mobileControlDangerButtonStyle, width: "100%" }}
+                    >
+                      {"❌ Close"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", justifyContent: "flex-start" }}>
+                <div
                   style={{
-                    background: "#1f2937",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    background: "#111827",
+                    border: "1px solid #374151",
+                    borderRadius: "8px",
+                    padding: "4px 8px"
+                  }}
+                >
+                  <button
+                    onClick={() => adjustScale(-0.1)}
+                    title="Decrease Image Size"
+                    style={{
+                      background: "#1f2937",
+                      color: "#fff",
+                      border: "1px solid #4b5563",
+                      borderRadius: "6px",
+                      padding: "4px 10px",
+                      cursor: "pointer",
+                      fontSize: "14px",
+                      fontWeight: "bold"
+                    }}
+                  >
+                    -
+                  </button>
+                  <span style={{ color: "#fff", fontSize: "12px", minWidth: "42px", textAlign: "center" }}>
+                    {Math.round(manualScaleRef.current * 100)}%
+                  </span>
+                  <button
+                    onClick={() => adjustScale(0.1)}
+                    title="Increase Image Size"
+                    style={{
+                      background: "#1f2937",
+                      color: "#fff",
+                      border: "1px solid #4b5563",
+                      borderRadius: "6px",
+                      padding: "4px 10px",
+                      cursor: "pointer",
+                      fontSize: "14px",
+                      fontWeight: "bold"
+                    }}
+                  >
+                    +
+                  </button>
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    background: "#111827",
+                    border: "1px solid #374151",
+                    borderRadius: "8px",
+                    padding: "4px 8px"
+                  }}
+                >
+                  <button
+                    onClick={() => adjustVerticalOffset(-5)}
+                    title="Move Image Up"
+                    style={{
+                      background: "#1f2937",
+                      color: "#fff",
+                      border: "1px solid #4b5563",
+                      borderRadius: "6px",
+                      padding: "4px 10px",
+                      cursor: "pointer",
+                      fontSize: "14px",
+                      fontWeight: "bold"
+                    }}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    onClick={() => adjustVerticalOffset(5)}
+                    title="Move Image Down"
+                    style={{
+                      background: "#1f2937",
+                      color: "#fff",
+                      border: "1px solid #4b5563",
+                      borderRadius: "6px",
+                      padding: "4px 10px",
+                      cursor: "pointer",
+                      fontSize: "14px",
+                      fontWeight: "bold"
+                    }}
+                  >
+                    ↓
+                  </button>
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    background: "#111827",
+                    border: "1px solid #374151",
+                    borderRadius: "8px",
+                    padding: "4px 8px"
+                  }}
+                >
+                  <button
+                    onClick={() => adjustHorizontalOffset(-5)}
+                    title="Move Image Left"
+                    style={{
+                      background: "#1f2937",
+                      color: "#fff",
+                      border: "1px solid #4b5563",
+                      borderRadius: "6px",
+                      padding: "4px 10px",
+                      cursor: "pointer",
+                      fontSize: "14px",
+                      fontWeight: "bold"
+                    }}
+                  >
+                    ←
+                  </button>
+                  <button
+                    onClick={() => adjustHorizontalOffset(5)}
+                    title="Move Image Right"
+                    style={{
+                      background: "#1f2937",
+                      color: "#fff",
+                      border: "1px solid #4b5563",
+                      borderRadius: "6px",
+                      padding: "4px 10px",
+                      cursor: "pointer",
+                      fontSize: "14px",
+                      fontWeight: "bold"
+                    }}
+                  >
+                    →
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => setIsMinimized(true)}
+                  title="Minimize Window"
+                  style={{
+                    background: "#222",
                     color: "#fff",
-                    border: "1px solid #4b5563",
+                    border: "1px solid #444",
                     borderRadius: "6px",
-                    padding: "4px 10px",
+                    padding: "6px 14px",
                     cursor: "pointer",
                     fontSize: "14px",
                     fontWeight: "bold"
                   }}
                 >
-                  +
+                  {"➖ Minimize"}
+                </button>
+                <button
+                  onClick={handleCloseFittingRoom}
+                  title="Close Fitting Room"
+                  style={{
+                    background: "#ef4444",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: "6px",
+                    padding: "6px 14px",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: "bold"
+                  }}
+                >
+                  {"❌ Close"}
                 </button>
               </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  background: "#111827",
-                  border: "1px solid #374151",
-                  borderRadius: "8px",
-                  padding: "4px 8px"
-                }}
-              >
-                <button
-                  onClick={() => adjustVerticalOffset(-5)}
-                  title="Move Image Up"
-                  style={{
-                    background: "#1f2937",
-                    color: "#fff",
-                    border: "1px solid #4b5563",
-                    borderRadius: "6px",
-                    padding: "4px 10px",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                    fontWeight: "bold"
-                  }}
-                >
-                  ↑
-                </button>
-                <button
-                  onClick={() => adjustVerticalOffset(5)}
-                  title="Move Image Down"
-                  style={{
-                    background: "#1f2937",
-                    color: "#fff",
-                    border: "1px solid #4b5563",
-                    borderRadius: "6px",
-                    padding: "4px 10px",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                    fontWeight: "bold"
-                  }}
-                >
-                  ↓
-                </button>
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  background: "#111827",
-                  border: "1px solid #374151",
-                  borderRadius: "8px",
-                  padding: "4px 8px"
-                }}
-              >
-                <button
-                  onClick={() => adjustHorizontalOffset(-5)}
-                  title="Move Image Left"
-                  style={{
-                    background: "#1f2937",
-                    color: "#fff",
-                    border: "1px solid #4b5563",
-                    borderRadius: "6px",
-                    padding: "4px 10px",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                    fontWeight: "bold"
-                  }}
-                >
-                  ←
-                </button>
-                <button
-                  onClick={() => adjustHorizontalOffset(5)}
-                  title="Move Image Right"
-                  style={{
-                    background: "#1f2937",
-                    color: "#fff",
-                    border: "1px solid #4b5563",
-                    borderRadius: "6px",
-                    padding: "4px 10px",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                    fontWeight: "bold"
-                  }}
-                >
-                  →
-                </button>
-              </div>
-
-              <button
-                onClick={() => setIsMinimized(true)}
-                title="Minimize Window"
-                style={{
-                  background: "#222",
-                  color: "#fff",
-                  border: "1px solid #444",
-                  borderRadius: "6px",
-                  padding: "6px 14px",
-                  cursor: "pointer",
-                  fontSize: "14px",
-                  fontWeight: "bold"
-                }}
-              >
-                {"➖ Minimize"}
-              </button>
-              <button
-                onClick={handleCloseFittingRoom}
-                title="Close Fitting Room"
-                style={{
-                  background: "#ef4444",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: "6px",
-                  padding: "6px 14px",
-                  cursor: "pointer",
-                  fontSize: "14px",
-                  fontWeight: "bold"
-                }}
-              >
-                {"❌ Close"}
-              </button>
-            </div>
+            )}
           </div>
 
           {/* DYNAMIC SCALING VIEWPORT CANVAS BOUNDS */}
@@ -788,8 +976,10 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
             style={{ 
               position: "relative", 
               width: "100%", 
-              height: "calc(100% - 60px)", 
-              marginTop: "60px",
+              height: isMobile ? "calc(100% - 130px)" : "calc(100% - 60px)", 
+              marginTop: isMobile ? "130px" : "60px",
+              padding: isMobile ? "8px" : "0",
+              boxSizing: "border-box",
               display: "flex",
               justifyContent: "center",
               alignItems: "center"
@@ -801,11 +991,13 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
               width={targetWidth}
               height={targetHeight}
               style={{ 
-                height: "90%", 
+                width: isMobile ? "96vw" : "auto",
+                height: isMobile ? "auto" : "90%", 
+                maxHeight: isMobile ? "calc(100vh - 160px)" : "none",
                 aspectRatio: "4/3",
                 transform: "rotateY(180deg)", 
                 background: "#222",
-                borderRadius: "12px",
+                borderRadius: isMobile ? "8px" : "12px",
                 boxShadow: "0 12px 36px rgba(0,0,0,0.5)"
               }}
             />
