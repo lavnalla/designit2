@@ -122,6 +122,7 @@ interface DistortableShape {
 interface Stroke { 
   id: string; 
   points: { id: string; x: number; y: number }[]; 
+  centerPath?: { id: string; x: number; y: number }[];
   color: string; 
   width: number; 
   strokeStyle?: 'solid' | 'mesh';
@@ -875,6 +876,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   const scissorTargetRef = useRef<string | null>(null);
   const [activePenSize, setActivePenSize] = useState<number>(4);
   const [activePenStrokeType, setActivePenStrokeType] = useState<'solid' | 'mesh'>('solid');
+  const [activePenLineCount, setActivePenLineCount] = useState<number>(1);
   const [activeFillOpacity, setActiveFillOpacity] = useState<number>(1);
   const [meshHorizontalLines, setMeshHorizontalLines] = useState<number>(DEFAULT_MESH_PATTERN.horizontalLines);
   const [meshVerticalLines, setMeshVerticalLines] = useState<number>(DEFAULT_MESH_PATTERN.verticalLines);
@@ -3308,6 +3310,48 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     };
   };
 
+  const createSolidStrokeSet = useCallback((
+    x: number,
+    y: number,
+    color: string,
+    width: number,
+    zIndex: number,
+    direction: { x: number; y: number } = { x: 1, y: 0 },
+  ) => {
+    const lineCount = Math.max(1, activePenLineCount);
+    const spacing = Math.max(width * 1.35, 10);
+    const centerOffset = (lineCount - 1) / 2;
+    const groupId = lineCount > 1 ? `solid-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` : undefined;
+    const strokesForLineSet: Stroke[] = [];
+    const normal = getPerpendicularUnitVector(direction.x, direction.y);
+
+    for (let index = 0; index < lineCount; index += 1) {
+      const offset = (index - centerOffset) * spacing;
+      const startX = x + normal.x * offset;
+      const startY = y + normal.y * offset;
+
+      strokesForLineSet.push({
+        id: `st-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`,
+        points: [{ id: `pt-${Date.now()}-${index}`, x: startX, y: startY }],
+        centerPath: [{ id: `cp-${Date.now()}-${index}`, x, y }],
+        color,
+        width,
+        zIndex,
+        visible: true,
+        clothType: undefined,
+        strokeStyle: 'solid',
+        strokeRole: 'default',
+        meshOffset: offset,
+        groupId,
+      });
+    }
+
+    return {
+      spacing,
+      strokes: strokesForLineSet,
+    };
+  }, [activePenLineCount]);
+
   const createMeshStrokeSet = useCallback((x: number, y: number, color: string, width: number, zIndex: number) => {
     const horizontalLines = Math.max(1, meshHorizontalLines);
     const spacing = Math.max(width * 1.35, 10);
@@ -4469,6 +4513,21 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                 )}
               </div>
 
+              {activePenStrokeType === 'solid' && (
+                <div className="mt-3 flex items-center gap-2">
+                  <label className="text-[10px] font-black uppercase text-slate-600 w-20">Lines</label>
+                  <input
+                    type="range"
+                    min={1}
+                    max={6}
+                    value={activePenLineCount}
+                    onChange={e => setActivePenLineCount(parseInt(e.target.value, 10))}
+                    className="flex-1"
+                  />
+                  <span className="text-[10px] font-bold w-6 text-right">{activePenLineCount}</span>
+                </div>
+              )}
+
               {activePenStrokeType === 'mesh' && (
                 <>
                   <div className="mt-3 flex items-center gap-2">
@@ -4695,7 +4754,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
             }
 
             if (activeTool === "erase") { e.preventDefault(); saveForUndo(); sweepErase(c.x, c.y); } 
-            if (activeTool === "pen" || activeTool === "ghost") { e.preventDefault(); saveForUndo(); const sid = `st-${Date.now()}`; 
+            if (activeTool === "pen" || activeTool === "ghost") { e.preventDefault(); saveForUndo(); 
               const maxZ = Math.max(
                 ...workspaceShapes.map(s => s.zIndex || 0),
                 ...strokes.map(s => s.zIndex || 0),
@@ -4716,19 +4775,18 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                   width: activePenSize,
                 };
               } else {
-                setStrokes(prev => [...prev, {
-                  id: sid,
-                  points: [{ id: `pt-${Date.now()}`, x: c.x, y: c.y }],
-                  color: activeColor,
-                  width: activePenSize,
-                  zIndex: maxZ + 1,
+                const solidStrokeSet = createSolidStrokeSet(c.x, c.y, activeColor, activePenSize, maxZ + 1);
+                setStrokes(prev => [...prev, ...solidStrokeSet.strokes.map(stroke => ({
+                  ...stroke,
                   visible: activeTool === "pen",
-                  clothType: undefined,
-                  strokeStyle: 'solid',
-                  strokeRole: 'default',
                   meshPattern: undefined,
-                }]);
-                penRef.current = { pointerId: e.pointerId, lastX: c.x, lastY: c.y, strokeIds: [sid] };
+                }))]);
+                penRef.current = {
+                  pointerId: e.pointerId,
+                  lastX: c.x,
+                  lastY: c.y,
+                  strokeIds: solidStrokeSet.strokes.map(stroke => stroke.id),
+                };
               }
               e.currentTarget.setPointerCapture(e.pointerId);
               return;
@@ -4760,27 +4818,36 @@ const extractSelection = useCallback(async (asJpeg = false) => {
               const updated = prev.map((stroke) => {
                 if (!penRef.current!.strokeIds.includes(stroke.id)) return stroke;
                 const signedOffset = stroke.meshOffset || 0;
-                const isFirstExtension = stroke.points.length === 1;
                 const nextX = c.x + normal.x * signedOffset;
                 const nextY = c.y + normal.y * signedOffset;
-                const reseededStartX = penRef.current!.lastX + normal.x * signedOffset;
-                const reseededStartY = penRef.current!.lastY + normal.y * signedOffset;
+                const previousCenterPath = stroke.centerPath && stroke.centerPath.length > 0
+                  ? stroke.centerPath
+                  : stroke.points;
+                const nextCenterPath = [...previousCenterPath, {
+                  id: `cp-${Date.now()}-${stroke.id}`,
+                  x: c.x,
+                  y: c.y,
+                }];
+                const offsetPoints = nextCenterPath.map((point, pointIndex, centerPoints) => {
+                  const previousPoint = pointIndex === 0 ? centerPoints[0] : centerPoints[pointIndex - 1];
+                  const nextPoint = pointIndex === centerPoints.length - 1 ? centerPoints[centerPoints.length - 1] : centerPoints[pointIndex + 1];
+                  const tangentX = nextPoint.x - previousPoint.x;
+                  const tangentY = nextPoint.y - previousPoint.y;
+                  const pointNormal = getPerpendicularUnitVector(tangentX, tangentY);
+
+                  return {
+                    id: pointIndex < stroke.points.length
+                      ? stroke.points[pointIndex].id
+                      : `pt-${Date.now()}-${stroke.id}-${pointIndex}`,
+                    x: point.x + pointNormal.x * signedOffset,
+                    y: point.y + pointNormal.y * signedOffset,
+                  };
+                });
+
                 return {
                   ...stroke,
-                  points: isFirstExtension
-                    ? [
-                        { ...stroke.points[0], x: reseededStartX, y: reseededStartY },
-                        {
-                          id: `pt-${Date.now()}-${stroke.id}`,
-                          x: nextX,
-                          y: nextY,
-                        },
-                      ]
-                    : [...stroke.points, {
-                        id: `pt-${Date.now()}-${stroke.id}`,
-                        x: nextX,
-                        y: nextY,
-                      }],
+                  centerPath: nextCenterPath,
+                  points: offsetPoints,
                 };
               });
 
