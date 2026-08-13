@@ -1944,26 +1944,33 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
     }
 
     const isGem = ['emerald', 'pear', 'marquise', 'oval'].includes(type);
-    const normalizedClothType = isGem ? 'gem' : (selectedClothType || undefined);
+    const isOpenShape = type === 'line' || type === 'curve';
+    const usePenStrokeMode = !isGem && activePenStrokeType;
+    const useMeshStroke = usePenStrokeMode === 'mesh';
+    const normalizedClothType = isGem ? 'gem' : (useMeshStroke ? 'mesh' : (selectedClothType || undefined));
     const newStroke: Stroke = {
       id: `st-${Date.now()}`,
       points: pts,
+      centerPath: pts.map(point => ({ ...point })),
       color: activeColor,
       width: isGem ? 2 : 4,
-      closed: type !== 'line' && type !== 'curve',
-      baseFill: (type !== 'line' && type !== 'curve' && !isGem) ? '#ffffff' : undefined,
+      closed: !isOpenShape,
+      baseFill: (!isOpenShape && !isGem && activePenStrokeType !== 'solid') ? '#ffffff' : undefined,
       fillColor: isGem ? activeColor : undefined,
       clothType: normalizedClothType,
-      strokeStyle: normalizedClothType === 'mesh' ? 'mesh' : 'solid',
-      meshPattern: normalizedClothType === 'mesh' ? {
+      strokeStyle: useMeshStroke ? 'mesh' : 'solid',
+      meshPattern: useMeshStroke ? {
         horizontalLines: meshHorizontalLines,
         verticalLines: meshVerticalLines,
       } : undefined,
     };
     
-    setStrokes(prev => [...prev, newStroke]);
+    const strokesToAdd = useMeshStroke
+      ? createMeshStrokeVariants(newStroke)
+      : createParallelStrokeVariants(newStroke);
+    setStrokes(prev => [...prev, ...strokesToAdd]);
     setShowShapesModal(false);
-  }, [activeColor, saveForUndo, selectedClothType, meshHorizontalLines, meshVerticalLines]);
+  }, [activeColor, saveForUndo, selectedClothType, meshHorizontalLines, meshVerticalLines, activePenStrokeType]);
 
   const createMannequinWithMeasurements = useCallback((measures: MannequinMeasurements) => {
     saveForUndo();
@@ -3439,6 +3446,143 @@ const extractSelection = useCallback(async (asJpeg = false) => {
 
     return connectors;
   }, [meshVerticalLines]);
+
+  function createParallelStrokeVariants(baseStroke: Stroke) {
+    const isSolidStroke = baseStroke.strokeStyle !== 'mesh';
+    const lineCount = Math.max(1, activePenLineCount);
+
+    if (!isSolidStroke || lineCount === 1 || baseStroke.points.length < 2) {
+      return [baseStroke];
+    }
+
+    const spacing = Math.max(baseStroke.width * 1.35, 10);
+    const centerOffset = (lineCount - 1) / 2;
+    const groupId = `solid-shape-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const centerPath = baseStroke.points.map(point => ({ ...point }));
+
+    return Array.from({ length: lineCount }, (_, index) => {
+      const signedOffset = (index - centerOffset) * spacing;
+      const points = centerPath.map((point, pointIndex, centerPoints) => {
+        const previousPoint = pointIndex === 0
+          ? (baseStroke.closed === false ? centerPoints[0] : centerPoints[centerPoints.length - 1])
+          : centerPoints[pointIndex - 1];
+        const nextPoint = pointIndex === centerPoints.length - 1
+          ? (baseStroke.closed === false ? centerPoints[centerPoints.length - 1] : centerPoints[0])
+          : centerPoints[pointIndex + 1];
+        const tangentX = nextPoint.x - previousPoint.x;
+        const tangentY = nextPoint.y - previousPoint.y;
+        const normal = getPerpendicularUnitVector(tangentX, tangentY);
+
+        return {
+          id: `pt-${Date.now()}-${index}-${pointIndex}`,
+          x: point.x + normal.x * signedOffset,
+          y: point.y + normal.y * signedOffset,
+        };
+      });
+
+      return {
+        ...baseStroke,
+        id: `st-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`,
+        groupId,
+        meshOffset: signedOffset,
+        centerPath: centerPath.map(point => ({ ...point })),
+        baseFill: undefined,
+        fillColor: undefined,
+        points,
+      };
+    });
+  }
+
+  function createMeshStrokeVariants(baseStroke: Stroke) {
+    const horizontalLines = Math.max(1, meshHorizontalLines);
+    const verticalLines = Math.max(1, meshVerticalLines);
+
+    if (baseStroke.points.length < 2) {
+      return [baseStroke];
+    }
+
+    const spacing = Math.max(baseStroke.width * 1.35, 10);
+    const centerOffset = (horizontalLines - 1) / 2;
+    const groupId = `mesh-shape-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const centerPath = baseStroke.points.map(point => ({ ...point }));
+
+    const horizontalStrokes = Array.from({ length: horizontalLines }, (_, index) => {
+      const signedOffset = (index - centerOffset) * spacing;
+      const points = centerPath.map((point, pointIndex, centerPoints) => {
+        const previousPoint = pointIndex === 0
+          ? (baseStroke.closed === false ? centerPoints[0] : centerPoints[centerPoints.length - 1])
+          : centerPoints[pointIndex - 1];
+        const nextPoint = pointIndex === centerPoints.length - 1
+          ? (baseStroke.closed === false ? centerPoints[centerPoints.length - 1] : centerPoints[0])
+          : centerPoints[pointIndex + 1];
+        const tangentX = nextPoint.x - previousPoint.x;
+        const tangentY = nextPoint.y - previousPoint.y;
+        const normal = getPerpendicularUnitVector(tangentX, tangentY);
+
+        return {
+          id: `pt-${Date.now()}-mh-${index}-${pointIndex}`,
+          x: point.x + normal.x * signedOffset,
+          y: point.y + normal.y * signedOffset,
+        };
+      });
+
+      return {
+        ...baseStroke,
+        id: `st-${Date.now()}-mh-${index}-${Math.random().toString(36).slice(2, 6)}`,
+        groupId,
+        meshOffset: signedOffset,
+        centerPath: centerPath.map(point => ({ ...point })),
+        baseFill: undefined,
+        fillColor: undefined,
+        clothType: undefined,
+        strokeStyle: 'solid' as const,
+        strokeRole: 'mesh-horizontal' as const,
+        points,
+      };
+    });
+
+    if (horizontalStrokes.length <= 1 || verticalLines <= 1) {
+      return horizontalStrokes;
+    }
+
+    const connectors: Stroke[] = [];
+    const edgeCount = baseStroke.closed === false ? centerPath.length - 1 : centerPath.length;
+
+    for (let edgeIndex = 0; edgeIndex < edgeCount; edgeIndex += 1) {
+      const start = centerPath[edgeIndex];
+      const end = centerPath[(edgeIndex + 1) % centerPath.length];
+
+      for (let index = 1; index < verticalLines - 1; index += 1) {
+        const t = index / (verticalLines - 1);
+        const points = horizontalStrokes.map((stroke, row) => {
+          const rowStart = stroke.points[edgeIndex];
+          const rowEnd = stroke.points[(edgeIndex + 1) % stroke.points.length];
+          return {
+            id: `pt-${Date.now()}-mv-${edgeIndex}-${index}-${row}`,
+            x: rowStart.x + (rowEnd.x - rowStart.x) * t,
+            y: rowStart.y + (rowEnd.y - rowStart.y) * t,
+          };
+        });
+
+        connectors.push({
+          ...baseStroke,
+          id: `st-${Date.now()}-mv-${edgeIndex}-${index}-${Math.random().toString(36).slice(2, 6)}`,
+          groupId,
+          centerPath: undefined,
+          baseFill: undefined,
+          fillColor: undefined,
+          clothType: undefined,
+          strokeStyle: 'solid',
+          strokeRole: 'mesh-vertical',
+          closed: false,
+          width: Math.max(1, baseStroke.width * 0.7),
+          points,
+        });
+      }
+    }
+
+    return [...horizontalStrokes, ...connectors];
+  }
 
   // Export current workspace as PNG/JPG by serializing the SVG, inlining images, and drawing to a canvas
   const downloadImage = async (type: 'png' | 'jpg' = 'png') => {
