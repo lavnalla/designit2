@@ -88,6 +88,18 @@ const leftToolColorMap = {
 }; */
 
 interface Dot { id: string; x: number; y: number; }
+interface DotClusterMember {
+  kind: 'shape' | 'stroke';
+  itemId: string;
+  dotId: string;
+}
+interface DotCluster {
+  id: string;
+  members: DotClusterMember[];
+}
+interface ClipboardShape extends DistortableShape {
+  clipboardSource?: 'vector' | 'selection-crop';
+}
 interface FabricLayer {
   src: string;
   area: { x: number; y: number; width: number; height: number };
@@ -899,7 +911,9 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   const [resizingId, setResizingId] = useState<string | null>(null);
   const [rotatingId, setRotatingId] = useState<string | null>(null);
   const [selectionRect, setSelectionRect] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
-  const [clipboard, setClipboard] = useState<{ shapes: DistortableShape[]; strokes: Stroke[] } | null>(null);
+  const [dotClusters, setDotClusters] = useState<DotCluster[]>([]);
+  const [draggingDotClusterId, setDraggingDotClusterId] = useState<string | null>(null);
+  const [clipboard, setClipboard] = useState<{ shapes: ClipboardShape[]; strokes: Stroke[] } | null>(null);
   const [fabricClipboardSrc, setFabricClipboardSrc] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -2204,7 +2218,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
             setGhostCursor(prev => ({ ...prev, clicking: true }));
             
             // Trigger context menu
-            setContextMenu({ x: screenX, y: screenY, id: garment.id, type: "shape" });
+            openContextMenu({ x: screenX, y: screenY, id: garment.id, type: "shape" });
             await new Promise(r => setTimeout(r, 1000));
           }
         }
@@ -2349,30 +2363,116 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
     setContextMenu(null);
   }, [selectionRect, workspaceShapes, strokes, getBoundingBox, isItemInRect, saveForUndo]);
 
-  const copyFromSelection = useCallback(async () => {
+  const groupDotsFromSelection = useCallback(() => {
     if (!selectionRect) return;
-    try {
-      // Copy actual vector shapes and strokes in selection
-      const shapesToCopy = workspaceShapes.filter(shape => {
-        const bbox = getBoundingBox(shape);
-        return isItemInRect(bbox, selectionRect);
+    saveForUndo();
+
+    const rectX = Math.min(selectionRect.x1, selectionRect.x2);
+    const rectY = Math.min(selectionRect.y1, selectionRect.y2);
+    const rectW = Math.abs(selectionRect.x2 - selectionRect.x1);
+    const rectH = Math.abs(selectionRect.y2 - selectionRect.y1);
+    const isPointInRect = (x: number, y: number) => x >= rectX && x <= rectX + rectW && y >= rectY && y <= rectY + rectH;
+
+    const members: DotClusterMember[] = [];
+
+    workspaceShapes.forEach(shape => {
+      shape.dots.forEach(dot => {
+        const worldX = shape.position.x + dot.x * shape.scale;
+        const worldY = shape.position.y + dot.y * shape.scale;
+        if (isPointInRect(worldX, worldY)) {
+          members.push({ kind: 'shape', itemId: shape.id, dotId: dot.id });
+        }
       });
-      const strokesToCopy = strokes.filter(stroke => {
-        const bbox = getBoundingBox(stroke);
-        return isItemInRect(bbox, selectionRect);
+    });
+
+    strokes.forEach(stroke => {
+      stroke.points.forEach(point => {
+        if (isPointInRect(point.x, point.y)) {
+          members.push({ kind: 'stroke', itemId: stroke.id, dotId: point.id });
+        }
       });
-      if (shapesToCopy.length === 0 && strokesToCopy.length === 0) return;
-      // Deep clone to avoid reference issues
-      const shapesCopy = JSON.parse(JSON.stringify(shapesToCopy));
-      const strokesCopy = JSON.parse(JSON.stringify(strokesToCopy));
-      setClipboard({ shapes: shapesCopy, strokes: strokesCopy });
-      console.log('Copied vector shapes and strokes to clipboard');
-    } catch (error) {
-      console.error('Copy failed:', error);
-    }
+    });
+
+    if (members.length < 2) return;
+
+    setDotClusters(prev => [...prev, { id: `dot-cluster-${Date.now()}`, members }]);
     setSelectionRect(null);
     setContextMenu(null);
-  }, [selectionRect, workspaceShapes, strokes, getBoundingBox, isItemInRect]);
+  }, [selectionRect, saveForUndo, workspaceShapes, strokes]);
+
+  const ungroupDotsFromSelection = useCallback(() => {
+    if (!selectionRect) return;
+    saveForUndo();
+
+    const rectX = Math.min(selectionRect.x1, selectionRect.x2);
+    const rectY = Math.min(selectionRect.y1, selectionRect.y2);
+    const rectW = Math.abs(selectionRect.x2 - selectionRect.x1);
+    const rectH = Math.abs(selectionRect.y2 - selectionRect.y1);
+    const isPointInRect = (x: number, y: number) => x >= rectX && x <= rectX + rectW && y >= rectY && y <= rectY + rectH;
+
+    setDotClusters(prev => prev.filter(cluster => {
+      const memberPositions = cluster.members.map(member => {
+        if (member.kind === 'shape') {
+          const shape = workspaceShapes.find(item => item.id === member.itemId);
+          const dot = shape?.dots.find(item => item.id === member.dotId);
+          return dot && shape ? { x: shape.position.x + dot.x * shape.scale, y: shape.position.y + dot.y * shape.scale } : null;
+        }
+
+        const stroke = strokes.find(item => item.id === member.itemId);
+        const point = stroke?.points.find(item => item.id === member.dotId);
+        return point ? { x: point.x, y: point.y } : null;
+      }).filter((point): point is { x: number; y: number } => !!point);
+
+      return !memberPositions.some(point => isPointInRect(point.x, point.y));
+    }));
+
+    setSelectionRect(null);
+    setContextMenu(null);
+  }, [selectionRect, saveForUndo, workspaceShapes, strokes]);
+
+  const buildSelectionClone = useCallback((svgEl: SVGSVGElement, rect: { x: number; y: number; width: number; height: number }) => {
+    const clone = svgEl.cloneNode(true) as SVGSVGElement;
+    const selectionBounds = { x1: rect.x, y1: rect.y, x2: rect.x + rect.width, y2: rect.y + rect.height };
+    const selectedShapeIds = new Set(
+      workspaceShapes
+        .filter(shape => isItemInRect(getBoundingBox(shape), selectionBounds))
+        .map(shape => shape.id)
+    );
+    const selectedStrokeIds = new Set(
+      strokes
+        .filter(stroke => isItemInRect(getBoundingBox(stroke), selectionBounds))
+        .map(stroke => stroke.id)
+    );
+
+    clone.querySelectorAll('circle[data-control-dot]').forEach(node => node.remove());
+    clone.querySelectorAll('rect[stroke="#3b82f6"]').forEach(node => node.remove());
+
+    clone.querySelectorAll('[data-shape-id]').forEach(node => {
+      const shapeId = node.getAttribute('data-shape-id');
+      if (!shapeId || !selectedShapeIds.has(shapeId)) {
+        node.remove();
+      }
+    });
+
+    clone.querySelectorAll('[data-stroke-id]').forEach(node => {
+      const strokeId = node.getAttribute('data-stroke-id');
+      if (!strokeId || !selectedStrokeIds.has(strokeId)) {
+        node.remove();
+      }
+    });
+
+    clone.querySelectorAll('g[data-shape-id], g[data-stroke-id]').forEach(node => {
+      if (!node.hasChildNodes()) {
+        node.remove();
+      }
+    });
+
+    clone.setAttribute('viewBox', `${rect.x} ${rect.y} ${rect.width} ${rect.height}`);
+    clone.setAttribute('width', `${rect.width}`);
+    clone.setAttribute('height', `${rect.height}`);
+
+    return clone;
+  }, [workspaceShapes, strokes, getBoundingBox, isItemInRect]);
 
   const copyFabricDebugFromSelection = useCallback(async (target?: { type: 'shape' | 'stroke' | 'selection'; id: string }) => {
   if (!isLocked) {
@@ -2397,12 +2497,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
         const rectH = Math.abs(selectionRect.y2 - selectionRect.y1);
 
         if (rectW > 2 && rectH > 2) {
-          const clone = workspaceRef.current.cloneNode(true) as SVGSVGElement;
-          clone.querySelectorAll('circle[data-control-dot]').forEach(d => d.remove());
-          clone.querySelectorAll('rect[stroke="#3b82f6"]').forEach(d => d.remove());
-          clone.setAttribute('viewBox', `${rectX} ${rectY} ${rectW} ${rectH}`);
-          clone.setAttribute('width', `${rectW}`);
-          clone.setAttribute('height', `${rectH}`);
+          const clone = buildSelectionClone(workspaceRef.current, { x: rectX, y: rectY, width: rectW, height: rectH });
 
           const images = Array.from(clone.querySelectorAll('image')) as SVGImageElement[];
           for (const imgEl of images) {
@@ -2509,7 +2604,99 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
 
     setSelectionRect(null);
     setContextMenu(null);
-  }, [isLocked, selectionRect, workspaceShapes, strokes, selectedShapeId, selectedClothType, activeColor]);
+  }, [isLocked, selectionRect, workspaceShapes, strokes, selectedShapeId, selectedClothType, activeColor, buildSelectionClone]);
+
+  const copyFromSelection = useCallback(async () => {
+    if (!selectionRect || !workspaceRef.current) return;
+    try {
+      const rectX = Math.min(selectionRect.x1, selectionRect.x2);
+      const rectY = Math.min(selectionRect.y1, selectionRect.y2);
+      const rectW = Math.abs(selectionRect.x2 - selectionRect.x1);
+      const rectH = Math.abs(selectionRect.y2 - selectionRect.y1);
+      if (rectW < 5 || rectH < 5) return;
+
+      const clone = buildSelectionClone(workspaceRef.current, { x: rectX, y: rectY, width: rectW, height: rectH });
+      const images = Array.from(clone.querySelectorAll('image')) as SVGImageElement[];
+      for (const imgEl of images) {
+        const href = imgEl.getAttribute('href') || imgEl.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || '';
+        if (!href || href.startsWith('data:')) continue;
+        try {
+          const res = await fetch(href, { mode: 'cors' });
+          const blob = await res.blob();
+          const reader = new FileReader();
+          const dataUrl: string = await new Promise((resolve, reject) => {
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          imgEl.setAttribute('href', dataUrl);
+        } catch (error) {
+          console.warn('[copyFromSelection] image inline failed', href, error);
+        }
+      }
+
+      try {
+        clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+      } catch {}
+
+      const serializer = new XMLSerializer();
+      let source = serializer.serializeToString(clone);
+      if (!source.match(/^<\?xml/)) source = '<?xml version="1.0" standalone="no"?>\n' + source;
+
+      const svgBlob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
+      const img = new window.Image();
+      img.crossOrigin = 'anonymous';
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = rectW;
+            canvas.height = rectH;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              reject(new Error('Canvas context unavailable'));
+              return;
+            }
+            ctx.clearRect(0, 0, rectW, rectH);
+            ctx.drawImage(img, 0, 0, rectW, rectH);
+            resolve(canvas.toDataURL('image/png'));
+          } catch (error) {
+            reject(error);
+          } finally {
+            URL.revokeObjectURL(url);
+          }
+        };
+        img.onerror = reject;
+        img.src = url;
+      });
+
+      const croppedShape: ClipboardShape = {
+        id: `clipboard-selection-${Date.now()}`,
+        img: dataUrl,
+        dots: [
+          { id: 'tl', x: 0, y: 0 },
+          { id: 'tr', x: rectW, y: 0 },
+          { id: 'br', x: rectW, y: rectH },
+          { id: 'bl', x: 0, y: rectH },
+        ],
+        dims: { width: rectW, height: rectH },
+        position: { x: rectX, y: rectY },
+        scale: 1,
+        showDots: true,
+        erasedPaths: [],
+        clipboardSource: 'selection-crop',
+      };
+
+      setClipboard({ shapes: [croppedShape], strokes: [] });
+      console.log('Copied cropped selection to clipboard');
+    } catch (error) {
+      console.error('Copy failed:', error);
+    }
+    setSelectionRect(null);
+    setContextMenu(null);
+  }, [selectionRect, buildSelectionClone]);
 
   
   const pasteFabricToSelection = useCallback(async (target?: { type: 'shape' | 'stroke'; id: string }) => {
@@ -2941,13 +3128,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       const svgEl = workspaceRef.current;
       if (!svgEl) return;
 
-      const clone = svgEl.cloneNode(true) as SVGSVGElement;
-      clone.querySelectorAll('circle[data-control-dot]').forEach(d => d.remove());
-      clone.querySelectorAll('rect[stroke="#3b82f6"]').forEach(d => d.remove());
-      
-      clone.setAttribute('viewBox', `${rectX} ${rectY} ${rectW} ${rectH}`);
-      clone.setAttribute('width', `${rectW}`);
-      clone.setAttribute('height', `${rectH}`);
+      const clone = buildSelectionClone(svgEl, { x: rectX, y: rectY, width: rectW, height: rectH });
 
       const images = Array.from(clone.querySelectorAll('image')) as SVGImageElement[];
       for (const imgEl of images) {
@@ -3019,24 +3200,22 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     }
     setSelectionRect(null);
     setContextMenu(null);
-  }, [selectionRect]);
+  }, [selectionRect, buildSelectionClone, saveForUndo]);
 
   const pasteFromSelection = useCallback(() => {
     if (!clipboard || (!clipboard.shapes.length && !clipboard.strokes.length)) return;
     saveForUndo();
     const PASTE_OFFSET = 30;
-    // Get paste position from last selection or center
-    let pasteX = 100;
-    let pasteY = 100;
-    if (selectionRect) {
-      pasteX = Math.min(selectionRect.x1, selectionRect.x2);
-      pasteY = Math.min(selectionRect.y1, selectionRect.y2);
-    }
+    const pasteX = selectionRect ? Math.min(selectionRect.x1, selectionRect.x2) : null;
+    const pasteY = selectionRect ? Math.min(selectionRect.y1, selectionRect.y2) : null;
     // Paste shapes and strokes with new IDs and offset position
     const newShapes = clipboard.shapes.map(shape => ({
       ...shape,
       id: `s-${Date.now()}-${Math.random()}`,
-      position: { x: (shape.position?.x ?? 0) + PASTE_OFFSET, y: (shape.position?.y ?? 0) + PASTE_OFFSET },
+      position: {
+        x: pasteX !== null ? pasteX + PASTE_OFFSET : (shape.position?.x ?? 0) + PASTE_OFFSET,
+        y: pasteY !== null ? pasteY + PASTE_OFFSET : (shape.position?.y ?? 0) + PASTE_OFFSET,
+      },
       groupId: undefined // Remove group when pasting
     }));
     const newStrokes = clipboard.strokes.map(stroke => ({
@@ -3170,6 +3349,29 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     const cy = e.touches ? e.touches[0].clientY : e.clientY;
     return { x: cx - rect.left, y: cy - rect.top, rx: cx, ry: cy };
   };
+
+  const openContextMenu = useCallback((menu: { x: number; y: number; id: string; type: "shape" | "stroke" | "selection"; clickX?: number; clickY?: number }) => {
+    const rect = workspaceRef.current?.getBoundingClientRect();
+    const menuWidth = 220;
+    const menuHeight = menu.type === 'selection' ? 320 : 360;
+    const padding = 12;
+
+    if (!rect) {
+      setContextMenu(menu);
+      return;
+    }
+
+    const maxX = rect.right - menuWidth - padding;
+    const maxY = rect.bottom - menuHeight - padding;
+    const minX = rect.left + padding;
+    const minY = rect.top + padding;
+
+    setContextMenu({
+      ...menu,
+      x: Math.min(Math.max(menu.x, minX), Math.max(minX, maxX)),
+      y: Math.min(Math.max(menu.y, minY), Math.max(minY, maxY)),
+    });
+  }, []);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -4397,119 +4599,128 @@ const extractSelection = useCallback(async (asJpeg = false) => {
           )}
           {contextMenu && (
             <div className="fixed z-[300] bg-white border border-slate-200 shadow-2xl rounded-2xl overflow-hidden py-1 min-w-[140px]" style={{ left: contextMenu.x, top: contextMenu.y }} onClick={(e) => e.stopPropagation()}>
-              {contextMenu.type === "selection" ? (
-                <>
-                  <button onClick={createGroupFromSelection} className="w-full text-left px-4 py-2 hover:bg-amber-50 text-[9px] font-black uppercase border-b border-slate-100 text-amber-600">
-                    🔗 Group Items
-                  </button>
-                  <button onClick={ungroupItemsFromSelection} className="w-full text-left px-4 py-2 hover:bg-orange-50 text-[9px] font-black uppercase border-b border-slate-100 text-orange-600">
-                    🔓 Ungroup Items
-                  </button>
-                  <button onClick={copyFromSelection} className="w-full text-left px-4 py-2 hover:bg-blue-50 text-[9px] font-black uppercase border-b border-slate-100 text-blue-600">
-                    📋 Copy Area
-                  </button>
+              <>
+                {contextMenu.type === "selection" && (
+                  <>
+                    <button onClick={groupDotsFromSelection} className="w-full text-left px-4 py-2 hover:bg-emerald-50 text-[9px] font-black uppercase border-b border-slate-100 text-emerald-700">
+                      Group Dots
+                    </button>
+                    <button onClick={ungroupDotsFromSelection} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[9px] font-black uppercase border-b border-slate-100 text-slate-700">
+                      Ungroup Dots
+                    </button>
+                    <button onClick={createGroupFromSelection} className="w-full text-left px-4 py-2 hover:bg-amber-50 text-[9px] font-black uppercase border-b border-slate-100 text-amber-600">
+                      🔗 Group Items
+                    </button>
+                    <button onClick={ungroupItemsFromSelection} className="w-full text-left px-4 py-2 hover:bg-orange-50 text-[9px] font-black uppercase border-b border-slate-100 text-orange-600">
+                      🔓 Ungroup Items
+                    </button>
+                    <button onClick={copyFromSelection} className="w-full text-left px-4 py-2 hover:bg-blue-50 text-[9px] font-black uppercase border-b border-slate-100 text-blue-600">
+                      📋 Copy Area
+                    </button>
+                    <button onClick={() => extractSelection(false)} className="w-full text-left px-4 py-2 hover:bg-green-50 text-[9px] font-black uppercase border-b border-slate-100 text-green-600">
+                      ✂️ Extract Image
+                    </button>
+                    {clipboard && (clipboard.shapes.length > 0 || clipboard.strokes.length > 0) && (
+                      <button onClick={pasteFromSelection} className="w-full text-left px-4 py-2 hover:bg-green-50 text-[9px] font-black uppercase border-b border-slate-100 text-green-600">
+                        📌 Paste
+                      </button>
+                    )}
+                  </>
+                )}
+
+                {(contextMenu.type === "shape" || contextMenu.type === "stroke") && (
+                  <>
+                    <button
+                      onClick={() => {
+                        const targetId = contextMenu.id;
+                        const targetType: 'shape' | 'stroke' = contextMenu.type === 'stroke' ? 'stroke' : 'shape';
+                        bringToFront(targetId, targetType);
+                      }}
+                      className="w-full text-left px-4 py-2 text-[9px] font-black uppercase border-b border-slate-100 hover:bg-slate-50"
+                    >
+                      Bring to Front
+                    </button>
+                    <button
+                      onClick={() => {
+                        const targetId = contextMenu.id;
+                        const targetType: 'shape' | 'stroke' = contextMenu.type === 'stroke' ? 'stroke' : 'shape';
+                        sendToBack(targetId, targetType);
+                      }}
+                      className="w-full text-left px-4 py-2 text-[9px] font-black uppercase border-b border-slate-100 hover:bg-slate-50"
+                    >
+                      Send to Back
+                    </button>
+                    {contextMenu.type === "shape" && !workspaceShapes.find(s => s.id === contextMenu.id)?.isMannequin && (
+                      <button id="drape-menu-btn" onClick={() => openDrapeModal(contextMenu.id)} className="w-full text-left px-4 py-2 hover:bg-yellow-50 text-[9px] font-black uppercase border-b border-slate-100 text-yellow-600">
+                        🎀 Drape to Mannequin
+                      </button>
+                    )}
+                    {contextMenu.type === "shape" && (
+                      <button id="pick-replace-btn" onClick={() => { replaceColorInShape(contextMenu.id, contextMenu.clickX, contextMenu.clickY); setContextMenu(null); }} className="w-full text-left px-4 py-2 hover:bg-yellow-50 text-[9px] font-black uppercase border-b border-slate-100 text-yellow-600">
+                        🎨 Pick & Replace Color
+                      </button>
+                    )}
+                    {contextMenu.type === "shape" && workspaceShapes.find(s => s.id === contextMenu.id)?.groupId && (
+                      <button onClick={() => toggleGroupStrokes(contextMenu.id)} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[9px] font-black uppercase border-b border-slate-100 text-slate-600">
+                        👁️ Toggle Strokes
+                      </button>
+                    )}
+                  </>
+                )}
+
+                {(contextMenu.type === "selection" || contextMenu.type === "shape" || contextMenu.type === "stroke") && (
                   <button
-                    onClick={() => copyFabricDebugFromSelection()}
+                    onClick={() => {
+                      if (contextMenu.type === "selection") {
+                        copyFabricDebugFromSelection();
+                      } else if (contextMenu.type === "shape") {
+                        copyFabricDebugFromSelection({ type: "shape", id: contextMenu.id });
+                      } else if (contextMenu.type === "stroke") {
+                        copyFabricDebugFromSelection({ type: "stroke", id: contextMenu.id });
+                      }
+                    }}
                     disabled={!isLocked}
                     className="w-full text-left px-4 py-2 hover:bg-indigo-50 text-[9px] font-black uppercase border-b border-slate-100 text-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
                     title={!isLocked ? 'Lock to enable' : 'Copy fabric'}
                   >
                     🧪 Copy Fabric
                   </button>
-                  {!isLocked && (
-                    <div className="px-4 py-2 border-b border-slate-100 bg-amber-50/80">
-                      <p className="text-[9px] font-black uppercase text-amber-700">Lock to enable fabric copy</p>
-                      <button
-                        onClick={() => setIsLocked(true)}
-                        className="mt-1 text-[9px] font-black uppercase text-amber-800 underline"
-                      >
-                        Lock now
-                      </button>
-                    </div>
-                  )}
-                  <button onClick={() => pasteFabricToSelection()} className="w-full text-left px-4 py-2 hover:bg-cyan-50 text-[9px] font-black uppercase border-b border-slate-100 text-cyan-700">
-                    🧵 Paste Fabric
-                  </button>
-                  <button onClick={() => extractSelection(false)} className="w-full text-left px-4 py-2 hover:bg-green-50 text-[9px] font-black uppercase border-b border-slate-100 text-green-600">
-                    ✂️ Extract Image
-                  </button>
-                  {clipboard && (clipboard.shapes.length > 0 || clipboard.strokes.length > 0) && (
-                    <button onClick={pasteFromSelection} className="w-full text-left px-4 py-2 hover:bg-green-50 text-[9px] font-black uppercase text-green-600">
-                      📌 Paste
-                    </button>
-                  )}
-                </>
-              ) : (
-                <>
-                  <button
-                    onClick={() => {
-                      if (contextMenu.type === "shape" || contextMenu.type === "stroke") bringToFront(contextMenu.id, contextMenu.type);
-                    }}
-                    className="w-full text-left px-4 py-2 text-[9px] font-black uppercase border-b border-slate-100 hover:bg-slate-50"
-                  >
-                    Bring to Front
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (contextMenu.type === "shape" || contextMenu.type === "stroke") sendToBack(contextMenu.id, contextMenu.type);
-                    }}
-                    className="w-full text-left px-4 py-2 text-[9px] font-black uppercase border-b border-slate-100 hover:bg-slate-50"
-                  >
-                    Send to Back
-                  </button>
-                  {contextMenu.type === "shape" && !workspaceShapes.find(s => s.id === contextMenu.id)?.isMannequin && (
-                    <button id="drape-menu-btn" onClick={() => openDrapeModal(contextMenu.id)} className="w-full text-left px-4 py-2 hover:bg-yellow-50 text-[9px] font-black uppercase border-b border-slate-100 text-yellow-600">
-                      🎀 Drape to Mannequin
-                    </button>
-                  )}
-                  {contextMenu.type === "shape" && (
-                    <button id="pick-replace-btn" onClick={() => { replaceColorInShape(contextMenu.id, contextMenu.clickX, contextMenu.clickY); setContextMenu(null); }} className="w-full text-left px-4 py-2 hover:bg-yellow-50 text-[9px] font-black uppercase border-b border-slate-100 text-yellow-600">
-                      🎨 Pick & Replace Color
-                    </button>
-                  )}
-                  {contextMenu.type === "shape" && workspaceShapes.find(s => s.id === contextMenu.id)?.groupId && (
-                    <button onClick={() => toggleGroupStrokes(contextMenu.id)} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[9px] font-black uppercase border-b border-slate-100 text-slate-600">
-                      👁️ Toggle Strokes
-                    </button>
-                  )}
-                  {(contextMenu.type === "shape" || contextMenu.type === "stroke") && (
+                )}
+
+                {(contextMenu.type === "selection" || contextMenu.type === "shape" || contextMenu.type === "stroke") && !isLocked && (
+                  <div className="px-4 py-2 border-b border-slate-100 bg-amber-50/80">
+                    <p className="text-[9px] font-black uppercase text-amber-700">Lock to enable fabric copy</p>
                     <button
-                      onClick={() => {
-                      if (contextMenu.type === "shape") {
-                        copyFabricDebugFromSelection({ type: "shape", id: contextMenu.id });
-                      } else if (contextMenu.type === "stroke") {
-                        copyFabricDebugFromSelection({ type: "stroke", id: contextMenu.id });
+                      onClick={() => setIsLocked(true)}
+                      className="mt-1 text-[9px] font-black uppercase text-amber-800 underline"
+                    >
+                      Lock now
+                    </button>
+                  </div>
+                )}
+
+                {(contextMenu.type === "selection" || contextMenu.type === "shape" || contextMenu.type === "stroke") && (
+                  <button
+                    onClick={() => {
+                      if (contextMenu.type === "selection") {
+                        pasteFabricToSelection();
+                      } else {
+                        const targetType: 'shape' | 'stroke' = contextMenu.type === 'stroke' ? 'stroke' : 'shape';
+                        pasteFabricToSelection({ type: targetType, id: contextMenu.id });
                       }
                     }}
-                      disabled={!isLocked}
-                      className="w-full text-left px-4 py-2 hover:bg-indigo-50 text-[9px] font-black uppercase border-b border-slate-100 text-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
-                      title={!isLocked ? 'Lock to enable' : 'Copy fabric'}
-                    >
-                      🧪 Copy Fabric
-                    </button>
-                  )}
-                  {(contextMenu.type === "shape" || contextMenu.type === "stroke") && !isLocked && (
-                    <div className="px-4 py-2 border-b border-slate-100 bg-amber-50/80">
-                      <p className="text-[9px] font-black uppercase text-amber-700">Lock to enable fabric copy</p>
-                      <button
-                        onClick={() => setIsLocked(true)}
-                        className="mt-1 text-[9px] font-black uppercase text-amber-800 underline"
-                      >
-                        Lock now
-                      </button>
-                    </div>
-                  )}
-                  {(contextMenu.type === "shape" || contextMenu.type === "stroke") && (
-                    <button onClick={() => {
-                      const targetType: 'shape' | 'stroke' = contextMenu.type === 'stroke' ? 'stroke' : 'shape';
-                      pasteFabricToSelection({ type: targetType, id: contextMenu.id });
-                    }} className="w-full text-left px-4 py-2 hover:bg-cyan-50 text-[9px] font-black uppercase border-b border-slate-100 text-cyan-700">
-                      🧵 Paste Fabric
-                    </button>
-                  )}
-                  <button onClick={() => { saveForUndo(); if (contextMenu.type === "shape") setWorkspaceShapes(prev => prev.filter(s => s.id !== contextMenu.id)); else if (contextMenu.type === "stroke") setStrokes(prev => prev.filter(s => s.id !== contextMenu.id)); setContextMenu(null); }} className="w-full text-left px-4 py-2 text-red-500 hover:bg-red-50 text-[9px] font-black uppercase">Delete Item</button>
-                </>
-              )}
+                    className="w-full text-left px-4 py-2 hover:bg-cyan-50 text-[9px] font-black uppercase border-b border-slate-100 text-cyan-700"
+                  >
+                    🧵 Paste Fabric
+                  </button>
+                )}
+
+                {(contextMenu.type === "shape" || contextMenu.type === "stroke") && (
+                  <button onClick={() => { saveForUndo(); if (contextMenu.type === "shape") setWorkspaceShapes(prev => prev.filter(s => s.id !== contextMenu.id)); else setStrokes(prev => prev.filter(s => s.id !== contextMenu.id)); setContextMenu(null); }} className="w-full text-left px-4 py-2 text-red-500 hover:bg-red-50 text-[9px] font-black uppercase">
+                    Delete Item
+                  </button>
+                )}
+              </>
             </div>
           )}
           <div className="absolute font-bold text-black left-2 top-1/2 -translate-y-1/2 flex flex-col gap-2 p-2 bg-white/80 rounded-[2rem] shadow-xl z-50">
@@ -5015,7 +5226,47 @@ const extractSelection = useCallback(async (asJpeg = false) => {
             });
                 penRef.current!.lastX = c.x;
                 penRef.current!.lastY = c.y;
-              } } else if (draggingStrokeDot) { setStrokes(prev => prev.map(s => s.id === draggingStrokeDot.strokeId ? { ...s, points: s.points.map(p => p.id === draggingStrokeDot.dotId ? { ...p, x: c.x, y: c.y } : p) } : s));
+              } } else if (draggingDotClusterId) {
+                const cluster = dotClusters.find(item => item.id === draggingDotClusterId);
+                if (cluster) {
+                  const points = cluster.members.map(member => {
+                    if (member.kind === 'shape') {
+                      const shape = workspaceShapes.find(item => item.id === member.itemId);
+                      const dot = shape?.dots.find(item => item.id === member.dotId);
+                      return shape && dot ? { x: shape.position.x + dot.x * shape.scale, y: shape.position.y + dot.y * shape.scale } : null;
+                    }
+                    const stroke = strokes.find(item => item.id === member.itemId);
+                    const point = stroke?.points.find(item => item.id === member.dotId);
+                    return point ? { x: point.x, y: point.y } : null;
+                  }).filter((point): point is { x: number; y: number } => !!point);
+
+                  if (points.length > 0) {
+                    const centerX = points.reduce((sum, point) => sum + point.x, 0) / points.length;
+                    const centerY = points.reduce((sum, point) => sum + point.y, 0) / points.length;
+                    const deltaX = c.x - dragOffset.x;
+                    const deltaY = c.y - dragOffset.y;
+
+                    setWorkspaceShapes(prev => prev.map(shape => ({
+                      ...shape,
+                      dots: shape.dots.map(dot => cluster.members.some(member => member.kind === 'shape' && member.itemId === shape.id && member.dotId === dot.id)
+                        ? { ...dot, x: dot.x + deltaX / shape.scale, y: dot.y + deltaY / shape.scale }
+                        : dot),
+                    })));
+
+                    setStrokes(prev => prev.map(stroke => ({
+                      ...stroke,
+                      points: stroke.points.map(point => cluster.members.some(member => member.kind === 'stroke' && member.itemId === stroke.id && member.dotId === point.id)
+                        ? { ...point, x: point.x + deltaX, y: point.y + deltaY }
+                        : point),
+                      centerPath: stroke.centerPath?.map(point => cluster.members.some(member => member.kind === 'stroke' && member.itemId === stroke.id && member.dotId === point.id)
+                        ? { ...point, x: point.x + deltaX, y: point.y + deltaY }
+                        : point),
+                    })));
+
+                    setDragOffset({ x: c.x, y: c.y });
+                  }
+                }
+              } else if (draggingStrokeDot) { setStrokes(prev => prev.map(s => s.id === draggingStrokeDot.strokeId ? { ...s, points: s.points.map(p => p.id === draggingStrokeDot.dotId ? { ...p, x: c.x, y: c.y } : p) } : s));
               } else if (draggingDot) { setWorkspaceShapes(prev => prev.map(s => s.id !== draggingDot.shapeId ? s : { ...s, dots: s.dots.map(d => d.id === draggingDot.dotId ? { ...d, x: (c.x - s.position.x)/s.scale, y: (c.y - s.position.y)/s.scale } : d) }));
               } else if (draggingShapeId && !isLocked) { 
                 const shape = workspaceShapes.find(s => s.id === draggingShapeId);
@@ -5211,12 +5462,12 @@ const extractSelection = useCallback(async (asJpeg = false) => {
 
               if (selectionRect && Math.abs(selectionRect.x2 - selectionRect.x1) > 10 && Math.abs(selectionRect.y2 - selectionRect.y1) > 10) {
                 if (((e.nativeEvent) as PointerEvent).button === 2 || e.pointerType === 'touch') {
-                  setContextMenu({ x: e.clientX, y: e.clientY, id: 'selection', type: 'selection' });
+                  openContextMenu({ x: e.clientX, y: e.clientY, id: 'selection', type: 'selection' });
                 }
               } else {
                 setSelectionRect(null);
               }
-              isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingStrokeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setResizingId(null); setRotatingId(null); }}>
+              isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingStrokeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setDraggingDotClusterId(null); setResizingId(null); setRotatingId(null); }}>
               
             <svg 
               id="workspace-svg" 
@@ -5224,14 +5475,16 @@ const extractSelection = useCallback(async (asJpeg = false) => {
               className={`w-full h-full shadow-2xl rounded-[3rem] lg:rounded-[3rem] rounded-2xl ${getWorkspaceBgClasses()}`} 
               onContextMenu={(e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 if (selectionRect) {
-                  e.stopPropagation();
                   const rect = { x: Math.min(selectionRect.x1, selectionRect.x2), y: Math.min(selectionRect.y1, selectionRect.y2), width: Math.abs(selectionRect.x2 - selectionRect.x1), height: Math.abs(selectionRect.y2 - selectionRect.y1) };
                   const c = getCoords(e);
                   if (c.x >= rect.x && c.x <= rect.x + rect.width && c.y >= rect.y && c.y <= rect.y + rect.height) {
-                    setContextMenu({ x: e.clientX, y: e.clientY, id: 'selection', type: 'selection' });
+                    openContextMenu({ x: e.clientX, y: e.clientY, id: 'selection', type: 'selection' });
+                    return;
                   }
                 }
+                openContextMenu({ x: e.clientX, y: e.clientY, id: 'selection', type: 'selection' });
               }}
             >
               {[...workspaceShapes.map(s => ({ ...s, type: 'shape' as const })), ...strokes.map(s => ({ ...s, type: 'stroke' as const }))]
@@ -5251,7 +5504,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                     const fabricY = 0;
                     const transform = `translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale}) rotate(${shape.rotation || 0} ${shape.dims.width/2} ${shape.dims.height/2})`;
                     return (
-                      <g key={shape.id} data-shape-id={shape.id} data-group-id={shape.groupId || ''} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); const c = getCoords(e); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y }); }}>
+                      <g key={shape.id} data-shape-id={shape.id} data-group-id={shape.groupId || ''} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); const c = getCoords(e); openContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y }); }}>
                         {shape.isMannequin ? (
                           <>
                             <defs>
@@ -5264,7 +5517,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                               const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y });
                               }
                             }} onContextMenu={(e) => { e.preventDefault();
-                              e.stopPropagation(); const c = getCoords(e); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y });
+                              e.stopPropagation(); const c = getCoords(e); openContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y });
                             }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
                             {globalShowDots && shape.dots.map((dot) => (<circle key={dot.id} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#8b5cf6" stroke="#ffffff" strokeWidth={2 / shape.scale} opacity={0.8} onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}
                             {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id);
@@ -5316,7 +5569,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                               const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y });
                               }
                             }} onContextMenu={(e) => { e.preventDefault();
-                              e.stopPropagation(); const c = getCoords(e); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y });
+                              e.stopPropagation(); const c = getCoords(e); openContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y });
                             }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
                             {shape.fabricFillSrc && shapeFabricLayers.length === 0 && (
                               <>
@@ -5435,7 +5688,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                     const meshPatternHeight = Math.max(meshMaxY - meshMinY, s.width * (meshPattern.horizontalLines + 1), 12);
                     const meshStroke = isMeshStroke(s);
                     return (
-                    <g key={s.id} data-stroke-id={s.id} data-group-id={s.groupId || ''} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
+                    <g key={s.id} data-stroke-id={s.id} data-group-id={s.groupId || ''} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); openContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
                       {s.baseFill && <path d={strokePathD} fill={s.baseFill} pointerEvents="none" strokeLinecap="round" strokeLinejoin="round" />}
                       {s.fabricFillSrc && strokeFabricLayers.length === 0 && (
                         <>
@@ -5614,7 +5867,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                                     }
                                   }}
                                   onContextMenu={(e) => { e.preventDefault();
-                                    e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" });
+                                    e.stopPropagation(); openContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" });
                                   }}
                                   filter={`url(#gem-shine-${s.id})`}
                              />
@@ -5636,7 +5889,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                                   }
                                 }}
                               onContextMenu={(e) => { e.preventDefault();
-                                e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" });
+                                e.stopPropagation(); openContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" });
                               }}
                             />
                           ) : s.clothType === 'real-bead' ?
@@ -5660,7 +5913,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                                   }
                                 }}
                               onContextMenu={(e) => { e.preventDefault();
-                                e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" });
+                                e.stopPropagation(); openContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" });
                               }}
                               preserveAspectRatio="none"
                             />
@@ -5685,7 +5938,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                                   }
                                 }} 
                               onContextMenu={(e) => { e.preventDefault();
-                                e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" });
+                                e.stopPropagation(); openContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" });
                               }}
                               preserveAspectRatio="none"
                             />
@@ -5706,7 +5959,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                                       }
                                     }} 
                                   onContextMenu={(e) => { e.preventDefault();
-                                    e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" });
+                                    e.stopPropagation(); openContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" });
                                   }}
                                   filter={`url(#bead-shine-${s.id})`}
                              />
@@ -5723,7 +5976,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                                   setDraggingStrokeId(s.id);
                                   setDragOffset({ x: c.x, y: c.y });
                                 }
-                              }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }} opacity={s.visible === false ? 0.3 : 1}>
+                              }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); openContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }} opacity={s.visible === false ? 0.3 : 1}>
                                 <defs>
                                   <radialGradient id={`btn-grad-${s.id}`} cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
                                     <stop offset="70%" stopColor={s.fillColor} />
@@ -5774,7 +6027,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                             </defs>
                           )}
                           {meshStroke ? (
-                            <g onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType), strokeStyle: normalizeFabric(selectedClothType) === 'mesh' ? 'mesh' : st.strokeStyle, meshPattern: normalizeFabric(selectedClothType) === 'mesh' ? { horizontalLines: meshHorizontalLines, verticalLines: meshVerticalLines } : st.meshPattern } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
+                            <g onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType), strokeStyle: normalizeFabric(selectedClothType) === 'mesh' ? 'mesh' : st.strokeStyle, meshPattern: normalizeFabric(selectedClothType) === 'mesh' ? { horizontalLines: meshHorizontalLines, verticalLines: meshVerticalLines } : st.meshPattern } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); openContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
                               <g clipPath={`url(#mesh-stroke-clip-${s.id})`} opacity={s.visible === false ? 0.3 : 1}>
                                 <rect x={meshMinX} y={meshMinY} width={meshPatternWidth} height={meshPatternHeight} fill="transparent" />
                                 {Array.from({ length: meshPattern.horizontalLines }, (_, idx) => {
@@ -5787,8 +6040,8 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                                 })}
                               </g>
                             </g>
-                          ) : (
-                            <path d={generatePathData(s.points, s.closed ?? false)} stroke={s.visible === false ? (globalShowDots ? s.color : "transparent") : s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={s.visible === false ? "5,5" : undefined} opacity={s.visible === false ? 0.3 : 1} onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType), strokeStyle: normalizeFabric(selectedClothType) === 'mesh' ? 'mesh' : st.strokeStyle, meshPattern: normalizeFabric(selectedClothType) === 'mesh' ? { horizontalLines: meshHorizontalLines, verticalLines: meshVerticalLines } : st.meshPattern } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }} />
+                              ) : (
+                            <path d={generatePathData(s.points, s.closed ?? false)} stroke={s.visible === false ? (globalShowDots ? s.color : "transparent") : s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={s.visible === false ? "5,5" : undefined} opacity={s.visible === false ? 0.3 : 1} onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType), strokeStyle: normalizeFabric(selectedClothType) === 'mesh' ? 'mesh' : st.strokeStyle, meshPattern: normalizeFabric(selectedClothType) === 'mesh' ? { horizontalLines: meshHorizontalLines, verticalLines: meshVerticalLines } : st.meshPattern } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); openContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }} />
                           )}
                         </>
                       )}
@@ -5814,6 +6067,43 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                     );
                   }
                 })}
+
+              {globalShowDots && dotClusters.map(cluster => {
+                const points = cluster.members.map(member => {
+                  if (member.kind === 'shape') {
+                    const shape = workspaceShapes.find(item => item.id === member.itemId);
+                    const dot = shape?.dots.find(item => item.id === member.dotId);
+                    return shape && dot ? { x: shape.position.x + dot.x * shape.scale, y: shape.position.y + dot.y * shape.scale } : null;
+                  }
+                  const stroke = strokes.find(item => item.id === member.itemId);
+                  const point = stroke?.points.find(item => item.id === member.dotId);
+                  return point ? { x: point.x, y: point.y } : null;
+                }).filter((point): point is { x: number; y: number } => !!point);
+
+                if (points.length === 0) return null;
+
+                const centerX = points.reduce((sum, point) => sum + point.x, 0) / points.length;
+                const centerY = points.reduce((sum, point) => sum + point.y, 0) / points.length;
+
+                return (
+                  <circle
+                    key={cluster.id}
+                    cx={centerX}
+                    cy={centerY}
+                    r={12}
+                    fill="#f59e0b"
+                    stroke="#ffffff"
+                    strokeWidth={2}
+                    opacity={0.95}
+                    onPointerDown={(e) => {
+                      if (activeTool !== "cursor" || isLocked) return;
+                      e.stopPropagation();
+                      setDraggingDotClusterId(cluster.id);
+                      setDragOffset({ x: centerX, y: centerY });
+                    }}
+                  />
+                );
+              })}
 
               {activeTool === "scissor" && scissorDots.length > 0 && (
                 <g pointerEvents="none">
@@ -5855,11 +6145,10 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                   y={Math.min(selectionRect.y1, selectionRect.y2)}
                   width={Math.abs(selectionRect.x2 - selectionRect.x1)}
                   height={Math.abs(selectionRect.y2 - selectionRect.y1)}
-                  fill="rgba(59, 130, 246, 0.1)"
+                  fill="rgba(59, 130, 246, 0.12)"
                   stroke="#3b82f6"
                   strokeWidth={2}
-                  strokeDasharray="5,5"
-                  pointerEvents="none"
+                  strokeDasharray="8 6"
                 />
               )}
               
