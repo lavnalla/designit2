@@ -156,6 +156,8 @@ export const viewport = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const adsenseClient = process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_CLIENT;
+
   // Structured data JSON-LD for SEO
   const jsonLd = {
     "@context": "https://schema.org",
@@ -215,7 +217,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} ${quicksand.variable} antialiased`}>
         {/* Google AdSense */}
-        <Script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7392693183875834" crossOrigin="anonymous" strategy="afterInteractive" />
+        {adsenseClient && (
+          <Script
+            async
+            src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adsenseClient}`}
+            crossOrigin="anonymous"
+            strategy="afterInteractive"
+          />
+        )}
         
         {/* Google Ads (AdWords) Conversion Tracking */}
         {process.env.NEXT_PUBLIC_GOOGLE_ADS_ID && (
