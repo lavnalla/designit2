@@ -23,6 +23,9 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
         </div>
 
         <div className="flex items-center gap-6 text-xs font-bold tracking-wide">
+          <Link href="/try-on" className="text-white hover:text-yellow-100 transition-colors drop-shadow-sm">
+            Try it on
+          </Link>
           <Link href="/community" className="text-white hover:text-yellow-100 transition-colors drop-shadow-sm">
             Community
           </Link>
@@ -51,9 +54,17 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
             The ultimate digital studio for jewelry and clothes designers. Pull, trace, edit, and reimagine designs with professional vector tools.
           </p>
           
-          <button onClick={onStart} className="bg-gradient-to-r from-yellow-500 via-yellow-600 to-[#B87333] text-white px-6 py-2.5 rounded-full font-bold uppercase text-xs shadow-md hover:shadow-lg hover:scale-105 transition-all hover:from-yellow-400 hover:to-yellow-500 self-start border border-yellow-400">
-              Start Designing →
-          </button>
+          <div className="flex flex-wrap items-center gap-3 self-start">
+            <button onClick={onStart} className="bg-gradient-to-r from-yellow-500 via-yellow-600 to-[#B87333] text-white px-6 py-2.5 rounded-full font-bold uppercase text-xs shadow-md hover:shadow-lg hover:scale-105 transition-all hover:from-yellow-400 hover:to-yellow-500 border border-yellow-400">
+                Start Designing →
+            </button>
+            <Link
+              href="/try-on"
+              className="px-6 py-2.5 rounded-full font-bold uppercase text-xs border-2 border-[#B87333] text-[#B87333] bg-white hover:bg-amber-50 hover:scale-105 transition-all shadow-sm"
+            >
+              Try it on
+            </Link>
+          </div>
         </div>
         
         {/* Video Section - Wide Banner Style */}

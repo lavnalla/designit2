@@ -29,6 +29,7 @@ export default function Footer() {
           </h3>
           <ul className="space-y-2 font-medium">
             <li><Link href="/" className="text-emerald-700 hover:text-rose-600 transition-colors flex items-center gap-2"><span className="text-yellow-500 text-xs">✨</span> Home</Link></li>
+            <li><Link href="/try-on" className="text-emerald-700 hover:text-rose-600 transition-colors flex items-center gap-2"><span className="text-yellow-500 text-xs">✨</span> Try it on</Link></li>
             <li><Link href="/about" className="text-emerald-700 hover:text-rose-600 transition-colors flex items-center gap-2"><span className="text-yellow-500 text-xs">✨</span> About Us</Link></li>
             <li><Link href="/contact" className="text-emerald-700 hover:text-rose-600 transition-colors flex items-center gap-2"><span className="text-yellow-500 text-xs">✨</span> Contact</Link></li>
             <li><Link href="/community" className="text-emerald-700 hover:text-rose-600 transition-colors flex items-center gap-2"><span className="text-yellow-500 text-xs">✨</span> Community</Link></li>
