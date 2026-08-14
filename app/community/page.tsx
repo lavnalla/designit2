@@ -1,8 +1,7 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
 import Image from 'next/image';
 import { getApprovedSubmissions } from '../../src/lib/storage';
+import CommunityBackButton from './CommunityBackButton';
 
 export const metadata: Metadata = {
   title: 'DesignIt Community Gallery',
@@ -27,13 +26,7 @@ export default async function CommunityPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-gradient-to-r from-yellow-600 via-yellow-500 to-yellow-600 border-b-4 border-[#B87333] sticky top-0 z-10 w-full px-6 py-4 flex items-center justify-between shadow-md">
-        <Link 
-          href="/" 
-          className="flex items-center gap-2 text-white hover:text-yellow-100 transition-colors"
-        >
-          <ArrowLeft size={20} className="drop-shadow-sm" />
-          <span className="font-semibold text-sm drop-shadow-sm">Back to Studio</span>
-        </Link>
+        <CommunityBackButton />
         <h1 className="text-2xl font-black tracking-tight text-white drop-shadow-md">
           COMMUNITY <span className="text-[#e2e8f0]">GALLERY</span>
         </h1>
