@@ -101,6 +101,7 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
         <div className="hidden items-center gap-7 text-sm font-medium text-slate-600 md:flex">
           <a href="#how-to" className="hover:text-slate-900 transition-colors">How It Works</a>
           <a href="#features" className="hover:text-slate-900 transition-colors">Features</a>
+          <Link href="/try-on" className="hover:text-slate-900 transition-colors">Try It On</Link>
           <Link href="/community" className="hover:text-slate-900 transition-colors">Community</Link>
           <Link href="/about" className="hover:text-slate-900 transition-colors">About</Link>
         </div>
@@ -125,6 +126,7 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
           <div id="mobile-nav-menu" className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-4 md:hidden">
             <a href="#how-to" onClick={() => setMobileMenuOpen(false)} className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900">How It Works</a>
             <a href="#features" onClick={() => setMobileMenuOpen(false)} className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900">Features</a>
+            <Link href="/try-on" onClick={() => setMobileMenuOpen(false)} className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900">Try It On</Link>
             <Link href="/community" onClick={() => setMobileMenuOpen(false)} className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900">Community</Link>
             <Link href="/about" onClick={() => setMobileMenuOpen(false)} className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900">About</Link>
             <button
@@ -169,12 +171,20 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
             <span className="text-center text-xs text-slate-400">No sign-up required — start immediately</span>
           </button>
 
-          <button
-            onClick={onStart}
-            className="text-yellow-600 text-sm font-semibold hover:underline"
-          >
-            Or launch directly →
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
+            <button
+              onClick={onStart}
+              className="text-yellow-600 text-sm font-semibold hover:underline"
+            >
+              Or launch directly →
+            </button>
+            <Link
+              href="/try-on"
+              className="text-sm font-semibold text-slate-500 transition-colors hover:text-slate-900 hover:underline"
+            >
+              Try it on with your camera →
+            </Link>
+          </div>
         </div>
       </section>
 
