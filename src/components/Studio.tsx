@@ -934,6 +934,8 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   const [customAssets, setCustomAssets] = useState<{name: string, path: string}[]>([]);
   const workspaceRef = useRef<SVGSVGElement | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
+  const colorSwatchRef = useRef<HTMLButtonElement | null>(null);
+  const colorPanelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     fetch('/api/assets')
@@ -965,6 +967,23 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
       document.body.style.overflow = prevOverflow;
     };
   }, [showTryOn]);
+
+  useEffect(() => {
+    if (!showColorPanel) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (colorPanelRef.current?.contains(target)) return;
+      if (colorSwatchRef.current?.contains(target)) return;
+      setShowColorPanel(false);
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+    };
+  }, [showColorPanel]);
 
   const saveForUndo = useCallback(() => {
     setHistory(h => [...h, { shapes: JSON.parse(JSON.stringify(workspaceShapes)), strokes: JSON.parse(JSON.stringify(strokes)) }].slice(-50));
@@ -4938,9 +4957,9 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     </button>
   ))}
   <div className="relative mt-2">
-    <button id="color-swatch" onClick={() => setShowColorPanel(v => !v)} title="Choose color and transparency" style={{ backgroundColor: activeColor }} className="w-8 h-8 rounded-lg border border-slate-200 shadow-sm" />
+    <button ref={colorSwatchRef} id="color-swatch" onClick={() => setShowColorPanel(v => !v)} title="Choose color and transparency" style={{ backgroundColor: activeColor }} className="w-8 h-8 rounded-lg border border-slate-200 shadow-sm" />
     {showColorPanel && (
-      <div className="fixed left-14 top-1/2 z-50 w-[calc(100vw-4.5rem)] max-w-[16rem] -translate-y-1/2 overflow-y-auto rounded-[1.35rem] border border-slate-300/80 bg-[radial-gradient(circle_at_top,rgba(255,247,214,0.86),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(241,245,249,0.97)_52%,rgba(226,232,240,0.98)_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.98),0_22px_42px_rgba(15,23,42,0.2),0_8px_18px_rgba(15,23,42,0.08)] backdrop-blur-md sm:w-56 max-h-[75vh] sm:max-h-[85vh]">
+      <div ref={colorPanelRef} className="fixed left-14 top-1/2 z-50 w-[calc(100vw-4.5rem)] max-w-[16rem] -translate-y-1/2 overflow-y-auto rounded-[1.35rem] border border-slate-300/80 bg-[radial-gradient(circle_at_top,rgba(255,247,214,0.86),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(241,245,249,0.97)_52%,rgba(226,232,240,0.98)_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.98),0_22px_42px_rgba(15,23,42,0.2),0_8px_18px_rgba(15,23,42,0.08)] backdrop-blur-md sm:w-56 max-h-[75vh] sm:max-h-[85vh]">
         <div className="flex flex-col gap-3">
           <div>
             <label className="text-[10px] font-black uppercase text-slate-600 mb-1 block">Color Picker</label>
