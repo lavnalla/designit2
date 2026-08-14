@@ -849,7 +849,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   const [showTryOn, setShowTryOn] = useState(false);
   const [showSourcePanel, setShowSourcePanel] = useState(false); 
   const [renderedWorkspaceImg, setRenderedWorkspaceImg] = useState<string | null>(null);
-  const [tryOnMode, setTryOnMode] = useState<"garment" | "necklace">("garment");
+  const [tryOnMode, setTryOnMode] = useState<"garment" | "necklace" | "earrings">("garment");
   const [showWelcomePrompt, setShowWelcomePrompt] = useState(true);
 
   const [mounted, setMounted] = useState(false);
@@ -4566,24 +4566,15 @@ const extractSelection = useCallback(async (asJpeg = false) => {
 
   <div className="relative flex max-w-full flex-wrap items-center justify-end gap-1 sm:gap-2">
     <div className="flex items-center overflow-hidden rounded-xl border-2 border-slate-300 bg-white shadow-sm">
-      <button
-        onClick={() => setTryOnMode("garment")}
-        className="px-2 py-2 text-[8px] font-black uppercase transition-colors sm:px-3 sm:text-[9px]"
-        style={tryOnMode === "garment"
-          ? { backgroundColor: '#fef08a', color: '#000000' }
-          : { backgroundColor: '#ffffff', color: '#475569' }}
+      <select
+        value={tryOnMode}
+        onChange={(e) => setTryOnMode(e.target.value as "garment" | "necklace" | "earrings")}
+        className="rounded-xl bg-white px-2 py-2 text-[8px] font-black uppercase text-slate-700 outline-none sm:px-3 sm:text-[9px]"
       >
-        Garment
-      </button>
-      <button
-        onClick={() => setTryOnMode("necklace")}
-        className="border-l-2 border-slate-300 px-2 py-2 text-[8px] font-black uppercase transition-colors sm:px-3 sm:text-[9px]"
-        style={tryOnMode === "necklace"
-          ? { backgroundColor: '#fbcfe8', color: '#000000' }
-          : { backgroundColor: '#ffffff', color: '#475569' }}
-      >
-        Necklace
-      </button>
+        <option value="garment">Garment</option>
+        <option value="necklace">Necklace</option>
+        <option value="earrings">Earrings</option>
+      </select>
     </div>
 
     <button
