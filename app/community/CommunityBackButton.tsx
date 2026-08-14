@@ -19,10 +19,10 @@ export default function CommunityBackButton() {
     <button
       type="button"
       onClick={handleBack}
-      className="flex items-center gap-2 text-white hover:text-yellow-100 transition-colors"
+      className="flex items-center gap-2 rounded-full bg-white/80 px-4 py-2 text-black shadow-md ring-1 ring-amber-200 transition-colors hover:bg-white hover:text-black"
     >
-      <ArrowLeft size={20} className="drop-shadow-sm" />
-      <span className="font-semibold text-sm drop-shadow-sm">Back</span>
+      <ArrowLeft size={20} className="text-black" />
+      <span className="text-sm font-black uppercase tracking-wide text-black">Back</span>
     </button>
   );
 }

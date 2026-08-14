@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 declare global {
   interface Window {
@@ -16,11 +16,19 @@ type AdSlotProps = {
 };
 
 export default function AdSlot({ slot, format = "auto", className, style }: AdSlotProps) {
+  const adRef = useRef<HTMLElement | null>(null);
+
   if (!process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_CLIENT || !slot) {
     return null;
   }
 
   useEffect(() => {
+    const adElement = adRef.current;
+
+    if (!adElement || adElement.getAttribute("data-adsbygoogle-status")) {
+      return;
+    }
+
     try {
       (window.adsbygoogle = window.adsbygoogle || []).push({});
     } catch {
@@ -30,6 +38,7 @@ export default function AdSlot({ slot, format = "auto", className, style }: AdSl
 
   return (
     <ins
+      ref={adRef}
       className={`adsbygoogle ${className ?? ""}`.trim()}
       style={{ display: "block", ...style }}
       data-ad-client={process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_CLIENT}
