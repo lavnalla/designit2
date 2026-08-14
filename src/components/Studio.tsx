@@ -100,6 +100,13 @@ interface DotCluster {
 interface ClipboardShape extends DistortableShape {
   clipboardSource?: 'vector' | 'selection-crop';
 }
+interface RecordedTutorialStep {
+  type: 'click' | 'contextmenu' | 'tool-select';
+  targetId: string;
+  label: string;
+  timestamp: number;
+  text?: string;
+}
 interface FabricLayer {
   src: string;
   area: { x: number; y: number; width: number; height: number };
@@ -848,6 +855,10 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   const [isRemovingBg, setIsRemovingBg] = useState(false);
   const [tutorialStep, setTutorialStep] = useState<number | null>(null);
   const [tutorialDisabled, setTutorialDisabled] = useState(false);
+  const [tutorialRecording, setTutorialRecording] = useState(false);
+  const [recordedTutorialSteps, setRecordedTutorialSteps] = useState<RecordedTutorialStep[]>([]);
+  const [tutorialAdminUnlocked, setTutorialAdminUnlocked] = useState(false);
+  const [tutorialAdminPassword, setTutorialAdminPassword] = useState('');
   const [ghostCursor, setGhostCursor] = useState({ x: 0, y: 0, active: false, clicking: false });
   const [showMannequinModal, setShowMannequinModal] = useState(false);
   const [showShapesModal, setShowShapesModal] = useState(false);
@@ -2047,6 +2058,91 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
     { text: "Lastly, Undo everything!", target: "undo-btn" }
   ];
 
+  const recordTutorialStep = useCallback((step: Omit<RecordedTutorialStep, 'timestamp'>) => {
+    setRecordedTutorialSteps(prev => [...prev, { ...step, timestamp: Date.now() }]);
+  }, []);
+
+  const stopTutorialRecording = useCallback(async () => {
+    setTutorialRecording(false);
+    if (recordedTutorialSteps.length === 0) {
+      alert('No tutorial steps were recorded.');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(recordedTutorialSteps, null, 2));
+      alert('Recorded tutorial steps copied to clipboard as JSON.');
+    } catch {
+      alert('Recording stopped. Copy the recorded steps from state/debug tools.');
+    }
+  }, [recordedTutorialSteps]);
+
+  const startTutorialRecording = useCallback(() => {
+    setRecordedTutorialSteps([]);
+    setTutorialRecording(true);
+  }, []);
+
+  const unlockTutorialRecording = useCallback(async () => {
+    const password = window.prompt('Enter admin password to enable help recording:') || '';
+    if (!password) return;
+
+    try {
+      const response = await fetch('/api/submissions?admin=true', {
+        headers: {
+          'x-admin-password': password,
+        },
+      });
+
+      if (!response.ok) {
+        alert('Admin authentication failed.');
+        return;
+      }
+
+      setTutorialAdminPassword(password);
+      setTutorialAdminUnlocked(true);
+      alert('Help recording unlocked for this session.');
+    } catch {
+      alert('Could not verify admin access.');
+    }
+  }, []);
+
+  const playbackTutorialSteps = recordedTutorialSteps.length > 0
+    ? recordedTutorialSteps.map(step => ({ text: step.text || step.label, target: step.targetId, action: step.type }))
+    : tutorialSteps;
+
+  const triggerElementAction = useCallback((element: Element, clientX?: number, clientY?: number) => {
+    if ('click' in element && typeof (element as HTMLElement).click === 'function') {
+      (element as HTMLElement).click();
+      return;
+    }
+
+    element.dispatchEvent(new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+      clientX,
+      clientY,
+    }));
+  }, []);
+
+  useEffect(() => {
+    if (!tutorialRecording) return;
+
+    const handleDocumentClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      const elementWithId = target.closest('[id]') as HTMLElement | null;
+      if (!elementWithId?.id) return;
+      recordTutorialStep({
+        type: 'click',
+        targetId: elementWithId.id,
+        label: elementWithId.getAttribute('aria-label') || elementWithId.getAttribute('title') || elementWithId.id,
+      });
+    };
+
+    document.addEventListener('click', handleDocumentClick, true);
+    return () => document.removeEventListener('click', handleDocumentClick, true);
+  }, [tutorialRecording, recordTutorialStep]);
+
   const runTutorial = async () => {
     console.log('runTutorial called');
     
@@ -2088,8 +2184,8 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
     console.log('Starting tutorial animation...');
     setGhostCursor({ x: window.innerWidth / 2, y: window.innerHeight / 2, active: true, clicking: false });
 
-    for (let i = 0; i < tutorialSteps.length; i++) {
-      const step = tutorialSteps[i];
+    for (let i = 0; i < playbackTutorialSteps.length; i++) {
+      const step = playbackTutorialSteps[i];
       setTutorialStep(i);
       const el = document.getElementById(step.target);
       if (!el) continue;
@@ -2102,7 +2198,23 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
       await new Promise(r => setTimeout(r, 800));
       setGhostCursor(prev => ({ ...prev, clicking: true }));
 
-      if (step.action === "drag_dot") {
+      if (step.action === "click") {
+        triggerElementAction(el, startX, startY);
+        await new Promise(r => setTimeout(r, 500));
+      }
+      else if (step.action === "tool-select") {
+        triggerElementAction(el, startX, startY);
+        await new Promise(r => setTimeout(r, 500));
+      }
+      else if (step.action === "contextmenu") {
+        el.dispatchEvent(new MouseEvent('contextmenu', {
+          bubbles: true,
+          clientX: startX,
+          clientY: startY,
+        }));
+        await new Promise(r => setTimeout(r, 800));
+      }
+      else if (step.action === "drag_dot") {
         saveForUndo();
         
         // Use deep clone and direct mutation - simpler approach
@@ -3351,6 +3463,14 @@ const extractSelection = useCallback(async (asJpeg = false) => {
   };
 
   const openContextMenu = useCallback((menu: { x: number; y: number; id: string; type: "shape" | "stroke" | "selection"; clickX?: number; clickY?: number }) => {
+    if (tutorialRecording) {
+      recordTutorialStep({
+        type: 'contextmenu',
+        targetId: menu.id,
+        label: `${menu.type} context menu`,
+      });
+    }
+
     const rect = workspaceRef.current?.getBoundingClientRect();
     const menuWidth = 220;
     const menuHeight = menu.type === 'selection' ? 320 : 360;
@@ -3371,7 +3491,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       x: Math.min(Math.max(menu.x, minX), Math.max(minX, maxX)),
       y: Math.min(Math.max(menu.y, minY), Math.max(minY, maxY)),
     });
-  }, []);
+  }, [tutorialRecording, recordTutorialStep]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -4369,18 +4489,46 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     </div>
   </div>
 
-  <div>
+  <div className="flex items-center gap-2">
     <button
       id="tutorial-btn-header"
       type="button"
       onClick={runTutorial}
-      disabled={tutorialDisabled}
+      disabled={tutorialDisabled || tutorialRecording}
       aria-label="Run interactive tutorial"
       title="Run interactive tutorial"
       className="flex items-center justify-center w-8 h-8 rounded-full bg-sky-300 hover:bg-sky-400 active:bg-sky-500 text-sky-950 font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-sky-700"
     >
       ?
     </button>
+    {!tutorialAdminUnlocked ? (
+      <button
+        id="tutorial-admin-unlock-btn"
+        type="button"
+        onClick={unlockTutorialRecording}
+        className="px-3 h-8 rounded-full bg-amber-300 hover:bg-amber-400 active:bg-amber-500 text-amber-950 text-[9px] font-black uppercase border border-amber-700 transition-colors"
+      >
+        Unlock Help Record
+      </button>
+    ) : !tutorialRecording ? (
+      <button
+        id="tutorial-record-btn"
+        type="button"
+        onClick={startTutorialRecording}
+        className="px-3 h-8 rounded-full bg-emerald-300 hover:bg-emerald-400 active:bg-emerald-500 text-emerald-950 text-[9px] font-black uppercase border border-emerald-700 transition-colors"
+      >
+        Record Help
+      </button>
+    ) : (
+      <button
+        id="tutorial-stop-record-btn"
+        type="button"
+        onClick={stopTutorialRecording}
+        className="px-3 h-8 rounded-full bg-rose-300 hover:bg-rose-400 active:bg-rose-500 text-rose-950 text-[9px] font-black uppercase border border-rose-700 transition-colors"
+      >
+        Stop Recording
+      </button>
+    )}
   </div>
 
   <div className={toolbarCanvasWrapperClass}>
@@ -4594,7 +4742,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
           {ghostCursor.active && (
             <div className="fixed pointer-events-none z-[1000] transition-all duration-700 ease-in-out flex flex-col items-center" style={{ left: ghostCursor.x, top: ghostCursor.y, transform: 'translate(-50%, -50%)' }}>
               <div className={`w-8 h-8 rounded-full border-4 border-yellow-400 bg-yellow-400/30 transition-transform ${ghostCursor.clicking ? 'scale-75' : 'scale-100'}`} />
-              {tutorialStep !== null && <div className="mt-2 bg-slate-900 text-white text-[10px] font-bold px-3 py-1 rounded-lg shadow-xl">{tutorialSteps[tutorialStep].text}</div>}
+              {tutorialStep !== null && <div className="mt-2 bg-slate-900 text-white text-[10px] font-bold px-3 py-1 rounded-lg shadow-xl">{playbackTutorialSteps[tutorialStep]?.text}</div>}
             </div>
           )}
           {contextMenu && (
@@ -4602,22 +4750,22 @@ const extractSelection = useCallback(async (asJpeg = false) => {
               <>
                 {contextMenu.type === "selection" && (
                   <>
-                    <button onClick={groupDotsFromSelection} className="w-full text-left px-4 py-2 hover:bg-emerald-50 text-[9px] font-black uppercase border-b border-slate-100 text-emerald-700">
+                    <button onClick={() => { if (tutorialRecording) recordTutorialStep({ type: 'click', targetId: 'group-dots', label: 'Group Dots' }); groupDotsFromSelection(); }} className="w-full text-left px-4 py-2 hover:bg-emerald-50 text-[9px] font-black uppercase border-b border-slate-100 text-emerald-700">
                       Group Dots
                     </button>
-                    <button onClick={ungroupDotsFromSelection} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[9px] font-black uppercase border-b border-slate-100 text-slate-700">
+                    <button onClick={() => { if (tutorialRecording) recordTutorialStep({ type: 'click', targetId: 'ungroup-dots', label: 'Ungroup Dots' }); ungroupDotsFromSelection(); }} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[9px] font-black uppercase border-b border-slate-100 text-slate-700">
                       Ungroup Dots
                     </button>
-                    <button onClick={createGroupFromSelection} className="w-full text-left px-4 py-2 hover:bg-amber-50 text-[9px] font-black uppercase border-b border-slate-100 text-amber-600">
+                    <button onClick={() => { if (tutorialRecording) recordTutorialStep({ type: 'click', targetId: 'group-items', label: 'Group Items' }); createGroupFromSelection(); }} className="w-full text-left px-4 py-2 hover:bg-amber-50 text-[9px] font-black uppercase border-b border-slate-100 text-amber-600">
                       🔗 Group Items
                     </button>
-                    <button onClick={ungroupItemsFromSelection} className="w-full text-left px-4 py-2 hover:bg-orange-50 text-[9px] font-black uppercase border-b border-slate-100 text-orange-600">
+                    <button onClick={() => { if (tutorialRecording) recordTutorialStep({ type: 'click', targetId: 'ungroup-items', label: 'Ungroup Items' }); ungroupItemsFromSelection(); }} className="w-full text-left px-4 py-2 hover:bg-orange-50 text-[9px] font-black uppercase border-b border-slate-100 text-orange-600">
                       🔓 Ungroup Items
                     </button>
-                    <button onClick={copyFromSelection} className="w-full text-left px-4 py-2 hover:bg-blue-50 text-[9px] font-black uppercase border-b border-slate-100 text-blue-600">
+                    <button onClick={() => { if (tutorialRecording) recordTutorialStep({ type: 'click', targetId: 'copy-area', label: 'Copy Area' }); copyFromSelection(); }} className="w-full text-left px-4 py-2 hover:bg-blue-50 text-[9px] font-black uppercase border-b border-slate-100 text-blue-600">
                       📋 Copy Area
                     </button>
-                    <button onClick={() => extractSelection(false)} className="w-full text-left px-4 py-2 hover:bg-green-50 text-[9px] font-black uppercase border-b border-slate-100 text-green-600">
+                    <button onClick={() => { if (tutorialRecording) recordTutorialStep({ type: 'click', targetId: 'extract-image', label: 'Extract Image' }); extractSelection(false); }} className="w-full text-left px-4 py-2 hover:bg-green-50 text-[9px] font-black uppercase border-b border-slate-100 text-green-600">
                       ✂️ Extract Image
                     </button>
                     {clipboard && (clipboard.shapes.length > 0 || clipboard.strokes.length > 0) && (
@@ -4735,6 +4883,13 @@ const extractSelection = useCallback(async (asJpeg = false) => {
           setShowShapesModal(true);
         } else {
           setActiveTool(t as any);
+          if (tutorialRecording) {
+            recordTutorialStep({
+              type: 'tool-select',
+              targetId: `${t}-tool`,
+              label: `Select ${t} tool`,
+            });
+          }
         }
       }} 
       className={leftToolButtonBaseClass}
