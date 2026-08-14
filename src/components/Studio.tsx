@@ -20,9 +20,11 @@ const nextConfig: NextConfig = {
 
 export default nextConfig;
 
-const toolbarControlClass = "h-10 min-w-[8.5rem] px-4 rounded-full text-[9px] font-black uppercase border transition-all font-bold flex items-center justify-center whitespace-nowrap relative overflow-hidden before:absolute before:inset-x-2 before:top-[2px] before:h-1/2 before:rounded-full before:bg-white/45 before:pointer-events-none";
-const toolbarSelectClass = "h-10 min-w-[8.5rem] px-4 rounded-full text-[9px] font-black uppercase border border-cyan-900/25 bg-gradient-to-b from-cyan-200 via-cyan-300 to-cyan-400 text-cyan-950 focus:outline-none focus:ring-2 focus:ring-cyan-900 transition-all cursor-pointer shadow-[inset_0_2px_0_rgba(255,255,255,0.65),0_8px_18px_rgba(8,145,178,0.18),0_3px_0_rgba(14,116,144,0.45)]";
-const toolbarCanvasWrapperClass = `${toolbarControlClass} gap-2 bg-gradient-to-b from-white via-slate-50 to-slate-100 border-slate-300 shadow-[inset_0_2px_0_rgba(255,255,255,0.95),inset_0_-1px_0_rgba(148,163,184,0.22),0_14px_32px_rgba(15,23,42,0.14),0_4px_10px_rgba(15,23,42,0.08)] px-3 min-w-[12.5rem] backdrop-blur-md`;
+const MOBILE_BREAKPOINT = 1024;
+
+const toolbarControlClass = "relative flex h-10 min-w-0 items-center justify-center overflow-hidden rounded-full border px-3 text-[9px] font-bold uppercase transition-all before:pointer-events-none before:absolute before:inset-x-2 before:top-[2px] before:h-1/2 before:rounded-full before:bg-white/45 sm:px-4 whitespace-nowrap";
+const toolbarSelectClass = "h-10 min-w-0 w-full rounded-full border border-cyan-900/25 bg-gradient-to-b from-cyan-200 via-cyan-300 to-cyan-400 px-3 text-[9px] font-black uppercase text-cyan-950 shadow-[inset_0_2px_0_rgba(255,255,255,0.65),0_8px_18px_rgba(8,145,178,0.18),0_3px_0_rgba(14,116,144,0.45)] transition-all focus:outline-none focus:ring-2 focus:ring-cyan-900 cursor-pointer sm:px-4";
+const toolbarCanvasWrapperClass = `${toolbarControlClass} w-full max-w-[52vw] gap-2 bg-gradient-to-b from-white via-slate-50 to-slate-100 border-slate-300 px-3 shadow-[inset_0_2px_0_rgba(255,255,255,0.95),inset_0_-1px_0_rgba(148,163,184,0.22),0_14px_32px_rgba(15,23,42,0.14),0_4px_10px_rgba(15,23,42,0.08)] backdrop-blur-md sm:max-w-[12.5rem]`;
 const toolbarButtonBaseClass = `${toolbarControlClass} bg-white border-slate-300 text-slate-700 shadow-[inset_0_2px_0_rgba(255,255,255,0.82),inset_0_-1px_0_rgba(148,163,184,0.18),0_10px_22px_rgba(15,23,42,0.14),0_3px_0_rgba(71,85,105,0.24)]`;
 const toolbarButtonInteractiveClass = `${toolbarButtonBaseClass} active:scale-95 active:translate-y-[1px] active:shadow-[inset_0_1px_0_rgba(255,255,255,0.5),0_4px_10px_rgba(15,23,42,0.12),0_1px_0_rgba(51,65,85,0.18)]`;
 const leftToolButtonBaseClass = "group relative flex h-10 items-center justify-center rounded-xl border px-3 text-black transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.78),0_8px_18px_rgba(15,23,42,0.14),0_2px_0_rgba(51,65,85,0.18)] hover:-translate-y-0.5 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_12px_24px_rgba(15,23,42,0.18),0_3px_0_rgba(51,65,85,0.22)] active:translate-y-[1px] active:shadow-[inset_0_2px_4px_rgba(15,23,42,0.14),0_4px_8px_rgba(15,23,42,0.12)]";
@@ -4382,7 +4384,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
   if (!mounted) return null;
 
   return (
-    <div className="flex flex-col h-[100dvh] w-full bg-gradient-to-br from-slate-50 via-white to-stone-50 text-slate-900 overflow-hidden select-none touch-none" onClick={() => setContextMenu(null)}>
+    <div className="flex flex-col h-[100dvh] w-full overflow-hidden bg-gradient-to-br from-slate-50 via-white to-stone-50 text-slate-900 select-none" onClick={() => setContextMenu(null)}>
       {aiDraping.active && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-md">
            <div className="bg-white p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4">
@@ -4483,15 +4485,8 @@ const extractSelection = useCallback(async (asJpeg = false) => {
           </div>
         </div>
       )}
-      <header className="h-16 flex items-center justify-between px-2 lg:px-8 shrink-0 z-[100] flex-wrap border-b border-slate-300/80 bg-[radial-gradient(circle_at_top,rgba(255,244,200,0.9),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(237,242,247,0.97)_44%,rgba(203,213,225,0.98)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(148,163,184,0.22),0_14px_32px_rgba(15,23,42,0.14)]">
+      <header className="z-[100] flex min-h-16 flex-wrap items-center justify-between gap-2 border-b border-slate-300/80 bg-[radial-gradient(circle_at_top,rgba(255,244,200,0.9),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(237,242,247,0.97)_44%,rgba(203,213,225,0.98)_100%)] px-2 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(148,163,184,0.22),0_14px_32px_rgba(15,23,42,0.14)] lg:px-8 shrink-0">
   <div className="flex items-center gap-2 sm:gap-4">
-    <button 
-      id="trace-btn" 
-      onClick={() => setIsSidebarOpen(true)} 
-      className="lg:hidden bg-[#FFD700] text-black px-3 py-2 rounded-xl text-[9px] font-black uppercase shadow-md hover:shadow-lg transition-all border border-yellow-500"
-    >
-      Trace
-    </button>
     <div onClick={onBack} className="flex flex-col cursor-pointer active:scale-95 px-2">
       <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-[0.2em] text-yellow-600 drop-shadow-sm">
         DesignIt <span className="text-yellow-400">♦</span>
@@ -4511,7 +4506,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     </div>
   </div>
 
-  <div className="flex items-center gap-2">
+  <div className="flex max-w-full flex-1 items-center justify-end gap-2 sm:flex-none">
     <button
       id="tutorial-btn-header"
       type="button"
@@ -4519,7 +4514,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       disabled={tutorialDisabled || tutorialRecording}
       aria-label="Run interactive tutorial"
       title="Run interactive tutorial"
-      className="flex items-center justify-center w-8 h-8 rounded-full bg-sky-300 hover:bg-sky-400 active:bg-sky-500 text-sky-950 font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-sky-700"
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-sky-700 bg-sky-300 font-bold text-sky-950 transition-colors hover:bg-sky-400 active:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
     >
       ?
     </button>
@@ -4528,7 +4523,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
         id="tutorial-admin-unlock-btn"
         type="button"
         onClick={unlockTutorialRecording}
-        className="px-3 h-8 rounded-full bg-amber-300 hover:bg-amber-400 active:bg-amber-500 text-amber-950 text-[9px] font-black uppercase border border-amber-700 transition-colors"
+        className="inline-flex h-8 max-w-[30vw] min-w-0 items-center justify-center overflow-hidden rounded-full border border-amber-700 bg-amber-300 px-2 text-[8px] font-black uppercase text-amber-950 transition-colors hover:bg-amber-400 active:bg-amber-500 sm:max-w-none sm:px-3 sm:text-[9px]"
       >
         Unlock Help Record
       </button>
@@ -4537,7 +4532,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
         id="tutorial-record-btn"
         type="button"
         onClick={startTutorialRecording}
-        className="px-3 h-8 rounded-full bg-emerald-300 hover:bg-emerald-400 active:bg-emerald-500 text-emerald-950 text-[9px] font-black uppercase border border-emerald-700 transition-colors"
+        className="inline-flex h-8 max-w-[30vw] min-w-0 items-center justify-center overflow-hidden rounded-full border border-emerald-700 bg-emerald-300 px-2 text-[8px] font-black uppercase text-emerald-950 transition-colors hover:bg-emerald-400 active:bg-emerald-500 sm:max-w-none sm:px-3 sm:text-[9px]"
       >
         Record Help
       </button>
@@ -4546,14 +4541,14 @@ const extractSelection = useCallback(async (asJpeg = false) => {
         id="tutorial-stop-record-btn"
         type="button"
         onClick={stopTutorialRecording}
-        className="px-3 h-8 rounded-full bg-rose-300 hover:bg-rose-400 active:bg-rose-500 text-rose-950 text-[9px] font-black uppercase border border-rose-700 transition-colors"
+        className="inline-flex h-8 max-w-[30vw] min-w-0 items-center justify-center overflow-hidden rounded-full border border-rose-700 bg-rose-300 px-2 text-[8px] font-black uppercase text-rose-950 transition-colors hover:bg-rose-400 active:bg-rose-500 sm:max-w-none sm:px-3 sm:text-[9px]"
       >
         Stop Recording
       </button>
     )}
   </div>
 
-  <div className={toolbarCanvasWrapperClass}>
+  <div className={`${toolbarCanvasWrapperClass} order-3 md:order-none`}>
     <span className="text-[9px] font-black uppercase text-black">Canvas BG:</span>
     <select
       value={workspaceBgColor}
@@ -4569,11 +4564,11 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     </select>
   </div>
 
-  <div className="flex items-center gap-1 sm:gap-2 relative">
-    <div className="flex items-center rounded-xl border-2 border-slate-300 overflow-hidden bg-white shadow-sm">
+  <div className="relative flex max-w-full flex-wrap items-center justify-end gap-1 sm:gap-2">
+    <div className="flex items-center overflow-hidden rounded-xl border-2 border-slate-300 bg-white shadow-sm">
       <button
         onClick={() => setTryOnMode("garment")}
-        className="px-3 py-2 text-[9px] font-black uppercase transition-colors"
+        className="px-2 py-2 text-[8px] font-black uppercase transition-colors sm:px-3 sm:text-[9px]"
         style={tryOnMode === "garment"
           ? { backgroundColor: '#fef08a', color: '#000000' }
           : { backgroundColor: '#ffffff', color: '#475569' }}
@@ -4582,7 +4577,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       </button>
       <button
         onClick={() => setTryOnMode("necklace")}
-        className="px-3 py-2 text-[9px] font-black uppercase transition-colors border-l-2 border-slate-300"
+        className="border-l-2 border-slate-300 px-2 py-2 text-[8px] font-black uppercase transition-colors sm:px-3 sm:text-[9px]"
         style={tryOnMode === "necklace"
           ? { backgroundColor: '#fbcfe8', color: '#000000' }
           : { backgroundColor: '#ffffff', color: '#475569' }}
@@ -4615,7 +4610,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
           setRenderedWorkspaceImg(null);
         }
       }}
-      className={`${toolbarButtonInteractiveClass} gap-2`}
+      className={`${toolbarButtonInteractiveClass} inline-flex min-w-0 max-w-[38vw] gap-1 px-2 text-[8px] sm:max-w-none sm:gap-2 sm:px-3 sm:text-[9px]`}
       style={showTryOn
         ? { backgroundColor: '#fde68a', borderColor: '#f59e0b', color: '#000000' }
         : { backgroundColor: '#fef08a', borderColor: '#eab308', color: '#000000' }}
@@ -4627,7 +4622,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       <button
         type="button"
         onClick={() => setShowTopPanelMenu((prev) => !prev)}
-        className={`${toolbarButtonBaseClass} min-w-0 px-3`}
+        className={`${toolbarButtonBaseClass} min-w-0 px-3 text-[8px] sm:text-[9px]`}
         style={{ backgroundColor: '#fce7f3', borderColor: '#ec4899', color: '#831843' }}
         aria-expanded={showTopPanelMenu}
         aria-controls="studio-top-panel-menu"
@@ -4919,14 +4914,21 @@ const extractSelection = useCallback(async (asJpeg = false) => {
               </>
             </div>
           )}
-          <div className="absolute left-2 top-1/2 z-50 flex -translate-y-1/2 flex-col gap-2 rounded-[2rem] border border-slate-300/80 bg-[radial-gradient(circle_at_top,rgba(255,247,214,0.76),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.97)_0%,rgba(241,245,249,0.98)_50%,rgba(203,213,225,0.97)_100%)] p-2 font-bold text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(148,163,184,0.2),0_18px_36px_rgba(15,23,42,0.18),0_6px_12px_rgba(15,23,42,0.08)] backdrop-blur-md">
+          <div className="absolute left-2 top-1/2 z-50 flex -translate-y-1/2 touch-auto flex-col gap-2 rounded-[2rem] border border-slate-300/80 bg-[radial-gradient(circle_at_top,rgba(255,247,214,0.76),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.97)_0%,rgba(241,245,249,0.98)_50%,rgba(203,213,225,0.97)_100%)] p-2 font-bold text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(148,163,184,0.2),0_18px_36px_rgba(15,23,42,0.18),0_6px_12px_rgba(15,23,42,0.08)] backdrop-blur-md">
   {(["source", "cursor", "scissor", "pen", "ghost", "shapes", "fill", "erase"] as const).map((t) => (
     <button 
       key={t} 
       id={t === "shapes" ? "shapes-btn" : `${t}-tool`} 
       onClick={() => {
         if (t === "source") {
-          setShowSourceWindow(prev => !prev);
+          const isMobileViewport = typeof window !== "undefined" && window.innerWidth < MOBILE_BREAKPOINT;
+          setShowSourceWindow((prev) => {
+            const next = !prev;
+            if (isMobileViewport) {
+              setIsSidebarOpen(next);
+            }
+            return next;
+          });
         } else if (t === "shapes") {
           setShowShapesModal(true);
         } else {
@@ -4940,7 +4942,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
           }
         }
       }} 
-      className={leftToolButtonBaseClass}
+      className={`${leftToolButtonBaseClass} touch-manipulation`}
       style={t === "source"
         ? (showSourceWindow ? leftToolColorMap.source.active : leftToolColorMap.source.idle)
         : activeTool === t
@@ -5197,7 +5199,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     <div className="p-6 shrink-0 bg-white border-b-2 border-slate-200">
       <div className="flex justify-between items-center mb-6">
         <h3 className="text-xs font-black uppercase text-slate-800">Source <span className="text-yellow-500">✨</span></h3>
-        <button onClick={() => setShowSourceWindow(false)} className="lg:hidden text-slate-500 hover:text-slate-800 text-xs font-bold transition-colors">CLOSE ✕</button>
+        <button onClick={() => { setShowSourceWindow(false); setIsSidebarOpen(false); }} className="lg:hidden text-slate-500 hover:text-slate-800 text-xs font-bold transition-colors">CLOSE ✕</button>
       </div>
       <div className="grid grid-cols-2 gap-2 mb-3">
         <button 
@@ -5213,6 +5215,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
             ], dims: { ...imgDims }, position: { x: 100, y: 100 }, scale: fs, showDots: true, erasedPaths: [], clipUpdate: Date.now(), opacity: 1 }]); 
             setSourceDots([]); 
             setShowSourceWindow(false);
+            setIsSidebarOpen(false);
           }}
           className="col-span-2 bg-gradient-to-r from-yellow-500 to-amber-600 text-white py-2 rounded-md text-[9px] font-bold uppercase shadow-sm hover:shadow-md transition-all"
         >
@@ -5239,6 +5242,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
             setWorkspaceShapes(prev => [...prev, { id: `s-${Date.now()}`, img: selectedImage!, dots: [...pts], dims: { ...imgDims }, position: { x: 100, y: 100 }, scale: fs, showDots: true, erasedPaths: [], opacity: 1 }]); 
             setSourceDots([]); 
             setShowSourceWindow(false);
+            setIsSidebarOpen(false);
           }
         }} disabled={candidates.filter(c => c.selected).length === 0} className="bg-gradient-to-br from-slate-800 to-slate-900 text-yellow-300 py-1.5 px-2 rounded-md text-[8px] font-bold uppercase shadow-sm hover:shadow-md transition-all disabled:opacity-30">Add to Canvas</button>
       </div>

@@ -77,62 +77,94 @@ const FEATURES = [
 
 export default function LandingPage({ onStart }: { onStart: () => void }) {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const handleStart = () => {
+    setMobileMenuOpen(false);
+    onStart();
+  };
 
   return (
     <div className="flex flex-col min-h-screen bg-white text-slate-900 font-sans">
 
       {/* ── NAV ── */}
-      <nav className="sticky top-0 z-50 flex items-center justify-between px-6 py-4 bg-white/90 backdrop-blur border-b border-slate-100 shadow-sm">
-        <div className="flex items-center gap-2">
+      <nav className="sticky top-0 z-50 border-b border-slate-100 bg-white/90 px-4 py-4 shadow-sm backdrop-blur md:px-6">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
           <img src="/logo.png" alt="DesignIt" className="h-7 w-auto" />
-          <span className="font-black text-xl tracking-tight text-slate-900">
+          <span className="truncate font-black text-lg tracking-tight text-slate-900 sm:text-xl">
             Design<span className="text-yellow-500">It</span>
           </span>
         </div>
-        <div className="hidden md:flex items-center gap-7 text-sm font-medium text-slate-600">
+        <div className="hidden items-center gap-7 text-sm font-medium text-slate-600 md:flex">
           <a href="#how-to" className="hover:text-slate-900 transition-colors">How It Works</a>
           <a href="#features" className="hover:text-slate-900 transition-colors">Features</a>
           <Link href="/community" className="hover:text-slate-900 transition-colors">Community</Link>
           <Link href="/about" className="hover:text-slate-900 transition-colors">About</Link>
         </div>
         <button
-          onClick={onStart}
-          className="bg-yellow-500 hover:bg-yellow-400 text-white font-bold px-5 py-2 rounded-full text-sm transition-all hover:scale-105 shadow-md"
+          onClick={handleStart}
+          className="hidden rounded-full bg-yellow-500 px-5 py-2 text-sm font-bold text-white shadow-md transition-all hover:scale-105 hover:bg-yellow-400 md:inline-flex"
         >
           Launch Studio →
         </button>
+          <button
+            type="button"
+            aria-expanded={mobileMenuOpen}
+            aria-controls="mobile-nav-menu"
+            aria-label="Toggle navigation menu"
+            onClick={() => setMobileMenuOpen((open) => !open)}
+            className="inline-flex items-center justify-center rounded-full border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 md:hidden"
+          >
+            Menu
+          </button>
+        </div>
+        {mobileMenuOpen && (
+          <div id="mobile-nav-menu" className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-4 md:hidden">
+            <a href="#how-to" onClick={() => setMobileMenuOpen(false)} className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900">How It Works</a>
+            <a href="#features" onClick={() => setMobileMenuOpen(false)} className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900">Features</a>
+            <Link href="/community" onClick={() => setMobileMenuOpen(false)} className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900">Community</Link>
+            <Link href="/about" onClick={() => setMobileMenuOpen(false)} className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900">About</Link>
+            <button
+              onClick={handleStart}
+              className="mt-2 inline-flex items-center justify-center rounded-full bg-yellow-500 px-5 py-3 text-sm font-bold text-white shadow-md transition-all hover:bg-yellow-400"
+            >
+              Launch Studio →
+            </button>
+          </div>
+        )}
       </nav>
 
       {/* ── HERO ── */}
-      <section className="relative flex flex-col items-center justify-center text-center px-6 pt-20 pb-16 overflow-hidden">
+      <section className="relative flex flex-col items-center justify-center overflow-hidden px-4 pb-14 pt-14 text-center sm:px-6 sm:pt-20">
         {/* subtle background texture */}
         <div className="absolute inset-0 bg-gradient-to-b from-yellow-50/60 via-white to-white pointer-events-none" />
 
         <div className="relative z-10 max-w-2xl mx-auto">
-          <div className="inline-flex items-center gap-2 bg-yellow-100 text-yellow-700 text-xs font-bold px-3 py-1.5 rounded-full mb-6 tracking-wide uppercase">
+          <div className="mb-6 inline-flex max-w-full items-center gap-2 rounded-full bg-yellow-100 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-yellow-700 sm:text-xs">
             <Sparkles size={12} />
             Design Studio + AR Try-On
           </div>
 
-          <h1 className="text-4xl md:text-6xl font-black leading-tight tracking-tight text-slate-900 mb-4">
+          <h1 className="mb-4 text-4xl font-black leading-tight tracking-tight text-slate-900 sm:text-5xl md:text-6xl">
             Design Clothes & Jewelry.{" "}
             <span className="text-yellow-500">Try Them On.</span>
           </h1>
 
-          <p className="text-slate-500 text-base md:text-lg mb-8 max-w-lg mx-auto leading-relaxed">
+          <p className="mx-auto mb-8 max-w-lg text-sm leading-relaxed text-slate-500 sm:text-base md:text-lg">
             The only studio that takes your design from blank canvas to AR try-on in minutes — no apps, no photoshoots, no waiting.
           </p>
 
           {/* Upload-style CTA — mirrors FitRoom's drop zone */}
           <button
             onClick={onStart}
-            className="group w-full max-w-sm mx-auto flex flex-col items-center justify-center gap-3 border-2 border-dashed border-yellow-400 rounded-2xl py-10 px-6 bg-yellow-50 hover:bg-yellow-100 transition-all hover:border-yellow-500 cursor-pointer mb-5"
+            className="group mx-auto mb-5 flex w-full max-w-sm cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-yellow-400 bg-yellow-50 px-4 py-8 transition-all hover:border-yellow-500 hover:bg-yellow-100 sm:px-6 sm:py-10"
           >
             <div className="w-14 h-14 rounded-full bg-yellow-400 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
               <Upload size={24} className="text-white" />
             </div>
-            <span className="font-bold text-slate-700 text-base">Open the Design Studio</span>
-            <span className="text-slate-400 text-xs">No sign-up required — start immediately</span>
+            <span className="text-center text-base font-bold text-slate-700">Open the Design Studio</span>
+            <span className="text-center text-xs text-slate-400">No sign-up required — start immediately</span>
           </button>
 
           <button
@@ -160,13 +192,13 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
       </section>
 
       {/* ── HOW IT WORKS ── */}
-      <section id="how-to" className="py-20 px-6 max-w-5xl mx-auto w-full">
+      <section id="how-to" className="mx-auto w-full max-w-5xl px-4 py-16 sm:px-6 sm:py-20">
         <p className="text-xs font-bold text-yellow-500 uppercase tracking-widest text-center mb-2">How It Works</p>
         <h2 className="text-3xl md:text-4xl font-black text-center text-slate-900 mb-12">
           From sketch to try-on in 3 steps
         </h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-3 md:gap-8">
           {STEPS.map((step) => (
             <div key={step.num} className="flex flex-col items-center text-center p-6 rounded-2xl bg-slate-50 border border-slate-100 hover:border-yellow-300 hover:shadow-md transition-all">
               <span className="text-4xl font-black text-yellow-400 mb-3">{step.num}</span>
@@ -179,7 +211,7 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
         <div className="mt-10 text-center">
           <button
             onClick={onStart}
-            className="bg-yellow-500 hover:bg-yellow-400 text-white font-bold px-8 py-3.5 rounded-full text-sm shadow-md hover:scale-105 transition-all"
+            className="w-full rounded-full bg-yellow-500 px-6 py-3.5 text-sm font-bold text-white shadow-md transition-all hover:scale-105 hover:bg-yellow-400 sm:w-auto sm:px-8"
           >
             Start Designing Now →
           </button>
@@ -187,14 +219,14 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
       </section>
 
       {/* ── FEATURES ── */}
-      <section id="features" className="py-20 px-6 bg-slate-50 border-y border-slate-100">
+      <section id="features" className="border-y border-slate-100 bg-slate-50 px-4 py-16 sm:px-6 sm:py-20">
         <div className="max-w-5xl mx-auto">
           <p className="text-xs font-bold text-yellow-500 uppercase tracking-widest text-center mb-2">Features</p>
           <h2 className="text-3xl md:text-4xl font-black text-center text-slate-900 mb-12">
             Your Personal Design Studio
           </h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-6">
             {FEATURES.map((f) => (
               <div key={f.title} className="flex gap-5 p-6 bg-white rounded-2xl border border-slate-100 hover:border-yellow-300 hover:shadow-md transition-all">
                 <div className="text-3xl shrink-0">{f.icon}</div>
@@ -212,15 +244,15 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
       </section>
 
       {/* ── VALUE PROPS ── */}
-      <section className="py-16 px-6 max-w-5xl mx-auto w-full">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+      <section className="mx-auto w-full max-w-5xl px-4 py-16 sm:px-6">
+        <div className="grid grid-cols-2 gap-4 text-center sm:gap-6 md:grid-cols-4">
           {[
             { stat: "Real-time", label: "AR Try-On" },
             { stat: "100%", label: "Browser-based" },
             { stat: "Free", label: "No sign-up needed" },
             { stat: "Instant", label: "Design to preview" },
           ].map((item) => (
-            <div key={item.label} className="flex flex-col items-center gap-1 p-5 rounded-2xl bg-yellow-50 border border-yellow-100">
+            <div key={item.label} className="flex flex-col items-center gap-1 rounded-2xl border border-yellow-100 bg-yellow-50 p-4 sm:p-5">
               <span className="text-2xl font-black text-yellow-500">{item.stat}</span>
               <span className="text-slate-500 text-xs font-medium">{item.label}</span>
             </div>
@@ -232,7 +264,7 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
       <CommunityShowcase />
 
       {/* ── FAQ ── */}
-      <section className="py-20 px-6 bg-slate-50 border-t border-slate-100">
+      <section className="border-t border-slate-100 bg-slate-50 px-4 py-16 sm:px-6 sm:py-20">
         <div className="max-w-2xl mx-auto">
           <p className="text-xs font-bold text-yellow-500 uppercase tracking-widest text-center mb-2">FAQ</p>
           <h2 className="text-3xl font-black text-center text-slate-900 mb-10">
@@ -267,7 +299,7 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
       </section>
 
       {/* ── FINAL CTA ── */}
-      <section className="py-20 px-6 text-center bg-gradient-to-br from-yellow-500 to-yellow-600">
+      <section className="bg-gradient-to-br from-yellow-500 to-yellow-600 px-4 py-16 text-center sm:px-6 sm:py-20">
         <h2 className="text-3xl md:text-4xl font-black text-white mb-3">
           Ready to create something beautiful?
         </h2>
@@ -276,7 +308,7 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
         </p>
         <button
           onClick={onStart}
-          className="bg-white text-yellow-600 font-black px-8 py-3.5 rounded-full text-sm hover:scale-105 transition-all shadow-lg"
+          className="w-full rounded-full bg-white px-6 py-3.5 text-sm font-black text-yellow-600 shadow-lg transition-all hover:scale-105 sm:w-auto sm:px-8"
         >
           Launch Studio →
         </button>

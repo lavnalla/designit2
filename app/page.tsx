@@ -18,7 +18,7 @@ export default function Page() {
   if (!mounted) return null;
 
   return (
-    <main className="relative w-full h-[100dvh] overflow-hidden bg-white">
+    <main className="relative w-full min-h-[100dvh] bg-white">
       {/* LANDING PAGE / WEBSITE VIEW */}
       <div 
         className={`absolute inset-0 z-20 transition-all duration-1000 ease-in-out overflow-y-auto ${

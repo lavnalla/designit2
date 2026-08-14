@@ -37,7 +37,7 @@ export function CommunityShowcase() {
   if (designs.length === 0) return null;
 
   return (
-    <section className="w-full py-4 px-6 bg-white border-t border-slate-200">
+    <section className="w-full border-t border-slate-200 bg-white px-4 py-4 sm:px-6">
       <div className="max-w-[1000px] mx-auto text-center">
         <div className="flex flex-col items-center mb-4">
           <h2 className="text-lg font-bold mb-0.5 text-slate-800">Community Creations</h2>
@@ -46,7 +46,7 @@ export function CommunityShowcase() {
           </Link>
         </div>
 
-        <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-6">
           {designs.map((design) => (
             <div key={design.id} className="group relative bg-white rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 border border-slate-200">
               <div className="aspect-square relative overflow-hidden bg-white">
