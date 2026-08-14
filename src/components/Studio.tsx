@@ -6,6 +6,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import NecklaceTryOn from "./NecklaceTryOn";
+import GarmentPartPainter from "./GarmentPartPainter";
 
 import type { NextConfig } from 'next';
 
@@ -813,7 +814,8 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   ];
 
   const [showTryOn, setShowTryOn] = useState(false);
-  const [showSourcePanel, setShowSourcePanel] = useState(false); 
+  const [showPartPainter, setShowPartPainter] = useState(false);
+  const [showSourcePanel, setShowSourcePanel] = useState(false);
   const [renderedWorkspaceImg, setRenderedWorkspaceImg] = useState<string | null>(null);
   const [tryOnMode, setTryOnMode] = useState<"garment" | "necklace">("garment");
 
@@ -3880,7 +3882,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
 
     <button
       onClick={async () => {
-        if (!showTryOn) {
+        if (!showTryOn && !showPartPainter) {
           let readyAsset: string | null = null;
           for (let attempt = 0; attempt < 3 && !readyAsset; attempt++) {
             readyAsset = await syncWorkspaceToTryOn();
@@ -3896,18 +3898,19 @@ const extractSelection = useCallback(async (asJpeg = false) => {
             return;
           }
           setRenderedWorkspaceImg(readyAsset);
-          setShowTryOn(true);
+          setShowPartPainter(true);
         } else {
           setShowTryOn(false);
+          setShowPartPainter(false);
           setRenderedWorkspaceImg(null);
         }
       }}
       className={`${toolbarButtonInteractiveClass} gap-2`}
-      style={showTryOn
+      style={showTryOn || showPartPainter
         ? { backgroundColor: '#fde68a', borderColor: '#f59e0b', color: '#000000' }
         : { backgroundColor: '#fef08a', borderColor: '#eab308', color: '#000000' }}
     >
-      {showTryOn ? "✕ Close Try-On View" : "✨ Test Live on Webcam"}
+      {showTryOn || showPartPainter ? "✕ Close Try-On View" : "✨ Test Live on Webcam"}
     </button>
 
     <div className="relative md:hidden">
@@ -5309,6 +5312,23 @@ const extractSelection = useCallback(async (asJpeg = false) => {
           onClose={() => setShowSubmissionModal(false)}
           getDesignImage={getDesignImage}
         />
+
+        {showPartPainter && renderedWorkspaceImg && (
+          <GarmentPartPainter
+            imageSrc={renderedWorkspaceImg}
+            onSave={(maskDataUrl) => {
+              console.log("[GARMENT PART PAINTER] Saved outline", maskDataUrl.slice(0, 64));
+            }}
+            onContinue={() => {
+              setShowPartPainter(false);
+              setShowTryOn(true);
+            }}
+            onClose={() => {
+              setShowPartPainter(false);
+              setRenderedWorkspaceImg(null);
+            }}
+          />
+        )}
 
         {showTryOn && (
           <div className="fixed inset-0 z-[1200] bg-slate-900/70 backdrop-blur-sm">
