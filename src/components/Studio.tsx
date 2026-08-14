@@ -20,12 +20,12 @@ const nextConfig: NextConfig = {
 
 export default nextConfig;
 
-const toolbarControlClass = "h-10 min-w-[8.5rem] px-4 rounded-full text-[9px] font-black uppercase border transition-all font-bold flex items-center justify-center whitespace-nowrap";
-const toolbarSelectClass = "h-10 min-w-[8.5rem] px-4 rounded-full text-[9px] font-black uppercase border border-black/20 bg-cyan-300 text-cyan-950 focus:outline-none focus:ring-2 focus:ring-cyan-900 transition-all cursor-pointer";
-const toolbarCanvasWrapperClass = `${toolbarControlClass} gap-2 bg-white border-slate-300 shadow-sm px-3 min-w-[12.5rem]`;
-const toolbarButtonBaseClass = `${toolbarControlClass} shadow-md`;
-const toolbarButtonInteractiveClass = `${toolbarButtonBaseClass} active:scale-95`;
-const leftToolButtonBaseClass = "group relative h-10 flex items-center justify-center px-3 rounded-xl transition-all border text-black";
+const toolbarControlClass = "h-10 min-w-[8.5rem] px-4 rounded-full text-[9px] font-black uppercase border transition-all font-bold flex items-center justify-center whitespace-nowrap relative overflow-hidden before:absolute before:inset-x-2 before:top-[2px] before:h-1/2 before:rounded-full before:bg-white/45 before:pointer-events-none";
+const toolbarSelectClass = "h-10 min-w-[8.5rem] px-4 rounded-full text-[9px] font-black uppercase border border-cyan-900/25 bg-gradient-to-b from-cyan-200 via-cyan-300 to-cyan-400 text-cyan-950 focus:outline-none focus:ring-2 focus:ring-cyan-900 transition-all cursor-pointer shadow-[inset_0_2px_0_rgba(255,255,255,0.65),0_8px_18px_rgba(8,145,178,0.18),0_3px_0_rgba(14,116,144,0.45)]";
+const toolbarCanvasWrapperClass = `${toolbarControlClass} gap-2 bg-gradient-to-b from-white via-slate-50 to-slate-100 border-slate-300 shadow-[inset_0_2px_0_rgba(255,255,255,0.95),inset_0_-1px_0_rgba(148,163,184,0.22),0_14px_32px_rgba(15,23,42,0.14),0_4px_10px_rgba(15,23,42,0.08)] px-3 min-w-[12.5rem] backdrop-blur-md`;
+const toolbarButtonBaseClass = `${toolbarControlClass} bg-white border-slate-300 text-slate-700 shadow-[inset_0_2px_0_rgba(255,255,255,0.82),inset_0_-1px_0_rgba(148,163,184,0.18),0_10px_22px_rgba(15,23,42,0.14),0_3px_0_rgba(71,85,105,0.24)]`;
+const toolbarButtonInteractiveClass = `${toolbarButtonBaseClass} active:scale-95 active:translate-y-[1px] active:shadow-[inset_0_1px_0_rgba(255,255,255,0.5),0_4px_10px_rgba(15,23,42,0.12),0_1px_0_rgba(51,65,85,0.18)]`;
+const leftToolButtonBaseClass = "group relative flex h-10 items-center justify-center rounded-xl border px-3 text-black transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.78),0_8px_18px_rgba(15,23,42,0.14),0_2px_0_rgba(51,65,85,0.18)] hover:-translate-y-0.5 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_12px_24px_rgba(15,23,42,0.18),0_3px_0_rgba(51,65,85,0.22)] active:translate-y-[1px] active:shadow-[inset_0_2px_4px_rgba(15,23,42,0.14),0_4px_8px_rgba(15,23,42,0.12)]";
 const leftToolColorMap = {
   source: {
     idle: { backgroundColor: '#fef08a', borderColor: '#eab308', color: '#000000' },
@@ -848,6 +848,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   const [showSourcePanel, setShowSourcePanel] = useState(false); 
   const [renderedWorkspaceImg, setRenderedWorkspaceImg] = useState<string | null>(null);
   const [tryOnMode, setTryOnMode] = useState<"garment" | "necklace">("garment");
+  const [showWelcomePrompt, setShowWelcomePrompt] = useState(true);
 
   const [mounted, setMounted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -900,6 +901,8 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   const [activePenSize, setActivePenSize] = useState<number>(4);
   const [activePenStrokeType, setActivePenStrokeType] = useState<'solid' | 'mesh'>('solid');
   const [activePenLineCount, setActivePenLineCount] = useState<number>(1);
+  const [activePenLineSpacing, setActivePenLineSpacing] = useState<number>(14);
+  const [meshLineSpacing, setMeshLineSpacing] = useState<number>(14);
   const [activeFillOpacity, setActiveFillOpacity] = useState<number>(1);
   const [meshHorizontalLines, setMeshHorizontalLines] = useState<number>(DEFAULT_MESH_PATTERN.horizontalLines);
   const [meshVerticalLines, setMeshVerticalLines] = useState<number>(DEFAULT_MESH_PATTERN.verticalLines);
@@ -1968,7 +1971,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
       }
     }
 
-    const isGem = ['emerald', 'pear', 'marquise', 'oval'].includes(type);
+    const isGem = ['emerald', 'pear', 'marquise'].includes(type);
     const isOpenShape = type === 'line' || type === 'curve';
     const usePenStrokeMode = !isGem && activePenStrokeType;
     const useMeshStroke = usePenStrokeMode === 'mesh';
@@ -1978,7 +1981,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
       points: pts,
       centerPath: pts.map(point => ({ ...point })),
       color: activeColor,
-      width: isGem ? 2 : 4,
+      width: isGem ? 2 : activePenSize,
       closed: !isOpenShape,
       baseFill: (!isOpenShape && !isGem && activePenStrokeType !== 'solid') ? '#ffffff' : undefined,
       fillColor: isGem ? activeColor : undefined,
@@ -1995,7 +1998,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
       : createParallelStrokeVariants(newStroke);
     setStrokes(prev => [...prev, ...strokesToAdd]);
     setShowShapesModal(false);
-  }, [activeColor, saveForUndo, selectedClothType, meshHorizontalLines, meshVerticalLines, activePenStrokeType]);
+  }, [activeColor, activePenSize, saveForUndo, selectedClothType, meshHorizontalLines, meshVerticalLines, activePenStrokeType]);
 
   const createMannequinWithMeasurements = useCallback((measures: MannequinMeasurements) => {
     saveForUndo();
@@ -3648,7 +3651,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     direction: { x: number; y: number } = { x: 1, y: 0 },
   ) => {
     const lineCount = Math.max(1, activePenLineCount);
-    const spacing = Math.max(width * 1.35, 10);
+    const spacing = Math.max(activePenLineSpacing, 4);
     const centerOffset = (lineCount - 1) / 2;
     const groupId = lineCount > 1 ? `solid-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` : undefined;
     const strokesForLineSet: Stroke[] = [];
@@ -3679,11 +3682,11 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       spacing,
       strokes: strokesForLineSet,
     };
-  }, [activePenLineCount]);
+  }, [activePenLineCount, activePenLineSpacing]);
 
   const createMeshStrokeSet = useCallback((x: number, y: number, color: string, width: number, zIndex: number) => {
     const horizontalLines = Math.max(1, meshHorizontalLines);
-    const spacing = Math.max(width * 1.35, 10);
+    const spacing = Math.max(meshLineSpacing, 4);
     const centerOffset = (horizontalLines - 1) / 2;
     const groupId = `mesh-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const strokesForMesh: Stroke[] = [];
@@ -3717,7 +3720,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       spacing,
       strokes: strokesForMesh,
     };
-  }, [meshHorizontalLines, meshVerticalLines]);
+  }, [meshHorizontalLines, meshVerticalLines, meshLineSpacing]);
 
   const createMeshVerticalConnectors = useCallback((
     color: string,
@@ -3777,7 +3780,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       return [baseStroke];
     }
 
-    const spacing = Math.max(baseStroke.width * 1.35, 10);
+    const spacing = Math.max(activePenLineSpacing, 4);
     const centerOffset = (lineCount - 1) / 2;
     const groupId = `solid-shape-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const centerPath = baseStroke.points.map(point => ({ ...point }));
@@ -3823,7 +3826,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       return [baseStroke];
     }
 
-    const spacing = Math.max(baseStroke.width * 1.35, 10);
+    const spacing = Math.max(meshLineSpacing, 4);
     const centerOffset = (horizontalLines - 1) / 2;
     const groupId = `mesh-shape-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const centerPath = baseStroke.points.map(point => ({ ...point }));
@@ -4461,7 +4464,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
           </div>
         </div>
       )}
-      <header className="h-16 flex items-center justify-between px-2 lg:px-8 bg-white border-b border-yellow-200 shrink-0 z-[100] shadow-sm flex-wrap">
+      <header className="h-16 flex items-center justify-between px-2 lg:px-8 shrink-0 z-[100] flex-wrap border-b border-slate-300/80 bg-[radial-gradient(circle_at_top,rgba(255,244,200,0.9),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(237,242,247,0.97)_44%,rgba(203,213,225,0.98)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(148,163,184,0.22),0_14px_32px_rgba(15,23,42,0.14)]">
   <div className="flex items-center gap-2 sm:gap-4">
     <button 
       id="trace-btn" 
@@ -4739,6 +4742,32 @@ const extractSelection = useCallback(async (asJpeg = false) => {
 </header>
       <div className="flex-1 flex overflow-hidden relative">
         <main className="flex-1 bg-[#F9F9FB] relative overflow-visible">
+          {showWelcomePrompt && (
+            <div className="absolute inset-0 z-[120] flex items-center justify-center px-8 pointer-events-none">
+              <div className="pointer-events-auto max-w-3xl text-center">
+                <p className="text-xs font-black uppercase tracking-[0.34em] text-amber-600/90">Start Here</p>
+                <p className="mt-3 text-base font-semibold leading-8 text-slate-600 sm:text-lg">
+                  Click <span className="font-black text-slate-900">S</span> on the left to choose a source image, then build your design with the <span className="font-black text-slate-900">Pen</span> and <span className="font-black text-slate-900">Shapes</span> tools. Turn on the dots to reshape the image by dragging its points, use <span className="font-black text-slate-900">Help</span> for a guided walkthrough, or press <span className="font-black text-slate-900">Get Started</span> to jump straight into the canvas.
+                </p>
+                <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={runTutorial}
+                    className="rounded-full border border-sky-300 bg-white/85 px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] text-sky-800 shadow-sm backdrop-blur-sm transition-colors hover:bg-sky-50"
+                  >
+                    Help
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowWelcomePrompt(false)}
+                    className="rounded-full border border-amber-300 bg-amber-100/90 px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] text-amber-900 shadow-sm backdrop-blur-sm transition-colors hover:bg-amber-200"
+                  >
+                    Get Started
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           {ghostCursor.active && (
             <div className="fixed pointer-events-none z-[1000] transition-all duration-700 ease-in-out flex flex-col items-center" style={{ left: ghostCursor.x, top: ghostCursor.y, transform: 'translate(-50%, -50%)' }}>
               <div className={`w-8 h-8 rounded-full border-4 border-yellow-400 bg-yellow-400/30 transition-transform ${ghostCursor.clicking ? 'scale-75' : 'scale-100'}`} />
@@ -4871,7 +4900,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
               </>
             </div>
           )}
-          <div className="absolute font-bold text-black left-2 top-1/2 -translate-y-1/2 flex flex-col gap-2 p-2 bg-white/80 rounded-[2rem] shadow-xl z-50">
+          <div className="absolute left-2 top-1/2 z-50 flex -translate-y-1/2 flex-col gap-2 rounded-[2rem] border border-slate-300/80 bg-[radial-gradient(circle_at_top,rgba(255,247,214,0.76),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.97)_0%,rgba(241,245,249,0.98)_50%,rgba(203,213,225,0.97)_100%)] p-2 font-bold text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(148,163,184,0.2),0_18px_36px_rgba(15,23,42,0.18),0_6px_12px_rgba(15,23,42,0.08)] backdrop-blur-md">
   {(["source", "cursor", "scissor", "pen", "ghost", "shapes", "fill", "erase"] as const).map((t) => (
     <button 
       key={t} 
@@ -4911,7 +4940,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
   <div className="relative mt-2">
     <button id="color-swatch" onClick={() => setShowColorPanel(v => !v)} title="Choose color and transparency" style={{ backgroundColor: activeColor }} className="w-8 h-8 rounded-lg border border-slate-200 shadow-sm" />
     {showColorPanel && (
-      <div className="fixed left-14 top-1/2 -translate-y-1/2 p-3 bg-white rounded shadow-xl z-50 w-[calc(100vw-4.5rem)] max-w-[16rem] sm:w-56 max-h-[75vh] sm:max-h-[85vh] overflow-y-auto">
+      <div className="fixed left-14 top-1/2 z-50 w-[calc(100vw-4.5rem)] max-w-[16rem] -translate-y-1/2 overflow-y-auto rounded-[1.35rem] border border-slate-300/80 bg-[radial-gradient(circle_at_top,rgba(255,247,214,0.86),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(241,245,249,0.97)_52%,rgba(226,232,240,0.98)_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.98),0_22px_42px_rgba(15,23,42,0.2),0_8px_18px_rgba(15,23,42,0.08)] backdrop-blur-md sm:w-56 max-h-[75vh] sm:max-h-[85vh]">
         <div className="flex flex-col gap-3">
           <div>
             <label className="text-[10px] font-black uppercase text-slate-600 mb-1 block">Color Picker</label>
@@ -5023,23 +5052,35 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                 )}
               </div>
 
-              {activePenStrokeType === 'solid' && (
-                <div className="mt-3 flex items-center gap-2">
-                  <label className="text-[10px] font-black uppercase text-slate-600 w-20">Lines</label>
-                  <input
-                    type="range"
-                    min={1}
-                    max={6}
-                    value={activePenLineCount}
-                    onChange={e => setActivePenLineCount(parseInt(e.target.value, 10))}
-                    className="flex-1"
-                  />
-                  <span className="text-[10px] font-bold w-6 text-right">{activePenLineCount}</span>
+              {activePenStrokeType === 'solid' ? (
+                <div>
+                  <div className="mt-3 flex items-center gap-2">
+                    <label className="text-[10px] font-black uppercase text-slate-600 w-20">Lines</label>
+                    <input
+                      type="range"
+                      min={1}
+                      max={6}
+                      value={activePenLineCount}
+                      onChange={e => setActivePenLineCount(parseInt(e.target.value, 10))}
+                      className="flex-1"
+                    />
+                    <span className="text-[10px] font-bold w-6 text-right">{activePenLineCount}</span>
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <label className="text-[10px] font-black uppercase text-slate-600 w-20">Spacing</label>
+                    <input
+                      type="range"
+                      min={4}
+                      max={40}
+                      value={activePenLineSpacing}
+                      onChange={e => setActivePenLineSpacing(parseInt(e.target.value, 10))}
+                      className="flex-1"
+                    />
+                    <span className="text-[10px] font-bold w-6 text-right">{activePenLineSpacing}</span>
+                  </div>
                 </div>
-              )}
-
-              {activePenStrokeType === 'mesh' && (
-                <>
+              ) : activePenStrokeType === 'mesh' ? (
+                <div>
                   <div className="mt-3 flex items-center gap-2">
                     <label className="text-[10px] font-black uppercase text-slate-600 w-20">Horizontal</label>
                     <input
@@ -5072,9 +5113,21 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                     />
                     <span className="text-[10px] font-bold w-6 text-right">{meshVerticalLines}</span>
                   </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <label className="text-[10px] font-black uppercase text-slate-600 w-20">Spacing</label>
+                    <input
+                      type="range"
+                      min={4}
+                      max={40}
+                      value={meshLineSpacing}
+                      onChange={e => setMeshLineSpacing(parseInt(e.target.value, 10))}
+                      className="flex-1"
+                    />
+                    <span className="text-[10px] font-bold w-6 text-right">{meshLineSpacing}</span>
+                  </div>
                   <div className="mt-2 text-[10px] text-slate-500">Draw pen strokes as mesh instead of a single line.</div>
-                </>
-              )}
+                </div>
+              ) : null}
             </div>
           )}
           
