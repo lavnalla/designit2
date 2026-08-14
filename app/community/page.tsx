@@ -1,7 +1,17 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import Image from 'next/image';
 import { getApprovedSubmissions } from '../../src/lib/storage';
+
+export const metadata: Metadata = {
+  title: 'DesignIt Community Gallery',
+  description:
+    'Browse approved community creations shared with DesignIt, including fashion, jewelry and design mockups.',
+  alternates: {
+    canonical: '/community',
+  },
+};
 
 interface Design {
   id: string;

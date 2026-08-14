@@ -1,8 +1,18 @@
 "use client";
 
+import type { Metadata } from "next";
 import React, { useState } from "react";
 import Link from "next/link";
 import Footer from "../../src/components/Footer";
+
+export const metadata: Metadata = {
+  title: "Contact DesignIt",
+  description:
+    "Contact DesignIt for support, feedback, partnership inquiries and questions about the online design studio.",
+  alternates: {
+    canonical: "/contact",
+  },
+};
 
 export default function ContactPage() {
   const [formData, setFormData] = useState({
