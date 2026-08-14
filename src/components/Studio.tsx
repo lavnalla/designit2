@@ -22,10 +22,10 @@ export default nextConfig;
 
 const MOBILE_BREAKPOINT = 1024;
 
-const toolbarControlClass = "relative flex h-10 min-w-0 items-center justify-center overflow-hidden rounded-full border px-3 text-[9px] font-bold uppercase transition-all before:pointer-events-none before:absolute before:inset-x-2 before:top-[2px] before:h-1/2 before:rounded-full before:bg-white/45 sm:px-4 whitespace-nowrap";
+const toolbarControlClass = "relative flex h-10 min-w-0 items-center justify-center overflow-hidden rounded-full border px-3 text-[11px] font-black uppercase tracking-[0.04em] transition-all sm:px-4 whitespace-nowrap";
 const toolbarSelectClass = "h-10 min-w-0 w-full rounded-full border border-cyan-900/25 bg-gradient-to-b from-cyan-200 via-cyan-300 to-cyan-400 px-3 text-[9px] font-black uppercase text-cyan-950 shadow-[inset_0_2px_0_rgba(255,255,255,0.65),0_8px_18px_rgba(8,145,178,0.18),0_3px_0_rgba(14,116,144,0.45)] transition-all focus:outline-none focus:ring-2 focus:ring-cyan-900 cursor-pointer sm:px-4";
 const toolbarCanvasWrapperClass = `${toolbarControlClass} w-full max-w-[52vw] gap-2 bg-gradient-to-b from-white via-slate-50 to-slate-100 border-slate-300 px-3 shadow-[inset_0_2px_0_rgba(255,255,255,0.95),inset_0_-1px_0_rgba(148,163,184,0.22),0_14px_32px_rgba(15,23,42,0.14),0_4px_10px_rgba(15,23,42,0.08)] backdrop-blur-md sm:max-w-[12.5rem]`;
-const toolbarButtonBaseClass = `${toolbarControlClass} bg-white border-slate-300 text-slate-700 shadow-[inset_0_2px_0_rgba(255,255,255,0.82),inset_0_-1px_0_rgba(148,163,184,0.18),0_10px_22px_rgba(15,23,42,0.14),0_3px_0_rgba(71,85,105,0.24)]`;
+const toolbarButtonBaseClass = `${toolbarControlClass} bg-white border-slate-300 text-black [text-shadow:0_1px_0_rgba(255,255,255,0.55),0_0_1px_rgba(0,0,0,0.9)] shadow-[inset_0_2px_0_rgba(255,255,255,0.82),inset_0_-1px_0_rgba(148,163,184,0.18),0_10px_22px_rgba(15,23,42,0.14),0_3px_0_rgba(71,85,105,0.24)]`;
 const toolbarButtonInteractiveClass = `${toolbarButtonBaseClass} active:scale-95 active:translate-y-[1px] active:shadow-[inset_0_1px_0_rgba(255,255,255,0.5),0_4px_10px_rgba(15,23,42,0.12),0_1px_0_rgba(51,65,85,0.18)]`;
 const leftToolButtonBaseClass = "group relative flex h-10 items-center justify-center rounded-xl border px-3 text-black transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.78),0_8px_18px_rgba(15,23,42,0.14),0_2px_0_rgba(51,65,85,0.18)] hover:-translate-y-0.5 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_12px_24px_rgba(15,23,42,0.18),0_3px_0_rgba(51,65,85,0.22)] active:translate-y-[1px] active:shadow-[inset_0_2px_4px_rgba(15,23,42,0.14),0_4px_8px_rgba(15,23,42,0.12)]";
 const leftToolColorMap = {
@@ -4601,7 +4601,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
           setRenderedWorkspaceImg(null);
         }
       }}
-      className={`${toolbarButtonInteractiveClass} inline-flex min-w-0 max-w-[38vw] gap-1 px-2 text-[8px] sm:max-w-none sm:gap-2 sm:px-3 sm:text-[9px]`}
+      className={`${toolbarButtonInteractiveClass} inline-flex min-w-0 max-w-[42vw] gap-1 px-2 text-[10px] sm:max-w-none sm:gap-2 sm:px-3 sm:text-[11px]`}
       style={showTryOn
         ? { backgroundColor: '#fde68a', borderColor: '#f59e0b', color: '#000000' }
         : { backgroundColor: '#fef08a', borderColor: '#eab308', color: '#000000' }}
@@ -4613,8 +4613,8 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       <button
         type="button"
         onClick={() => setShowTopPanelMenu((prev) => !prev)}
-        className={`${toolbarButtonBaseClass} min-w-0 px-3 text-[8px] sm:text-[9px]`}
-        style={{ backgroundColor: '#fce7f3', borderColor: '#ec4899', color: '#831843' }}
+        className={`${toolbarButtonBaseClass} min-w-0 px-3 text-[10px] sm:text-[11px]`}
+        style={{ backgroundColor: '#fce7f3', borderColor: '#ec4899', color: '#000000' }}
         aria-expanded={showTopPanelMenu}
         aria-controls="studio-top-panel-menu"
       >
