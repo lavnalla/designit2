@@ -1,8 +1,18 @@
 "use client";
 
+import type { Metadata } from "next";
 import React from "react";
 import Link from "next/link";
 import Footer from "../../src/components/Footer";
+
+export const metadata: Metadata = {
+  title: "Terms of Service",
+  description:
+    "Review the DesignIt terms of service for using the free online design studio and related services.",
+  alternates: {
+    canonical: "/terms-of-service",
+  },
+};
 
 export default function TermsOfServicePage() {
   return (

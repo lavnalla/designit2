@@ -24,8 +24,15 @@ import React from "react";
 import Script from "next/script";
 import CookieConsent from "../src/components/CookieConsent";
 
+const siteUrl = "https://idesignits.com";
+const siteName = "DesignIt";
+
 export const metadata: Metadata = {
-  title: "DesignIt - Free Online Design Tool for Clothes, Jewelry & More | Canva Alternative",
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: "DesignIt - Free Online Design Tool for Clothes, Jewelry & More | Canva Alternative",
+    template: `%s | ${siteName}`,
+  },
   description:
     "Create stunning designs for clothes, jewelry, fashion, and more - 100% free! Easy-to-use online design studio with image tracing, vector editing, and dress form tools. The best free Canva alternative for creative designers.",
   keywords: [
@@ -103,8 +110,8 @@ export const metadata: Metadata = {
     title: "DesignIt - Free Design Tool for Clothes, Jewelry & More | Canva Alternative",
     description:
       "Design anything you imagine - clothes, jewelry, graphics, and more! 100% free, easy-to-use online design studio. No experience needed. The best free alternative to Canva.",
-    url: "https://idesignits.com/",
-    siteName: "DesignIt - Free Design Studio",
+    url: siteUrl,
+    siteName,
     images: [
       {
         url: "/og-image.png",
@@ -126,12 +133,22 @@ export const metadata: Metadata = {
   robots: {
     index: true,
     follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
   },
-  metadataBase: new URL("https://idesignits.com/"),
+  alternates: {
+    canonical: "/",
+  },
   icons: {
     icon: "/favicon.ico",
     apple: "/apple-touch-icon.png",
   },
+  category: "design",
 };
 
 export const viewport = {
@@ -144,7 +161,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     "@context": "https://schema.org",
     "@type": "WebApplication",
     name: "DesignIt - Free Design Studio",
-    url: "https://idesignits.com/",
+    url: siteUrl,
     applicationCategory: "DesignApplication",
     operatingSystem: "Any (Web Browser)",
     offers: {
@@ -154,7 +171,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     },
     description:
       "Free online design tool for everyone! Create beautiful designs for clothes, jewelry, fashion, graphics, and more. Easy-to-use design studio with image tracing, vector editing, and professional tools. No downloads, no experience needed. The perfect free alternative to Canva.",
-    screenshot: "https://idesignits.com/og-image.png",
+    screenshot: `${siteUrl}/og-image.png`,
     featureList: [
       "100% Free - No subscriptions or hidden fees",
       "Easy to use - No design experience needed",
@@ -172,7 +189,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       name: "Learncapes Inc.",
       logo: {
         "@type": "ImageObject",
-        url: "https://idesignits.com/logo.png",
+        url: `${siteUrl}/logo.png`,
       },
     },
     aggregateRating: {
@@ -190,13 +207,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <head>
-        {/* The Next.js metadata API injects the metadata above. Add structured data and canonical link */}
+        {/* The Next.js metadata API injects the metadata above. Add structured data for rich search results. */}
         <script
           type="application/ld+json"
-          // eslint-disable-next-line react/no-danger
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
-        <link rel="canonical" href="https://idesignits.com/" />
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} ${quicksand.variable} antialiased`}>
         {/* Google AdSense */}

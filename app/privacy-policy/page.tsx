@@ -1,8 +1,18 @@
 "use client";
 
+import type { Metadata } from "next";
 import React from "react";
 import Link from "next/link";
 import Footer from "../../src/components/Footer";
+
+export const metadata: Metadata = {
+  title: "Privacy Policy",
+  description:
+    "Read the DesignIt privacy policy covering cookies, analytics, AdSense and how user information is handled.",
+  alternates: {
+    canonical: "/privacy-policy",
+  },
+};
 
 export default function PrivacyPolicyPage() {
   return (
