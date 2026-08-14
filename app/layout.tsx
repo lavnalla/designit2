@@ -210,7 +210,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* The Next.js metadata API injects the metadata above. Add structured data for rich search results. */}
         <script
           type="application/ld+json"
-          // eslint-disable-next-line react/no-danger
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       </head>

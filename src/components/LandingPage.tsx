@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import Footer from "./Footer";
+import AdSlot from "./AdSlot";
 import { CommunityShowcase } from "./CommunityShowcase";
 import { Upload, Sparkles, Gem, ChevronDown } from "lucide-react";
 
@@ -78,6 +79,7 @@ const FEATURES = [
 export default function LandingPage({ onStart }: { onStart: () => void }) {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const homepageAdSlot = process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_HOME_SLOT;
 
   const handleStart = () => {
     setMobileMenuOpen(false);
@@ -190,6 +192,21 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
           ))}
         </div>
       </section>
+
+      {homepageAdSlot && (
+        <section className="px-4 py-6 sm:px-6" aria-label="Advertisement">
+          <div className="mx-auto max-w-5xl rounded-2xl border border-slate-100 bg-slate-50 p-4">
+            <p className="mb-3 text-center text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">
+              Sponsored
+            </p>
+            <AdSlot
+              slot={homepageAdSlot}
+              className="mx-auto min-h-[90px]"
+              style={{ minHeight: 90 }}
+            />
+          </div>
+        </section>
+      )}
 
       {/* ── HOW IT WORKS ── */}
       <section id="how-to" className="mx-auto w-full max-w-5xl px-4 py-16 sm:px-6 sm:py-20">

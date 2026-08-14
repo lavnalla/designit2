@@ -20,6 +20,22 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Environment Variables
+
+Create a `.env.local` file in the project root with your Google advertising IDs:
+
+```bash
+NEXT_PUBLIC_GOOGLE_ADSENSE_CLIENT=ca-pub-your-client-id
+NEXT_PUBLIC_GOOGLE_ADSENSE_HOME_SLOT=your-homepage-ad-slot
+NEXT_PUBLIC_GOOGLE_ADS_ID=AW-your-google-ads-id
+```
+
+Notes:
+
+- `NEXT_PUBLIC_GOOGLE_ADSENSE_CLIENT` is your AdSense publisher ID.
+- `NEXT_PUBLIC_GOOGLE_ADSENSE_HOME_SLOT` is the ad unit slot used on the homepage.
+- `NEXT_PUBLIC_GOOGLE_ADS_ID` is optional and only needed if you want Google Ads conversion tracking.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
