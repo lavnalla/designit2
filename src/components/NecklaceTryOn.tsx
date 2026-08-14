@@ -75,6 +75,19 @@ function getNecklacePlacement(
   };
 }
 
+function getNecklaceFallbackAnchors(bounds: OverlayBounds) {
+  const upperBandHeight = Math.max(6, Math.floor(bounds.height * 0.22));
+  const neckY = bounds.minY + upperBandHeight;
+  const inset = bounds.width * 0.18;
+
+  return {
+    leftNeckX: bounds.minX + inset,
+    rightNeckX: bounds.maxX - inset,
+    neckY,
+    centerX: (bounds.minX + bounds.maxX) / 2,
+  };
+}
+
 declare global {
   interface Window {
     Camera: any;
@@ -168,10 +181,11 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
       const localCropCtx = localCropC.getContext("2d");
 
       if (localCropCtx) {
-        const topCutoffY = img.height * 0.2;
+        const isNecklaceMode = mode === "necklace";
+        const topCutoffY = img.height * (isNecklaceMode ? 0.04 : 0.2);
         const sourceHeightToKeep = img.height - topCutoffY;
-        const sideCutoffX = img.width * 0.1;
-        const sourceWidthToKeep = img.width * 0.8;
+        const sideCutoffX = img.width * (isNecklaceMode ? 0.03 : 0.1);
+        const sourceWidthToKeep = img.width - sideCutoffX * 2;
 
         localCropCtx.drawImage(
           img,
@@ -246,12 +260,14 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
               }
             }
 
-            necklaceAnchorsRef.current = {
-              leftNeckX: bestLeft,
-              rightNeckX: bestRight,
-              neckY: bestRow === -1 ? bounds.minY : bestRow,
-              centerX: (bestLeft + bestRight) / 2,
-            };
+            necklaceAnchorsRef.current = bestRow === -1
+              ? getNecklaceFallbackAnchors(bounds)
+              : {
+                  leftNeckX: bestLeft,
+                  rightNeckX: bestRight,
+                  neckY: bestRow,
+                  centerX: (bestLeft + bestRight) / 2,
+                };
           } else {
             overlayBoundsRef.current = null;
             necklaceAnchorsRef.current = null;
@@ -261,7 +277,7 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
       }
     };
     img.src = selectedImageSrc;
-  }, [selectedImageSrc]);
+  }, [mode, selectedImageSrc]);
 
   useEffect(() => {
     if (isClosed || isMinimized) return;
@@ -346,11 +362,13 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
                 const liveNeckWidth = Math.max(1, Math.abs(chainEndX - chainStartX));
                 const sourceAnchors = necklaceAnchorsRef.current;
                 const sourceNeckWidth = Math.max(1, sourceAnchors.rightNeckX - sourceAnchors.leftNeckX);
-                const scale = (liveNeckWidth / sourceNeckWidth) * manualScaleRef.current;
+                const androidScaleBoost = /Android/i.test(typeof navigator !== "undefined" ? navigator.userAgent : "") ? 1.12 : 1;
+                const scale = (liveNeckWidth / sourceNeckWidth) * manualScaleRef.current * androidScaleBoost;
                 const drawW = croppedImageElement.width * scale;
                 const drawH = croppedImageElement.height * scale;
                 const drawX = controlX - sourceAnchors.centerX * scale + manualOffsetXRef.current;
-                const drawY = Math.min(chainStartY, chainEndY) - sourceAnchors.neckY * scale + manualOffsetYRef.current;
+                const shoulderLineY = Math.min(chainStartY, chainEndY);
+                const drawY = shoulderLineY - sourceAnchors.neckY * scale + manualOffsetYRef.current - h * 0.015;
 
                 canvasCtx.drawImage(croppedImageElement, drawX, drawY, drawW, drawH);
               }
