@@ -5292,6 +5292,11 @@ const extractSelection = useCallback(async (asJpeg = false) => {
             const c = getCoords(e); 
             const pointerButton = (e.nativeEvent as PointerEvent).button;
             const isPrimaryPointer = pointerButton === 0;
+
+            if (pointerButton === 2) {
+              e.preventDefault();
+              e.stopPropagation();
+            }
             
             if (activeTool === "cursor" && isPrimaryPointer) {
               setSelectionRect({ x1: c.x, y1: c.y, x2: c.x, y2: c.y });
@@ -5683,7 +5688,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                 }
 
               if (selectionRect && Math.abs(selectionRect.x2 - selectionRect.x1) > 10 && Math.abs(selectionRect.y2 - selectionRect.y1) > 10) {
-                if (((e.nativeEvent) as PointerEvent).button === 2 || e.pointerType === 'touch') {
+                if (e.pointerType === 'touch') {
                   openContextMenu({ x: e.clientX, y: e.clientY, id: 'selection', type: 'selection' });
                 }
               } else {
