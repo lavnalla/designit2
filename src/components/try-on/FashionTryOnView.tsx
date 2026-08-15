@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 type Detection = {
@@ -22,7 +22,32 @@ type SegmentResponse = {
   detail?: string;
 };
 
-type Mode = "upload" | "camera";
+type Mode = "upload" | "snapshot" | "video";
+
+const MODE_OPTIONS: { value: Mode; label: string; hint: string }[] = [
+  {
+    value: "upload",
+    label: "Upload image",
+    hint: "Pick an outfit photo from your device.",
+  },
+  {
+    value: "snapshot",
+    label: "Camera snapshot",
+    hint: "Capture a single frame from your camera, then segment it.",
+  },
+  {
+    value: "video",
+    label: "Live video",
+    hint: "Continuously segment camera frames. Each pass takes a few seconds on CPU.",
+  },
+];
+
+/** Pause between live passes so the browser stays responsive. */
+const LIVE_FRAME_DELAY_MS = 200;
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
 
 function downloadDataUrl(dataUrl: string, filename: string) {
   const a = document.createElement("a");
@@ -34,6 +59,8 @@ function downloadDataUrl(dataUrl: string, filename: string) {
 export function FashionTryOnView() {
   const [mode, setMode] = useState<Mode>("upload");
   const [busy, setBusy] = useState(false);
+  const [live, setLive] = useState(false);
+  const [liveFrames, setLiveFrames] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [serviceOk, setServiceOk] = useState<boolean | null>(null);
   const [result, setResult] = useState<SegmentResponse | null>(null);
@@ -43,6 +70,10 @@ export function FashionTryOnView() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const liveRef = useRef(false);
+
+  const cameraMode = mode === "snapshot" || mode === "video";
+  const activeOption = MODE_OPTIONS.find((o) => o.value === mode) ?? MODE_OPTIONS[0];
 
   useEffect(() => {
     let cancelled = false;
@@ -60,22 +91,25 @@ export function FashionTryOnView() {
     };
   }, []);
 
-  useEffect(() => {
-    return () => {
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-    };
-  }, []);
-
-  async function stopCamera() {
+  const stopCamera = useCallback(() => {
+    liveRef.current = false;
+    setLive(false);
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     setCameraOn(false);
-  }
+  }, []);
 
-  async function startCamera() {
+  useEffect(() => {
+    return () => {
+      liveRef.current = false;
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  const startCamera = useCallback(async () => {
+    if (streamRef.current) return true;
     setError(null);
-    setMode("camera");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
@@ -87,65 +121,135 @@ export function FashionTryOnView() {
         await videoRef.current.play();
       }
       setCameraOn(true);
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not open camera");
       setCameraOn(false);
+      return false;
     }
-  }
+  }, []);
 
-  async function segmentBlob(blob: Blob, localPreviewUrl?: string) {
-    setBusy(true);
-    setError(null);
-    if (localPreviewUrl) setPreview(localPreviewUrl);
+  const captureBlob = useCallback(async () => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth) return null;
 
-    try {
-      const form = new FormData();
-      form.append("file", blob, "capture.jpg");
-      const res = await fetch("/api/fashion-segment", { method: "POST", body: form });
-      const data = (await res.json()) as SegmentResponse & { error?: string };
-      if (!res.ok) {
-        throw new Error(data.detail || data.error || `Request failed (${res.status})`);
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob((b) => resolve(b), "image/jpeg", 0.92),
+    );
+    if (!blob) return null;
+    return { blob, dataUrl: canvas.toDataURL("image/jpeg", 0.92) };
+  }, []);
+
+  const runSegment = useCallback(
+    async (blob: Blob, opts: { previewUrl?: string; isLive?: boolean } = {}) => {
+      const { previewUrl, isLive } = opts;
+      if (!isLive) {
+        setBusy(true);
+        if (previewUrl) setPreview(previewUrl);
       }
-      setResult(data);
-      setPreview(data.original_data_url);
-    } catch (err) {
-      setResult(null);
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Segmentation failed. Is the local Python service running?",
-      );
-    } finally {
-      setBusy(false);
+      setError(null);
+
+      try {
+        const form = new FormData();
+        form.append("file", blob, "capture.jpg");
+        const res = await fetch("/api/fashion-segment", { method: "POST", body: form });
+        const data = (await res.json()) as SegmentResponse & { error?: string };
+        if (!res.ok) {
+          throw new Error(data.detail || data.error || `Request failed (${res.status})`);
+        }
+        setResult(data);
+        // Live mode keeps the camera feed visible instead of freezing on a still.
+        if (!isLive) setPreview(data.original_data_url);
+        return true;
+      } catch (err) {
+        if (!isLive) setResult(null);
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Segmentation failed. Is the local Python service running?",
+        );
+        return false;
+      } finally {
+        if (!isLive) setBusy(false);
+      }
+    },
+    [],
+  );
+
+  const liveLoop = useCallback(async () => {
+    while (liveRef.current) {
+      const shot = await captureBlob();
+      if (!shot) {
+        await delay(300);
+        continue;
+      }
+      if (!liveRef.current) break;
+
+      const ok = await runSegment(shot.blob, { isLive: true });
+      if (!ok) {
+        liveRef.current = false;
+        setLive(false);
+        break;
+      }
+      setLiveFrames((n) => n + 1);
+      await delay(LIVE_FRAME_DELAY_MS);
     }
+  }, [captureBlob, runSegment]);
+
+  const startLive = useCallback(async () => {
+    const ready = await startCamera();
+    if (!ready) return;
+    setLiveFrames(0);
+    liveRef.current = true;
+    setLive(true);
+    void liveLoop();
+  }, [liveLoop, startCamera]);
+
+  const stopLive = useCallback(() => {
+    liveRef.current = false;
+    setLive(false);
+  }, []);
+
+  async function changeMode(next: Mode) {
+    if (next === mode) return;
+    stopLive();
+    setError(null);
+    setMode(next);
+
+    if (next === "upload") {
+      stopCamera();
+      return;
+    }
+    await startCamera();
   }
 
   async function onFileChange(file: File | null) {
     if (!file) return;
+    stopLive();
+    stopCamera();
     setMode("upload");
-    await stopCamera();
-    const url = URL.createObjectURL(file);
-    await segmentBlob(file, url);
+    await runSegment(file, { previewUrl: URL.createObjectURL(file) });
   }
 
-  async function captureFromCamera() {
-    const video = videoRef.current;
-    if (!video || !cameraOn) return;
-    const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob((b) => resolve(b), "image/jpeg", 0.92),
-    );
-    if (!blob) {
+  async function captureSnapshot() {
+    const ready = await startCamera();
+    if (!ready) return;
+    const shot = await captureBlob();
+    if (!shot) {
       setError("Could not capture camera frame");
       return;
     }
-    await segmentBlob(blob, canvas.toDataURL("image/jpeg", 0.92));
+    await runSegment(shot.blob, { previewUrl: shot.dataUrl });
   }
+
+  const showVideoFeed = cameraMode && cameraOn;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-stone-100 text-slate-900">
@@ -168,7 +272,8 @@ export function FashionTryOnView() {
             Try it on — Fashion segmentation
           </h1>
           <p className="text-sm text-slate-500 max-w-2xl">
-            Upload a photo or use your camera. This page calls the open-source{" "}
+            Choose how you want to try it on: upload an image, take a single camera snapshot, or run
+            live video. This page calls the open-source{" "}
             <a
               className="text-[#B87333] underline underline-offset-2"
               href="https://huggingface.co/sayeed99/segformer-b3-fashion"
@@ -197,35 +302,80 @@ export function FashionTryOnView() {
 
         <section className="grid md:grid-cols-2 gap-6">
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <label
+                htmlFor="try-on-mode"
+                className="text-xs font-black uppercase tracking-wide text-slate-600"
+              >
+                Try-on mode
+              </label>
+              <select
+                id="try-on-mode"
+                value={mode}
+                onChange={(e) => void changeMode(e.target.value as Mode)}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800 shadow-sm focus:border-[#B87333] focus:outline-none focus:ring-2 focus:ring-amber-200"
+              >
+                {MODE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-500">{activeOption.hint}</p>
+            </div>
+
             <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setMode("upload");
-                  void stopCamera();
-                  fileRef.current?.click();
-                }}
-                className="px-4 py-2 rounded-full text-xs font-bold uppercase bg-gradient-to-r from-yellow-500 to-[#B87333] text-white shadow"
-              >
-                Upload photo
-              </button>
-              <button
-                type="button"
-                onClick={() => void startCamera()}
-                className="px-4 py-2 rounded-full text-xs font-bold uppercase border border-slate-300 bg-white text-slate-700"
-              >
-                Use camera
-              </button>
-              {cameraOn && (
+              {mode === "upload" && (
                 <button
                   type="button"
-                  onClick={() => void captureFromCamera()}
+                  onClick={() => fileRef.current?.click()}
                   disabled={busy}
-                  className="px-4 py-2 rounded-full text-xs font-bold uppercase bg-slate-900 text-white disabled:opacity-50"
+                  className="px-4 py-2 rounded-full text-xs font-bold uppercase bg-gradient-to-r from-yellow-500 to-[#B87333] text-white shadow disabled:opacity-50"
                 >
-                  Capture & segment
+                  Choose photo
                 </button>
               )}
+
+              {mode === "snapshot" && (
+                <button
+                  type="button"
+                  onClick={() => void captureSnapshot()}
+                  disabled={busy}
+                  className="px-4 py-2 rounded-full text-xs font-bold uppercase bg-slate-900 text-white shadow disabled:opacity-50"
+                >
+                  Capture &amp; segment
+                </button>
+              )}
+
+              {mode === "video" &&
+                (live ? (
+                  <button
+                    type="button"
+                    onClick={stopLive}
+                    className="px-4 py-2 rounded-full text-xs font-bold uppercase bg-rose-600 text-white shadow"
+                  >
+                    Stop live
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void startLive()}
+                    className="px-4 py-2 rounded-full text-xs font-bold uppercase bg-emerald-600 text-white shadow"
+                  >
+                    Start live
+                  </button>
+                ))}
+
+              {cameraMode && cameraOn && !live && (
+                <button
+                  type="button"
+                  onClick={stopCamera}
+                  className="px-4 py-2 rounded-full text-xs font-bold uppercase border border-slate-300 bg-white text-slate-700"
+                >
+                  Turn off camera
+                </button>
+              )}
+
               <input
                 ref={fileRef}
                 type="file"
@@ -236,21 +386,33 @@ export function FashionTryOnView() {
             </div>
 
             <div className="relative aspect-[4/5] max-h-[480px] rounded-xl overflow-hidden bg-slate-100 border border-slate-200">
-              {mode === "camera" && cameraOn ? (
-                <video
-                  ref={videoRef}
-                  playsInline
-                  muted
-                  autoPlay
-                  className="w-full h-full object-cover scale-x-[-1]"
-                />
-              ) : preview ? (
-                <img src={preview} alt="Input preview" className="w-full h-full object-contain" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-sm text-slate-400 p-6 text-center">
-                  Upload an outfit photo or turn on the camera to begin.
+              <video
+                ref={videoRef}
+                playsInline
+                muted
+                autoPlay
+                className={`w-full h-full object-cover scale-x-[-1] ${
+                  showVideoFeed ? "" : "hidden"
+                }`}
+              />
+
+              {!showVideoFeed &&
+                (preview ? (
+                  <img src={preview} alt="Input preview" className="w-full h-full object-contain" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-sm text-slate-400 p-6 text-center">
+                    {mode === "upload"
+                      ? "Choose an outfit photo to begin."
+                      : "Allow camera access to begin."}
+                  </div>
+                ))}
+
+              {live && (
+                <div className="absolute top-3 left-3 rounded-full bg-rose-600/90 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-white">
+                  Live · {liveFrames} {liveFrames === 1 ? "pass" : "passes"}
                 </div>
               )}
+
               {busy && (
                 <div className="absolute inset-0 bg-black/40 flex items-center justify-center text-white text-sm font-semibold">
                   Running SegFormer…
