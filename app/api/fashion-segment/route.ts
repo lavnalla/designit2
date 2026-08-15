@@ -37,8 +37,9 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const incoming = await req.formData();
-    const file = incoming.get("file");
-    if (!(file instanceof File) && !(file instanceof Blob)) {
+    // FormData entries are `File | string`; File extends Blob, so one check covers uploads.
+    const file: unknown = incoming.get("file");
+    if (!(file instanceof Blob)) {
       return NextResponse.json({ error: "Missing image file" }, { status: 400 });
     }
 
