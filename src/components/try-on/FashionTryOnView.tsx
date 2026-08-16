@@ -44,9 +44,39 @@ const MODE_OPTIONS: { value: Mode; label: string; hint: string }[] = [
 
 /** Pause between live passes so the browser stays responsive. */
 const LIVE_FRAME_DELAY_MS = 200;
+const CAMERA_READY_TIMEOUT_MS = 5000;
+const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
 
 function delay(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+function waitForVideoFrame(video: HTMLVideoElement) {
+  if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0) {
+    return Promise.resolve();
+  }
+
+  return new Promise<void>((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error("Camera started, but no video frame was available. Try again."));
+    }, CAMERA_READY_TIMEOUT_MS);
+
+    const onReady = () => {
+      if (video.videoWidth <= 0) return;
+      cleanup();
+      resolve();
+    };
+
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      video.removeEventListener("loadeddata", onReady);
+      video.removeEventListener("canplay", onReady);
+    };
+
+    video.addEventListener("loadeddata", onReady);
+    video.addEventListener("canplay", onReady);
+  });
 }
 
 function downloadDataUrl(dataUrl: string, filename: string) {
@@ -71,6 +101,7 @@ export function FashionTryOnView() {
   const streamRef = useRef<MediaStream | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const liveRef = useRef(false);
+  const previewObjectUrlRef = useRef<string | null>(null);
 
   const cameraMode = mode === "snapshot" || mode === "video";
   const activeOption = MODE_OPTIONS.find((o) => o.value === mode) ?? MODE_OPTIONS[0];
@@ -104,6 +135,7 @@ export function FashionTryOnView() {
     return () => {
       liveRef.current = false;
       streamRef.current?.getTracks().forEach((t) => t.stop());
+      if (previewObjectUrlRef.current) URL.revokeObjectURL(previewObjectUrlRef.current);
     };
   }, []);
 
@@ -119,6 +151,7 @@ export function FashionTryOnView() {
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
+        await waitForVideoFrame(videoRef.current);
       }
       setCameraOn(true);
       return true;
@@ -232,20 +265,51 @@ export function FashionTryOnView() {
 
   async function onFileChange(file: File | null) {
     if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Choose a JPEG, PNG, or WebP image.");
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError("That image is larger than 12 MB. Choose a smaller photo.");
+      return;
+    }
+
     stopLive();
     stopCamera();
     setMode("upload");
-    await runSegment(file, { previewUrl: URL.createObjectURL(file) });
+    if (previewObjectUrlRef.current) URL.revokeObjectURL(previewObjectUrlRef.current);
+    const objectUrl = URL.createObjectURL(file);
+    previewObjectUrlRef.current = objectUrl;
+    await runSegment(file, { previewUrl: objectUrl });
+    if (fileRef.current) fileRef.current.value = "";
   }
 
   async function captureSnapshot() {
     const ready = await startCamera();
     if (!ready) return;
+
+    const video = videoRef.current;
+    if (!video) {
+      setError("Camera preview is unavailable. Turn the camera on and try again.");
+      return;
+    }
+
+    try {
+      await waitForVideoFrame(video);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Camera frame is not ready.");
+      return;
+    }
+
     const shot = await captureBlob();
     if (!shot) {
       setError("Could not capture camera frame");
       return;
     }
+
+    // Freeze the exact submitted frame in the preview while inference runs.
+    setPreview(shot.dataUrl);
+    stopCamera();
     await runSegment(shot.blob, { previewUrl: shot.dataUrl });
   }
 
@@ -343,7 +407,11 @@ export function FashionTryOnView() {
                   disabled={busy}
                   className="px-4 py-2 rounded-full text-xs font-bold uppercase bg-slate-900 text-white shadow disabled:opacity-50"
                 >
-                  Capture &amp; segment
+                  {busy
+                    ? "Segmenting snapshot…"
+                    : cameraOn
+                      ? "Capture & segment"
+                      : "Retake snapshot"}
                 </button>
               )}
 
@@ -415,13 +483,16 @@ export function FashionTryOnView() {
 
               {busy && (
                 <div className="absolute inset-0 bg-black/40 flex items-center justify-center text-white text-sm font-semibold">
-                  Running SegFormer…
+                  {mode === "snapshot" ? "Analyzing captured snapshot…" : "Running SegFormer…"}
                 </div>
               )}
             </div>
 
             {error && (
-              <p className="text-sm text-rose-600 bg-rose-50 border border-rose-100 rounded-lg px-3 py-2">
+              <p
+                role="alert"
+                className="text-sm text-rose-600 bg-rose-50 border border-rose-100 rounded-lg px-3 py-2"
+              >
                 {error}
               </p>
             )}
