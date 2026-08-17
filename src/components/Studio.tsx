@@ -5149,20 +5149,20 @@ const extractSelection = useCallback(async (asJpeg = false) => {
           </div>
         </div>
       )}
-      <header className="relative z-[100] shrink-0 border-b border-[#ece5db] bg-[#fffdfa] px-3 py-3 transition-all duration-300 lg:px-6">
+      <header className="relative z-[100] shrink-0 border-b border-[#6f5168] bg-[#8f6a88] px-3 py-3 text-white shadow-[0_14px_30px_rgba(79,38,79,0.22)] transition-all duration-300 lg:px-6">
   <div className="flex items-center gap-3 overflow-x-auto whitespace-nowrap">
     <div className="flex shrink-0 items-center gap-3 sm:gap-5">
       <div onClick={onBack} className="flex cursor-pointer flex-col px-1 active:scale-95">
-        <span className={`${hughIsLife.className} text-2xl leading-none tracking-tight text-slate-900 sm:text-3xl`}>
-          Design<span className="text-[#9b5a2e]">It</span>
+          <span className={`${hughIsLife.className} text-2xl leading-none tracking-tight text-black sm:text-3xl`}>
+            Design<span className="text-black">It</span>
         </span>
-        <span className="hidden text-[10px] uppercase tracking-[0.18em] text-slate-400 xs:block">Browser Design Studio</span>
+        <span className="hidden text-[10px] uppercase tracking-[0.18em] text-[#f6e3e8] xs:block">Browser Design Studio</span>
       </div>
       <div className="relative hidden md:block">
         <button
           type="button"
           onClick={() => setShowHeaderMenu((prev) => !prev)}
-          className="flex h-7 items-center justify-center rounded-sm border border-slate-400 bg-[#fdfcf9] px-3 text-[11px] font-semibold text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] transition-colors hover:bg-white"
+          className="flex h-7 items-center justify-center rounded-sm border border-white/30 bg-[#7c5b77] px-3 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] transition-colors hover:bg-[#6f5168]"
           aria-expanded={showHeaderMenu}
           aria-controls="studio-header-page-menu"
         >
@@ -5171,15 +5171,15 @@ const extractSelection = useCallback(async (asJpeg = false) => {
         {showHeaderMenu && (
           <div
             id="studio-header-page-menu"
-            className="absolute left-0 top-[calc(100%+0.5rem)] z-[260] flex w-[11rem] flex-col rounded-xl border border-slate-200 bg-white p-2 shadow-2xl"
+            className="absolute left-0 top-[calc(100%+0.5rem)] z-[260] flex w-[11rem] flex-col rounded-xl border border-[#6f5168] bg-[#8f6a88] p-2 shadow-2xl"
           >
-            <Link href="/" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Home</Link>
-            <Link href="/blog" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Blog</Link>
-            <Link href="/community" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Community</Link>
-            <Link href="/about" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">About</Link>
-            <Link href="/contact" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Contact</Link>
-            <Link href="/privacy-policy" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Privacy</Link>
-            <Link href="/terms-of-service" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Terms</Link>
+            <Link href="/" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-[#f6e3e8] transition-colors hover:bg-[#7c5b77] hover:text-white">Home</Link>
+            <Link href="/blog" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-[#f6e3e8] transition-colors hover:bg-[#7c5b77] hover:text-white">Blog</Link>
+            <Link href="/community" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-[#f6e3e8] transition-colors hover:bg-[#7c5b77] hover:text-white">Community</Link>
+            <Link href="/about" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-[#f6e3e8] transition-colors hover:bg-[#7c5b77] hover:text-white">About</Link>
+            <Link href="/contact" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-[#f6e3e8] transition-colors hover:bg-[#7c5b77] hover:text-white">Contact</Link>
+            <Link href="/privacy-policy" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-[#f6e3e8] transition-colors hover:bg-[#7c5b77] hover:text-white">Privacy</Link>
+            <Link href="/terms-of-service" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-[#f6e3e8] transition-colors hover:bg-[#7c5b77] hover:text-white">Terms</Link>
           </div>
         )}
       </div>
