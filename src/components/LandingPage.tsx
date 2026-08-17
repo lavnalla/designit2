@@ -85,6 +85,21 @@ const VALUE_POINTS = [
   { stat: "Instant", label: "Design To Preview" },
 ];
 
+const HERO_CARDS = [
+  {
+    eyebrow: "We Believe",
+    body: "In a workflow where design ideas move from sketch to visualization with speed, clarity, and creative freedom.",
+    ctaLabel: "About The Studio",
+    ctaHref: "/about",
+  },
+  {
+    eyebrow: "Try It On",
+    body: "Preview clothes and jewelry in a more intuitive way by moving from design mode into live try-on, so you can evaluate proportion, placement, and style before making your next creative decision.",
+    ctaLabel: "Open The Studio",
+    ctaHref: "/studio",
+  },
+];
+
 export default function LandingPage() {
   const demoVideoSources = ["/demo_video1.mp4", "/demo_video2.mp4"];
   const [openFaq, setOpenFaq] = useState<number | null>(null);
@@ -92,17 +107,31 @@ export default function LandingPage() {
   const [isDemoPlaying, setIsDemoPlaying] = useState(true);
   const [isDemoPopupOpen, setIsDemoPopupOpen] = useState(false);
   const [activeDemoVideoIndex, setActiveDemoVideoIndex] = useState(0);
+  const [activeHeroCardIndex, setActiveHeroCardIndex] = useState(0);
   const homepageAdSlot = process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_HOME_SLOT;
   const demoVideoRef = useRef<HTMLVideoElement | null>(null);
   const demoTransitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const playDemoVideo = async (video: HTMLVideoElement) => {
+    try {
+      await video.play();
+      setIsDemoPlaying(true);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setIsDemoPlaying(false);
+        return;
+      }
+
+      throw error;
+    }
+  };
 
   const toggleDemoVideoPlayback = () => {
     const video = demoVideoRef.current;
     if (!video) return;
 
     if (video.paused) {
-      void video.play();
-      setIsDemoPlaying(true);
+      void playDemoVideo(video);
       return;
     }
 
@@ -139,7 +168,7 @@ export default function LandingPage() {
     }
 
     if (isDemoPlaying) {
-      void video.play();
+      void playDemoVideo(video);
       return;
     }
 
@@ -153,6 +182,16 @@ export default function LandingPage() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setActiveHeroCardIndex((currentIndex) => (currentIndex + 1) % HERO_CARDS.length);
+    }, 5000);
+
+    return () => clearInterval(intervalId);
+  }, []);
+
+  const activeHeroCard = HERO_CARDS[activeHeroCardIndex];
 
   return (
     <div className="min-h-screen bg-[#ece8e3] px-4 py-6 font-sans text-slate-900 md:px-8 lg:px-10">
@@ -317,14 +356,14 @@ export default function LandingPage() {
                   </Link>
                 </div>
               </div>
-            <div className="relative flex min-h-[26rem] flex-col justify-end overflow-hidden bg-[linear-gradient(180deg,#f4b24f_0%,#f6cf73_24%,#2d6aa0_58%,#6f37b6_100%)] p-6 md:p-8">
+            <div className="relative flex min-h-[34rem] flex-col justify-end overflow-hidden bg-[linear-gradient(180deg,#f4b24f_0%,#f6cf73_24%,#2d6aa0_58%,#6f37b6_100%)] p-6 md:p-8">
               <div className="absolute inset-x-6 top-8 border border-white/30 bg-[#7d47b5] p-8 text-white shadow-[0_18px_36px_rgba(15,23,42,0.18)] md:left-6 md:right-6 md:top-[7rem] lg:left-8 lg:right-8">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-white/70">We Believe</p>
+                <p className="text-[10px] uppercase tracking-[0.18em] text-white/70">{activeHeroCard.eyebrow}</p>
                 <p className="mt-4 text-2xl leading-10 md:text-[2rem]">
-                  In a workflow where design ideas move from sketch to visualization with speed, clarity, and creative freedom.
+                  {activeHeroCard.body}
                 </p>
-                <Link href="/about" className="mt-6 inline-block bg-black px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white">
-                  About The Studio
+                <Link href={activeHeroCard.ctaHref} className="mt-6 inline-block bg-black px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white">
+                  {activeHeroCard.ctaLabel}
                 </Link>
               </div>
             </div>
