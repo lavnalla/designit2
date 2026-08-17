@@ -1,5 +1,5 @@
 "use client";
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Footer from "./Footer";
 import AdSlot from "./AdSlot";
@@ -78,12 +78,15 @@ const FEATURES = [
 ];
 
 export default function LandingPage() {
+  const demoVideoSources = ["/demo_video1.mp4", "/demo_video2.mp4"];
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isDemoPlaying, setIsDemoPlaying] = useState(true);
   const [isDemoPopupOpen, setIsDemoPopupOpen] = useState(false);
+  const [activeDemoVideoIndex, setActiveDemoVideoIndex] = useState(0);
   const homepageAdSlot = process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_HOME_SLOT;
   const demoVideoRef = useRef<HTMLVideoElement | null>(null);
+  const demoTransitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const toggleDemoVideoPlayback = () => {
     const video = demoVideoRef.current;
@@ -98,6 +101,36 @@ export default function LandingPage() {
     video.pause();
     setIsDemoPlaying(false);
   };
+
+  const playNextDemoVideo = () => {
+    if (demoTransitionTimeoutRef.current) {
+      clearTimeout(demoTransitionTimeoutRef.current);
+      demoTransitionTimeoutRef.current = null;
+    }
+
+    if (activeDemoVideoIndex >= demoVideoSources.length - 1) {
+      return;
+    }
+
+    demoTransitionTimeoutRef.current = setTimeout(() => {
+      setActiveDemoVideoIndex((currentIndex) => {
+        if (currentIndex >= demoVideoSources.length - 1) {
+          return currentIndex;
+        }
+
+        return currentIndex + 1;
+      });
+      demoTransitionTimeoutRef.current = null;
+    }, 60000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (demoTransitionTimeoutRef.current) {
+        clearTimeout(demoTransitionTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div className="flex min-h-screen flex-col bg-white font-sans text-slate-900 lg:pl-[17rem] lg:pr-[24rem]">
@@ -138,12 +171,13 @@ export default function LandingPage() {
             ref={demoVideoRef}
             className="w-full rounded-xl"
             autoPlay
-            loop
             muted
             playsInline
             preload="metadata"
+            onEnded={playNextDemoVideo}
+            key={demoVideoSources[activeDemoVideoIndex]}
           >
-            <source src="/demo_video1.mp4" type="video/mp4" />
+            <source src={demoVideoSources[activeDemoVideoIndex]} type="video/mp4" />
           </video>
         </div>
       </aside>
@@ -165,12 +199,13 @@ export default function LandingPage() {
               className="w-full rounded-[1.25rem]"
               controls
               autoPlay
-              loop
               muted
               playsInline
               preload="metadata"
+              onEnded={playNextDemoVideo}
+              key={`popup-${demoVideoSources[activeDemoVideoIndex]}`}
             >
-              <source src="/demo_video1.mp4" type="video/mp4" />
+              <source src={demoVideoSources[activeDemoVideoIndex]} type="video/mp4" />
             </video>
           </div>
         </div>
