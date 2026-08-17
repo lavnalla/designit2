@@ -221,6 +221,7 @@ const DEFAULT_MESH_PATTERN = {
 export function Studio({ onBack }: { onBack: () => void }) {
       const [refineError, setRefineError] = useState<string | null>(null);
     const [showSourceWindow, setShowSourceWindow] = useState(false);
+    const [showHeaderMenu, setShowHeaderMenu] = useState(false);
     const [showTopPanelMenu, setShowTopPanelMenu] = useState(false);
       // Refine image state
     const [refinePrompt, setRefinePrompt] = useState("");
@@ -4939,7 +4940,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
   if (!mounted) return null;
 
   return (
-    <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-[#fffdfa] text-slate-900 select-none" onClick={() => setContextMenu(null)}>
+    <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-[#fffdfa] text-slate-900 select-none" onClick={() => { setContextMenu(null); setShowTopPanelMenu(false); setShowHeaderMenu(false); }}>
       {aiDraping.active && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-md">
            <div className="bg-white p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4">
@@ -5052,25 +5053,25 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       <div className="relative hidden md:block">
         <button
           type="button"
-          onClick={() => setShowTopPanelMenu((prev) => !prev)}
+          onClick={() => setShowHeaderMenu((prev) => !prev)}
           className="flex h-7 items-center justify-center rounded-sm border border-slate-400 bg-[#fdfcf9] px-3 text-[11px] font-semibold text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] transition-colors hover:bg-white"
-          aria-expanded={showTopPanelMenu}
+          aria-expanded={showHeaderMenu}
           aria-controls="studio-header-page-menu"
         >
           Menu
         </button>
-        {showTopPanelMenu && (
+        {showHeaderMenu && (
           <div
             id="studio-header-page-menu"
             className="absolute left-0 top-[calc(100%+0.5rem)] z-[260] flex w-[11rem] flex-col rounded-xl border border-slate-200 bg-white p-2 shadow-2xl"
           >
-            <Link href="/" onClick={() => setShowTopPanelMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Home</Link>
-            <Link href="/blog" onClick={() => setShowTopPanelMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Blog</Link>
-            <Link href="/community" onClick={() => setShowTopPanelMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Community</Link>
-            <Link href="/about" onClick={() => setShowTopPanelMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">About</Link>
-            <Link href="/contact" onClick={() => setShowTopPanelMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Contact</Link>
-            <Link href="/privacy-policy" onClick={() => setShowTopPanelMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Privacy</Link>
-            <Link href="/terms-of-service" onClick={() => setShowTopPanelMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Terms</Link>
+            <Link href="/" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Home</Link>
+            <Link href="/blog" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Blog</Link>
+            <Link href="/community" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Community</Link>
+            <Link href="/about" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">About</Link>
+            <Link href="/contact" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Contact</Link>
+            <Link href="/privacy-policy" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Privacy</Link>
+            <Link href="/terms-of-service" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Terms</Link>
           </div>
         )}
       </div>
@@ -5097,7 +5098,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       ?
     </button>
 
-      <div className={`${toolbarCanvasWrapperClass} shrink-0`}>
+      <div className={`${toolbarCanvasWrapperClass} hidden shrink-0 md:flex`}>
       <span className="text-[9px] font-black uppercase text-black">Canvas BG:</span>
       <select
         value={workspaceBgColor}
@@ -5114,11 +5115,11 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       </div>
 
       <div className="relative flex shrink-0 items-center justify-end gap-1">
-    <div className="flex items-center overflow-hidden rounded-xl border-2 border-slate-300 bg-white shadow-sm">
+    <div className="flex items-center overflow-hidden rounded-xl border-2 border-slate-300 bg-white shadow-sm md:flex">
       <select
         value={tryOnMode}
         onChange={(e) => setTryOnMode(e.target.value as "garment" | "necklace" | "earrings")}
-        className="rounded-xl bg-white px-2 py-1.5 text-[8px] font-black uppercase text-slate-700 outline-none sm:text-[9px]"
+        className="rounded-xl bg-white px-1.5 py-1 text-[7px] font-black uppercase text-slate-700 outline-none sm:px-2 sm:py-1.5 sm:text-[9px]"
       >
         <option value="garment">Garment</option>
         <option value="necklace">Necklace</option>
@@ -5150,30 +5151,38 @@ const extractSelection = useCallback(async (asJpeg = false) => {
           setRenderedWorkspaceImg(null);
         }
       }}
-      className={`${toolbarButtonInteractiveClass} inline-flex min-w-0 gap-1 px-2 text-[9px] sm:gap-1.5 sm:px-2.5 sm:text-[10px]`}
+      className={`${toolbarButtonInteractiveClass} inline-flex min-w-0 max-w-[7.25rem] gap-1 px-1.5 text-[8px] sm:max-w-none sm:gap-1.5 sm:px-2.5 sm:text-[10px]`}
       style={showTryOn
         ? { backgroundColor: '#fde68a', borderColor: '#f59e0b', color: '#000000' }
         : { backgroundColor: '#fef08a', borderColor: '#eab308', color: '#000000' }}
     >
-      {showTryOn ? "✕ Close Try-On View" : "✨ Test Live on Webcam"}
+      <span className="truncate sm:hidden">{showTryOn ? "Close" : "Live"}</span>
+      <span className="hidden sm:inline">{showTryOn ? "✕ Close Try-On View" : "✨ Test Live on Webcam"}</span>
     </button>
 
-    <div className="relative md:hidden">
+    <div className="relative z-[270] md:hidden" onClick={(e) => e.stopPropagation()}>
       <button
         type="button"
-        onClick={() => setShowTopPanelMenu((prev) => !prev)}
-        className={`${toolbarButtonBaseClass} min-w-0 px-3 text-[10px] sm:text-[11px]`}
-        style={{ backgroundColor: '#fce7f3', borderColor: '#ec4899', color: '#000000' }}
+        onClick={(e) => {
+          e.stopPropagation();
+          setShowTopPanelMenu((prev) => !prev);
+        }}
+        className="flex h-8 min-w-[4.75rem] items-center justify-center rounded-md border border-[#c46a92] bg-[#ffe4ef] px-2 text-[10px] font-semibold text-[#6f2d4f] shadow-[inset_0_1px_0_rgba(255,255,255,0.88),0_4px_10px_rgba(236,72,153,0.18)] transition-colors hover:bg-[#ffd8e8] active:bg-[#ffcddd]"
         aria-expanded={showTopPanelMenu}
         aria-controls="studio-top-panel-menu"
+        aria-label="Open more actions"
       >
         More
       </button>
       {showTopPanelMenu && (
         <div
           id="studio-top-panel-menu"
-          className="absolute right-0 top-[calc(100%+0.5rem)] z-[250] w-[12rem] rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl"
+          className="fixed right-3 top-[4.6rem] z-[500] w-[12.5rem] rounded-2xl border border-slate-300 bg-[#fffdfa] p-2.5 shadow-[0_20px_40px_rgba(15,23,42,0.22)]"
+          onClick={(e) => e.stopPropagation()}
         >
+          <div className="mb-2 border-b border-slate-200 px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            More Actions
+          </div>
           <div className="flex flex-col gap-2">
             <button
               type="button"
