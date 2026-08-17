@@ -60,9 +60,8 @@ export default function ContactPageClient() {
         <nav className="border-b border-[#ece5db] bg-[#fffdfa] px-5 py-5 md:px-8">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex min-w-0 items-center gap-3">
-              <img src="/logo.png" alt="DesignIt" className="h-8 w-auto" />
               <div>
-                <span className="block truncate text-lg font-black tracking-tight text-slate-900 sm:text-xl">
+                <span className={`${hughIsLife.className} block truncate text-2xl leading-none tracking-tight text-slate-900 sm:text-3xl`}>
                   Design<span className="text-[#9b5a2e]">It</span>
                 </span>
                 <span className="text-[10px] uppercase tracking-[0.18em] text-slate-400">Browser Design Studio</span>
