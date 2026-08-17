@@ -1,16 +1,11 @@
 "use client";
 import React, { useState } from "react";
 import Link from "next/link";
-import localFont from "next/font/local";
 import Footer from "./Footer";
 import AdSlot from "./AdSlot";
 import { CommunityShowcase } from "./CommunityShowcase";
+import { hughIsLife, whisperingSignature } from "../lib/fonts";
 import { Upload, Sparkles, Gem, ChevronDown } from "lucide-react";
-
-const hughIsLife = localFont({
-  src: "../../public/fonts/Hugh is Life Personal Use .ttf",
-  display: "swap",
-});
 
 const FAQS = [
   {
@@ -92,7 +87,7 @@ export default function LandingPage() {
 
       <aside className="fixed left-6 top-28 z-40 hidden w-52 rounded-[1.75rem] border border-slate-200 bg-white/92 p-5 shadow-[0_18px_40px_rgba(15,23,42,0.08)] backdrop-blur lg:block">
         <p className="mb-4 text-[11px] font-black uppercase tracking-[0.24em] text-yellow-600">Navigate</p>
-        <nav className="flex flex-col gap-3 text-sm font-semibold text-slate-600">
+        <nav className={`${whisperingSignature.className} flex flex-col gap-3 text-xl text-slate-600`}>
           <a href="#how-to" className="transition-colors hover:text-slate-900">How It Works</a>
           <a href="#features" className="transition-colors hover:text-slate-900">Features</a>
           <Link href="/blog" className="transition-colors hover:text-slate-900">Blog</Link>
@@ -213,7 +208,7 @@ export default function LandingPage() {
       <section id="how-to" className="hidden lg:block lg:absolute lg:right-0 lg:top-28 lg:w-[24rem] lg:px-6">
         <div className="lg:sticky lg:top-28 lg:w-[22rem] lg:rounded-[1.75rem] lg:border lg:border-slate-200 lg:bg-white/92 lg:p-6 lg:shadow-[0_18px_40px_rgba(15,23,42,0.08)] lg:backdrop-blur">
         <p className="mb-2 text-center text-xs font-bold uppercase tracking-widest text-yellow-500 lg:text-left">How It Works</p>
-        <h2 className="mb-12 text-center text-3xl font-black text-slate-900 md:text-4xl lg:mb-8 lg:text-left lg:text-2xl">
+        <h2 className={`${whisperingSignature.className} mb-12 text-center text-3xl text-slate-900 md:text-4xl lg:mb-8 lg:text-left lg:text-3xl`}>
           From sketch to try-on in 3 steps
         </h2>
 

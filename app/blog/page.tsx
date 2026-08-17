@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { whisperingSignature } from '../../src/lib/fonts';
 import { getBlogPosts } from '../../src/lib/blog-storage';
 
 export const metadata: Metadata = {
@@ -18,7 +19,7 @@ export default async function BlogPage() {
       <section className="border-b border-amber-100 bg-white/90 px-6 py-16 backdrop-blur-sm">
         <div className="mx-auto max-w-5xl">
           <p className="text-xs font-black uppercase tracking-[0.28em] text-amber-600">For</p>
-          <h1 className="mt-4 max-w-4xl text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">Fashion Design, AR Try-On & Vector Editing Guides</h1>
+          <h1 className={`${whisperingSignature.className} mt-4 max-w-4xl text-5xl tracking-tight text-slate-900 sm:text-6xl`}>Fashion Design, AR Try-On & Vector Editing Guides</h1>
           <p className="mt-5 max-w-4xl text-base leading-8 text-slate-600">Welcome to the iDesignIts editorial space-a practical resource for anyone exploring fashion, jewelry, digital design, and online shopping.</p>
           <p className="mt-4 max-w-4xl text-base leading-8 text-slate-600">Whether you are an online shopper trying to visualize a piece before buying, a designer developing a new idea, or a creative experimenting with digital artwork, our guides are designed to make the process easier to understand and more accessible.</p>
           <div className="mt-8 flex flex-wrap gap-3 text-sm font-bold">
@@ -31,7 +32,7 @@ export default async function BlogPage() {
       <section className="mx-auto max-w-5xl px-6 py-14 text-slate-700">
         <div className="space-y-12">
           <section>
-            <h2 className="text-3xl font-black tracking-tight text-slate-900">Fashion Design Guides</h2>
+            <h2 className={`${whisperingSignature.className} text-4xl tracking-tight text-slate-900`}>Fashion Design Guides</h2>
             <p className="mt-4 text-base leading-8">Fashion design begins with an idea, but turning that idea into something visual can be challenging. Our fashion design guides explore the creative process from inspiration and shape development to colors, materials, patterns, and digital presentation.</p>
             <p className="mt-4 text-base font-bold text-slate-900">Learn how to:</p>
             <ul className="mt-4 list-disc space-y-2 pl-6 text-base leading-8">
@@ -46,7 +47,7 @@ export default async function BlogPage() {
           </section>
 
           <section>
-            <h2 className="text-3xl font-black tracking-tight text-slate-900">AR Try-On Guides</h2>
+            <h2 className={`${whisperingSignature.className} text-4xl tracking-tight text-slate-900`}>AR Try-On Guides</h2>
             <p className="mt-4 text-base leading-8">Shopping online can make it difficult to know how a fashion or jewelry item will look when worn. Augmented reality can help bridge that gap by allowing shoppers to preview designs in a more interactive way.</p>
             <p className="mt-4 text-base leading-8">Our AR try-on guides explain how virtual try-on technology works and how shoppers and designers can use it as part of the design and shopping experience.</p>
             <p className="mt-4 text-base font-bold text-slate-900">Explore topics such as:</p>
@@ -62,7 +63,7 @@ export default async function BlogPage() {
           </section>
 
           <section>
-            <h2 className="text-3xl font-black tracking-tight text-slate-900">Vector Editing Guides</h2>
+            <h2 className={`${whisperingSignature.className} text-4xl tracking-tight text-slate-900`}>Vector Editing Guides</h2>
             <p className="mt-4 text-base leading-8">Vector graphics are an important part of modern digital design because they allow artwork and shapes to be resized while maintaining clean edges.</p>
             <p className="mt-4 text-base leading-8">Our vector editing guides help designers understand the fundamentals of working with vector artwork and digital shapes.</p>
             <p className="mt-4 text-base font-bold text-slate-900">Learn about:</p>
@@ -79,7 +80,7 @@ export default async function BlogPage() {
           </section>
 
           <section>
-            <h2 className="text-3xl font-black tracking-tight text-slate-900">Guides for Online Shoppers</h2>
+            <h2 className={`${whisperingSignature.className} text-4xl tracking-tight text-slate-900`}>Guides for Online Shoppers</h2>
             <p className="mt-4 text-base leading-8">Digital tools are changing the way people discover and shop for fashion and jewelry online.</p>
             <p className="mt-4 text-base leading-8">Before purchasing a design, shoppers may want to understand its appearance, style, color, proportions, and how it might look when worn. Digital visualization tools can make that process more interactive.</p>
             <p className="mt-4 text-base font-bold text-slate-900">Our shopping guides cover topics such as:</p>
@@ -95,7 +96,7 @@ export default async function BlogPage() {
           </section>
 
           <section>
-            <h2 className="text-3xl font-black tracking-tight text-slate-900">Guides for Designers</h2>
+            <h2 className={`${whisperingSignature.className} text-4xl tracking-tight text-slate-900`}>Guides for Designers</h2>
             <p className="mt-4 text-base leading-8">Digital design tools can help transform an initial concept into something that can be explored, modified, and presented digitally.</p>
             <p className="mt-4 text-base leading-8">iDesignIts guides are also created for designers who want to experiment with new workflows involving fashion design, vector artwork, and virtual visualization.</p>
             <p className="mt-4 text-base font-bold text-slate-900">Topics include:</p>
@@ -111,12 +112,12 @@ export default async function BlogPage() {
           </section>
 
           <section>
-            <h2 className="text-3xl font-black tracking-tight text-slate-900">The Future of Digital Fashion</h2>
+            <h2 className={`${whisperingSignature.className} text-4xl tracking-tight text-slate-900`}>The Future of Digital Fashion</h2>
             <p className="mt-4 text-base leading-8">Fashion is becoming increasingly digital. Designers can create and modify concepts on screen, shoppers can interact with products before purchasing, and technologies such as augmented reality are creating new ways to experience fashion online.</p>
             <p className="mt-4 text-base leading-8">At iDesignIts, we explore this intersection of <strong>fashion, design, technology, and online shopping</strong>.</p>
             <p className="mt-4 text-base leading-8">Our editorial guides are intended to help people understand these technologies while discovering practical ways to use them.</p>
             <p className="mt-4 text-base leading-8">From the first design idea to digital editing and virtual visualization, the creative process is becoming more interactive-and we're excited to explore where it goes next.</p>
-            <p className="mt-6 text-xl font-black tracking-tight text-slate-900">Explore. Design. Visualize.</p>
+            <p className={`${whisperingSignature.className} mt-6 text-3xl tracking-tight text-slate-900`}>Explore. Design. Visualize.</p>
             <p className="mt-3 text-base leading-8"><strong>iDesignIts brings fashion design, digital editing, and virtual try-on together to help shoppers and designers explore ideas in a more interactive way.</strong></p>
           </section>
         </div>
@@ -127,7 +128,7 @@ export default async function BlogPage() {
           {posts.map((post) => (
             <article key={post.id} className="rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
               <p className="text-[11px] font-black uppercase tracking-[0.2em] text-amber-600">{post.category}</p>
-              <h2 className="mt-3 text-2xl font-black leading-tight text-slate-900">{post.title}</h2>
+              <h2 className={`${whisperingSignature.className} mt-3 text-3xl leading-tight text-slate-900`}>{post.title}</h2>
               <p className="mt-3 text-sm leading-7 text-slate-600">{post.excerpt}</p>
               <div className="mt-5 flex items-center justify-between text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
                 <span>{post.readTime}</span>
