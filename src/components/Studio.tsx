@@ -8,27 +8,19 @@ import Link from "next/link";
 import NecklaceTryOn from "./NecklaceTryOn";
 import { hughIsLife, whisperingSignature } from "../lib/fonts";
 
-import type { NextConfig } from 'next';
-
 import ImageTracer from "imagetracerjs";
 import { removeBackground, preload } from '@imgly/background-removal';
 import { SubmissionModal } from './SubmissionModal';
 import BodySilhouetteView from "./BodySilhouetteView";
 
-const nextConfig: NextConfig = {
-  devIndicators: {},
-};
-
-export default nextConfig;
-
 const MOBILE_BREAKPOINT = 1024;
 
-const toolbarControlClass = `${whisperingSignature.className} relative flex h-9 min-w-0 items-center justify-center overflow-hidden rounded-2xl border px-2 text-xs tracking-[0.01em] transition-all whitespace-nowrap sm:px-3`;
-const toolbarSelectClass = `${whisperingSignature.className} h-9 min-w-0 w-full rounded-2xl border border-cyan-900/25 bg-gradient-to-b from-cyan-200 via-cyan-300 to-cyan-400 px-2 text-[11px] text-cyan-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_5px_12px_rgba(8,145,178,0.16),0_2px_0_rgba(14,116,144,0.4)] transition-all focus:outline-none focus:ring-2 focus:ring-cyan-900 cursor-pointer sm:px-3`;
+const toolbarControlClass = `relative flex h-9 min-w-0 items-center justify-center overflow-hidden rounded-2xl border px-2 text-xs font-medium tracking-[0.01em] transition-all whitespace-nowrap sm:px-3`;
+const toolbarSelectClass = `h-9 min-w-0 w-full rounded-2xl border border-cyan-900/25 bg-gradient-to-b from-cyan-200 via-cyan-300 to-cyan-400 px-2 text-[11px] font-medium text-cyan-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_5px_12px_rgba(8,145,178,0.16),0_2px_0_rgba(14,116,144,0.4)] transition-all focus:outline-none focus:ring-2 focus:ring-cyan-900 cursor-pointer sm:px-3`;
 const toolbarCanvasWrapperClass = `${toolbarControlClass} w-[9rem] gap-1.5 bg-gradient-to-b from-white via-slate-50 to-slate-100 border-slate-300 px-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),inset_0_-1px_0_rgba(148,163,184,0.22),0_10px_22px_rgba(15,23,42,0.1),0_3px_8px_rgba(15,23,42,0.06)] backdrop-blur-md`;
 const toolbarButtonBaseClass = `${toolbarControlClass} bg-white border-slate-300 text-black [text-shadow:0_1px_0_rgba(255,255,255,0.55),0_0_1px_rgba(0,0,0,0.9)] shadow-[inset_0_2px_0_rgba(255,255,255,0.82),inset_0_-1px_0_rgba(148,163,184,0.18),0_10px_22px_rgba(15,23,42,0.14),0_3px_0_rgba(71,85,105,0.24)]`;
 const toolbarButtonInteractiveClass = `${toolbarButtonBaseClass} active:scale-95 active:translate-y-[1px] active:shadow-[inset_0_1px_0_rgba(255,255,255,0.5),0_4px_10px_rgba(15,23,42,0.12),0_1px_0_rgba(51,65,85,0.18)]`;
-const leftToolButtonBaseClass = `${whisperingSignature.className} group relative flex h-9 items-center justify-center rounded-lg border px-2 text-sm text-black transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.78),0_6px_14px_rgba(15,23,42,0.12),0_2px_0_rgba(51,65,85,0.16)] hover:-translate-y-0.5 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_10px_18px_rgba(15,23,42,0.16),0_3px_0_rgba(51,65,85,0.2)] active:translate-y-[1px] active:shadow-[inset_0_2px_4px_rgba(15,23,42,0.14),0_4px_8px_rgba(15,23,42,0.12)]`;
+const leftToolButtonBaseClass = `group relative flex h-9 items-center justify-center rounded-lg border px-2 text-sm font-medium text-black transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.78),0_6px_14px_rgba(15,23,42,0.12),0_2px_0_rgba(51,65,85,0.16)] hover:-translate-y-0.5 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_10px_18px_rgba(15,23,42,0.16),0_3px_0_rgba(51,65,85,0.2)] active:translate-y-[1px] active:shadow-[inset_0_2px_4px_rgba(15,23,42,0.14),0_4px_8px_rgba(15,23,42,0.12)]`;
 const ghostCursorHotspot = { x: 16, y: 16 };
 const leftToolColorMap = {
   source: {
@@ -992,8 +984,20 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   const penRef = useRef<{ pointerId: number; lastX: number; lastY: number; strokeIds: string[]; meshGroupId?: string; pendingMesh?: boolean; color?: string; width?: number } | null>(null);
   const PEN_SPACING = 30; 
   const ERASE_RADIUS = 15;
+  const hasImportedSource = Boolean(selectedImage && !templates.includes(selectedImage));
 
   useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => {
+    if (!mounted || typeof window === 'undefined') return;
+    const pendingSourceImage = window.sessionStorage.getItem('designit-studio-source-image');
+    if (!pendingSourceImage) return;
+
+    setSelectedImage(pendingSourceImage);
+    setShowSourceWindow(true);
+    setIsSidebarOpen(true);
+    window.sessionStorage.removeItem('designit-studio-source-image');
+  }, [mounted]);
 
   useEffect(() => {
     workspaceShapesRef.current = workspaceShapes;
@@ -3994,24 +3998,46 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       try {
         const res = await fetch("/api/templates");
         const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) { setTemplates(data); setSelectedImage(data[0]); }
-      } catch (e) { setTemplates(["/template1.png"]); setSelectedImage("/template1.png"); }
+        if (Array.isArray(data) && data.length > 0) {
+          setTemplates(data);
+          setSelectedImage((prev) => prev ?? data[0]);
+        }
+      } catch (e) {
+        setTemplates(["/template1.png"]);
+        setSelectedImage((prev) => prev ?? "/template1.png");
+      }
     }
     load();
   }, []);
 
   const runTrace = useCallback(() => {
     if (!selectedImage) return;
+
+    const isRemoteSource = /^https?:\/\//i.test(selectedImage);
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
       setImgDims({ width: img.width, height: img.height });
+
+      if (isRemoteSource) {
+        setSvgContent(null);
+        setCandidates([]);
+        setSourceDots([]);
+        return;
+      }
+
       ImageTracer.imageToSVG(selectedImage, (svgString: string) => {
         const inner = svgString.replace(/<svg[^>]*>/, "").replace(/<\/svg>/, "").replace(/<rect[^>]*\/>/g, "");
         setSvgContent(inner);
         setCandidates([]);
         setSourceDots([]);
       }, { numberofcolors: 2, ltres: 1, qtres: 1, scale: 1 });
+    };
+    img.onerror = () => {
+      setSvgContent(null);
+      setCandidates([]);
+      setSourceDots([]);
+      alert('This image host blocks source tracing in the browser. The image is still loaded into Source, and you can upload it locally for tracing tools.');
     };
     img.src = selectedImage;
   }, [selectedImage]);
@@ -5076,6 +5102,12 @@ const extractSelection = useCallback(async (asJpeg = false) => {
         )}
       </div>
     </div>
+    <a
+      href="/extension-download"
+      className="hidden h-7 items-center justify-center rounded-sm border border-sky-400 bg-sky-50 px-3 text-[11px] font-semibold text-sky-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] transition-colors hover:bg-sky-100 md:flex"
+    >
+      Add Extension
+    </a>
     <div className="ml-auto flex shrink-0 items-center gap-1 rounded-md border border-slate-300 bg-[#f4efe7] px-1 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
       <button
         type="button"
@@ -5344,7 +5376,30 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                 <p className="mt-3 text-base font-semibold leading-8 text-slate-600 sm:text-lg">
                   Click <span className="font-black text-slate-900">S</span> on the left to choose a source image, then build your design with the <span className="font-black text-slate-900">Pen</span> and <span className="font-black text-slate-900">Shapes</span> tools. Turn on the dots to reshape the image by dragging its points, use <span className="font-black text-slate-900">Help</span> for a guided walkthrough, or press <span className="font-black text-slate-900">Get Started</span> to jump straight into the canvas.
                 </p>
+                <div className="mt-4 rounded-[1.5rem] border border-sky-200 bg-white/80 p-4 text-left shadow-sm backdrop-blur-sm">
+                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-sky-700">Browser Extension CTA</p>
+                  <p className="mt-2 text-sm font-semibold leading-6 text-slate-700 sm:text-[15px]">
+                    Turn Studio into a browser workflow: click the extension icon on blocked pages to start Capture Area mode, or right-click directly on standard images to open them in Studio Source.
+                  </p>
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    Extension target: <span className="font-black text-slate-700">https://idesignits.com/studio?source=image-url</span>
+                  </p>
+                </div>
                 <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+                  <a
+                    href="/extension-download"
+                    className="rounded-full border border-sky-400 bg-sky-600 px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] text-white shadow-sm transition-colors hover:bg-sky-500"
+                  >
+                    Add Browser Extension
+                  </a>
+                  <a
+                    href="/designit-extension/manifest.json"
+                    className="rounded-full border border-slate-300 bg-white px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    View Extension Files
+                  </a>
                   <button
                     type="button"
                     onClick={() => setShowWelcomePrompt(false)}
@@ -5359,6 +5414,12 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                   >
                     Help
                   </button>
+                  <Link
+                    href="/studio?source=https%3A%2F%2Fimages.unsplash.com%2Fphoto-1521572267360-ee0c2909d518%3Fauto%3Dformat%26fit%3Dcrop%26w%3D900%26q%3D80"
+                    className="rounded-full border border-slate-300 bg-slate-900/90 px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] text-white shadow-sm transition-colors hover:bg-slate-800"
+                  >
+                    Test Source Link
+                  </Link>
                 </div>
               </div>
             </div>
@@ -5843,6 +5904,18 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       </div>
       {selectedImage && (
         <div className="mb-3">
+          {hasImportedSource && templates.length > 0 && (
+            <div className="mb-3 rounded-2xl border border-sky-200 bg-sky-50/80 px-3 py-2 text-xs font-semibold text-sky-900">
+              Imported image is active in Source.
+              <button
+                type="button"
+                onClick={() => setSelectedImage(templates[0])}
+                className="ml-2 rounded-full border border-sky-300 bg-white px-2 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-sky-800 transition-colors hover:bg-sky-100"
+              >
+                Back To Templates
+              </button>
+            </div>
+          )}
           <button 
             onClick={handleRemoveBackground} 
             disabled={isRemovingBg}
@@ -5885,6 +5958,11 @@ const extractSelection = useCallback(async (asJpeg = false) => {
             />
           ))}
         </div>
+        {hasImportedSource && (
+          <p className="mt-2 text-[11px] text-slate-500">
+            Templates are still available below. Click any template thumbnail to replace the imported image.
+          </p>
+        )}
       </div>
     </div>
   </aside>
