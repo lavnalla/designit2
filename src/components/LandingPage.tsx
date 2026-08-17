@@ -140,16 +140,19 @@ export default function LandingPage() {
         {/* subtle background texture */}
         <div className="absolute inset-0 bg-gradient-to-b from-yellow-50/60 via-white to-white pointer-events-none" />
 
-        <div className="relative z-10 max-w-2xl mx-auto">
+        <div className="relative z-10 mx-auto max-w-6xl">
           <div className="mb-6 inline-flex max-w-full items-center gap-2 rounded-full bg-yellow-100 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-yellow-700 sm:text-xs">
             <Sparkles size={12} />
             Design Studio + AR Try-On
           </div>
 
-          <h1 className="mb-4 text-4xl font-black leading-tight tracking-tight text-slate-900 sm:text-5xl md:text-6xl">
-            <span className="block">Design Clothes & Jewelry.</span>
-            <span className="block text-yellow-500">Create, Customize & Try Them On.</span>
+          <h1 className="text-4xl font-black leading-tight tracking-tight text-slate-900 sm:text-5xl md:text-6xl xl:text-7xl">
+            Design Clothes & Jewelry.
           </h1>
+
+          <h2 className="mb-4 mt-3 text-2xl font-bold leading-tight tracking-tight text-yellow-500 sm:text-3xl md:text-4xl xl:text-5xl">
+            Create, Customize & Try Them On.
+          </h2>
 
           <p className="mx-auto mb-4 max-w-3xl text-base leading-relaxed text-slate-600 sm:text-lg md:text-xl">
             Start from a blank canvas or bring in an image from anywhere. Customize and reshape it using powerful tools like <strong>Dot Art, Pen, Ghost, colors, fabrics, and more</strong>.
