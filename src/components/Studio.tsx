@@ -5035,23 +5035,12 @@ const extractSelection = useCallback(async (asJpeg = false) => {
   </div>
 
   <div className="flex max-w-full flex-1 items-center justify-end gap-2 sm:flex-none">
-    <button
-      id="tutorial-btn-header"
-      type="button"
-      onClick={runTutorial}
-      disabled={tutorialDisabled || tutorialRecording}
-      aria-label="Run interactive tutorial"
-      title="Run interactive tutorial"
-      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-sky-700 bg-sky-300 font-bold text-sky-950 transition-colors hover:bg-sky-400 active:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
-    >
-      ?
-    </button>
     {!tutorialAdminUnlocked ? (
       <button
         id="tutorial-admin-unlock-btn"
         type="button"
         onClick={unlockTutorialRecording}
-        className="inline-flex h-8 max-w-[30vw] min-w-0 items-center justify-center overflow-hidden rounded-full border border-amber-700 bg-amber-300 px-2 text-[8px] font-black uppercase text-amber-950 transition-colors hover:bg-amber-400 active:bg-amber-500 sm:max-w-none sm:px-3 sm:text-[9px]"
+        className="hidden h-8 max-w-[30vw] min-w-0 items-center justify-center overflow-hidden rounded-full border border-amber-700 bg-amber-300 px-2 text-[8px] font-black uppercase text-amber-950 transition-colors hover:bg-amber-400 active:bg-amber-500 sm:inline-flex sm:max-w-none sm:px-3 sm:text-[9px]"
       >
         Unlock Help Record
       </button>
@@ -5074,6 +5063,17 @@ const extractSelection = useCallback(async (asJpeg = false) => {
         Stop Recording
       </button>
     )}
+    <button
+      id="tutorial-btn-header"
+      type="button"
+      onClick={runTutorial}
+      disabled={tutorialDisabled || tutorialRecording}
+      aria-label="Run interactive tutorial"
+      title="Run interactive tutorial"
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-sky-700 bg-sky-300 font-bold text-sky-950 transition-colors hover:bg-sky-400 active:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      ?
+    </button>
   </div>
 
   <div className={`${toolbarCanvasWrapperClass} order-3 md:order-none`}>
@@ -5285,17 +5285,17 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                 <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
                   <button
                     type="button"
-                    onClick={runTutorial}
-                    className="rounded-full border border-sky-300 bg-white/85 px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] text-sky-800 shadow-sm backdrop-blur-sm transition-colors hover:bg-sky-50"
-                  >
-                    Help
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => setShowWelcomePrompt(false)}
                     className="rounded-full border border-amber-300 bg-amber-100/90 px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] text-amber-900 shadow-sm backdrop-blur-sm transition-colors hover:bg-amber-200"
                   >
                     Get Started
+                  </button>
+                  <button
+                    type="button"
+                    onClick={runTutorial}
+                    className="rounded-full border border-sky-300 bg-white/85 px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] text-sky-800 shadow-sm backdrop-blur-sm transition-colors hover:bg-sky-50"
+                  >
+                    Help
                   </button>
                 </div>
               </div>
