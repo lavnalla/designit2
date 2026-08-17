@@ -1,10 +1,16 @@
 "use client";
 import React, { useState } from "react";
 import Link from "next/link";
+import localFont from "next/font/local";
 import Footer from "./Footer";
 import AdSlot from "./AdSlot";
 import { CommunityShowcase } from "./CommunityShowcase";
 import { Upload, Sparkles, Gem, ChevronDown } from "lucide-react";
+
+const hughIsLife = localFont({
+  src: "../../public/fonts/Hugh is Life Personal Use .ttf",
+  display: "swap",
+});
 
 const FAQS = [
   {
@@ -82,7 +88,18 @@ export default function LandingPage() {
   const homepageAdSlot = process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_HOME_SLOT;
 
   return (
-    <div className="flex flex-col min-h-screen bg-white text-slate-900 font-sans">
+    <div className="flex min-h-screen flex-col bg-white font-sans text-slate-900 lg:pl-[17rem] lg:pr-[24rem]">
+
+      <aside className="fixed left-6 top-28 z-40 hidden w-52 rounded-[1.75rem] border border-slate-200 bg-white/92 p-5 shadow-[0_18px_40px_rgba(15,23,42,0.08)] backdrop-blur lg:block">
+        <p className="mb-4 text-[11px] font-black uppercase tracking-[0.24em] text-yellow-600">Navigate</p>
+        <nav className="flex flex-col gap-3 text-sm font-semibold text-slate-600">
+          <a href="#how-to" className="transition-colors hover:text-slate-900">How It Works</a>
+          <a href="#features" className="transition-colors hover:text-slate-900">Features</a>
+          <Link href="/blog" className="transition-colors hover:text-slate-900">Blog</Link>
+          <Link href="/community" className="transition-colors hover:text-slate-900">Community</Link>
+          <Link href="/about" className="transition-colors hover:text-slate-900">About</Link>
+        </nav>
+      </aside>
 
       {/* ── NAV ── */}
       <nav className="sticky top-0 z-50 border-b border-slate-100 bg-white/90 px-4 py-4 shadow-sm backdrop-blur md:px-6">
@@ -92,13 +109,6 @@ export default function LandingPage() {
           <span className="truncate font-black text-lg tracking-tight text-slate-900 sm:text-xl">
             Design<span className="text-yellow-500">It</span>
           </span>
-        </div>
-        <div className="hidden items-center gap-7 text-sm font-medium text-slate-600 md:flex">
-          <a href="#how-to" className="hover:text-slate-900 transition-colors">How It Works</a>
-          <a href="#features" className="hover:text-slate-900 transition-colors">Features</a>
-          <Link href="/blog" className="hover:text-slate-900 transition-colors">Blog</Link>
-          <Link href="/community" className="hover:text-slate-900 transition-colors">Community</Link>
-          <Link href="/about" className="hover:text-slate-900 transition-colors">About</Link>
         </div>
         <Link
           href="/studio"
@@ -146,11 +156,11 @@ export default function LandingPage() {
             Design Studio + AR Try-On
           </div>
 
-          <h1 className="text-4xl font-black leading-tight tracking-tight text-slate-900 sm:text-5xl md:text-6xl xl:text-7xl">
+          <h1 className={`${hughIsLife.className} text-4xl leading-tight tracking-tight text-slate-900 sm:text-5xl md:text-6xl xl:text-7xl`}>
             Design Clothes & Jewelry.
           </h1>
 
-          <h2 className="mb-4 mt-3 text-2xl font-bold leading-tight tracking-tight text-yellow-500 sm:text-3xl md:text-4xl xl:text-5xl">
+          <h2 className={`${hughIsLife.className} mb-4 mt-3 text-2xl leading-tight tracking-tight text-purple-900 sm:text-3xl md:text-4xl xl:text-5xl`}>
             Create, Customize & Try Them On.
           </h2>
 
@@ -200,19 +210,47 @@ export default function LandingPage() {
         </section>
       )}
 
+      <section id="how-to" className="hidden lg:block lg:absolute lg:right-0 lg:top-28 lg:w-[24rem] lg:px-6">
+        <div className="lg:sticky lg:top-28 lg:w-[22rem] lg:rounded-[1.75rem] lg:border lg:border-slate-200 lg:bg-white/92 lg:p-6 lg:shadow-[0_18px_40px_rgba(15,23,42,0.08)] lg:backdrop-blur">
+        <p className="mb-2 text-center text-xs font-bold uppercase tracking-widest text-yellow-500 lg:text-left">How It Works</p>
+        <h2 className="mb-12 text-center text-3xl font-black text-slate-900 md:text-4xl lg:mb-8 lg:text-left lg:text-2xl">
+          From sketch to try-on in 3 steps
+        </h2>
+
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-3 md:gap-8 lg:grid-cols-1 lg:gap-4">
+          {STEPS.map((step) => (
+            <div key={step.num} className="flex flex-col items-center rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center transition-all hover:border-yellow-300 hover:shadow-md lg:items-start lg:text-left lg:p-5">
+              <span className="text-4xl font-black text-yellow-400 mb-3">{step.num}</span>
+              <h3 className="font-bold text-lg text-slate-800 mb-2">{step.title}</h3>
+              <p className="text-slate-500 text-sm leading-relaxed">{step.desc}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-10 text-center lg:text-left">
+          <Link
+            href="/studio"
+            className="w-full rounded-full bg-yellow-500 px-6 py-3.5 text-sm font-bold text-white shadow-md transition-all hover:scale-105 hover:bg-yellow-400 sm:w-auto sm:px-8"
+          >
+            Start Designing Now →
+          </Link>
+        </div>
+        </div>
+      </section>
+
       {/* ── HOW IT WORKS ── */}
-      <section id="how-to" className="mx-auto w-full max-w-5xl px-4 py-16 sm:px-6 sm:py-20">
-        <p className="text-xs font-bold text-yellow-500 uppercase tracking-widest text-center mb-2">How It Works</p>
-        <h2 className="text-3xl md:text-4xl font-black text-center text-slate-900 mb-12">
+      <section id="how-to" className="mx-auto w-full max-w-5xl px-4 py-16 sm:px-6 sm:py-20 lg:hidden">
+        <p className="mb-2 text-center text-xs font-bold uppercase tracking-widest text-yellow-500">How It Works</p>
+        <h2 className="mb-12 text-center text-3xl font-black text-slate-900 md:text-4xl">
           From sketch to try-on in 3 steps
         </h2>
 
         <div className="grid grid-cols-1 gap-6 md:grid-cols-3 md:gap-8">
           {STEPS.map((step) => (
-            <div key={step.num} className="flex flex-col items-center text-center p-6 rounded-2xl bg-slate-50 border border-slate-100 hover:border-yellow-300 hover:shadow-md transition-all">
-              <span className="text-4xl font-black text-yellow-400 mb-3">{step.num}</span>
-              <h3 className="font-bold text-lg text-slate-800 mb-2">{step.title}</h3>
-              <p className="text-slate-500 text-sm leading-relaxed">{step.desc}</p>
+            <div key={step.num} className="flex flex-col items-center rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center transition-all hover:border-yellow-300 hover:shadow-md">
+              <span className="mb-3 text-4xl font-black text-yellow-400">{step.num}</span>
+              <h3 className="mb-2 text-lg font-bold text-slate-800">{step.title}</h3>
+              <p className="text-sm leading-relaxed text-slate-500">{step.desc}</p>
             </div>
           ))}
         </div>
