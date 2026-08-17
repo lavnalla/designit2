@@ -2,7 +2,6 @@
 
 import React from "react";
 import Link from "next/link";
-import Footer from "../../src/components/Footer";
 
 export default function TermsOfServicePageClient() {
   return (
@@ -89,8 +88,6 @@ export default function TermsOfServicePageClient() {
           </div>
         </div>
       </main>
-
-      <Footer />
     </div>
   );
 }

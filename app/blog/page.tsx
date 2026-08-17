@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import Footer from '../../src/components/Footer';
 import { getBlogPosts } from '../../src/lib/blog-storage';
 
 export const metadata: Metadata = {
@@ -139,8 +138,6 @@ export default async function BlogPage() {
           ))}
         </div>
       </section>
-
-      <Footer />
     </main>
   );
 }

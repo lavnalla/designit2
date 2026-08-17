@@ -2,7 +2,6 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import Footer from "../../src/components/Footer";
 
 export default function ContactPageClient() {
   const [formData, setFormData] = useState({
@@ -252,8 +251,6 @@ export default function ContactPageClient() {
           </div>
         </div>
       </main>
-
-      <Footer />
     </div>
   );
 }

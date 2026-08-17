@@ -2,7 +2,6 @@
 
 import React from "react";
 import Link from "next/link";
-import Footer from "../../src/components/Footer";
 
 export default function AboutPageClient() {
   return (
@@ -123,6 +122,12 @@ export default function AboutPageClient() {
                 tools that empower creative professionals. We&apos;re constantly improving and adding new
                 features based on feedback from our community of designers.
               </p>
+              <p className="text-slate-600 leading-relaxed text-lg mb-4">
+                The people behind iDesignIts.com care deeply about practical engineering. We built the platform to combine creative tooling with fast browser delivery, so users can trace images, edit vector shapes, and preview fashion or jewelry ideas without installing desktop software.
+              </p>
+              <p className="text-slate-600 leading-relaxed text-lg mb-4">
+                Our browser-based AR engine works by combining user-approved camera or uploaded image input with landmark detection and layout rules to position items such as earrings, necklaces, and garments inside the preview. That workflow is designed to help users understand proportion and placement before moving forward with a design idea.
+              </p>
               <p className="text-slate-600 leading-relaxed text-lg">
                 Have questions or suggestions? We&apos;d love to hear from you. Visit our {" "}
                 <Link href="/contact" className="text-amber-600 font-bold underline hover:text-orange-600 transition-colors">
@@ -140,8 +145,6 @@ export default function AboutPageClient() {
           </div>
         </div>
       </main>
-
-      <Footer />
     </div>
   );
 }

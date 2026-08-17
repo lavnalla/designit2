@@ -23,6 +23,7 @@ import { Analytics } from "@vercel/analytics/next";
 import React from "react";
 import Script from "next/script";
 import CookieConsent from "../src/components/CookieConsent";
+import Footer from "../src/components/Footer";
 
 const siteUrl = "https://idesignits.com";
 const siteName = "DesignIt";
@@ -249,6 +250,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix@2.2.0/dist/body-pix.min.js" strategy="beforeInteractive" />
         
         {children}
+        <Footer />
         <CookieConsent />
         <Analytics />
       </body>
