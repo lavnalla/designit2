@@ -5021,15 +5021,27 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       </span>
       <span className="hidden xs:block text-[7px] font-medium uppercase text-yellow-500">Studio</span>
     </div>
-    <div className="hidden md:flex items-center gap-4">
+    <div className="hidden md:flex items-center gap-3 lg:gap-4">
       <Link href="/" className="text-black font-bold hover:text-amber-700 text-[9px] uppercase transition-colors">
         Home
+      </Link>
+      <Link href="/blog" className="text-black font-bold hover:text-amber-700 text-[9px] uppercase transition-colors">
+        Blog
+      </Link>
+      <Link href="/community" className="text-black font-bold hover:text-amber-700 text-[9px] uppercase transition-colors">
+        Community
       </Link>
       <Link href="/about" className="text-black font-bold hover:text-amber-700 text-[9px] uppercase transition-colors">
         About
       </Link>
       <Link href="/contact" className="text-black font-bold hover:text-amber-700 text-[9px] uppercase transition-colors">
         Contact
+      </Link>
+      <Link href="/privacy-policy" className="text-black font-bold hover:text-amber-700 text-[9px] uppercase transition-colors">
+        Privacy
+      </Link>
+      <Link href="/terms-of-service" className="text-black font-bold hover:text-amber-700 text-[9px] uppercase transition-colors">
+        Terms
       </Link>
     </div>
   </div>

@@ -1,16 +1,11 @@
 "use client";
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import localFont from "next/font/local";
 import Footer from "./Footer";
 import AdSlot from "./AdSlot";
 import { CommunityShowcase } from "./CommunityShowcase";
+import { hughIsLife, whisperingSignature } from "../lib/fonts";
 import { Upload, Sparkles, Gem, ChevronDown } from "lucide-react";
-
-const hughIsLife = localFont({
-  src: "../../public/fonts/Hugh is Life Personal Use .ttf",
-  display: "swap",
-});
 
 const FAQS = [
   {
@@ -83,23 +78,138 @@ const FEATURES = [
 ];
 
 export default function LandingPage() {
+  const demoVideoSources = ["/demo_video1.mp4", "/demo_video2.mp4"];
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isDemoPlaying, setIsDemoPlaying] = useState(true);
+  const [isDemoPopupOpen, setIsDemoPopupOpen] = useState(false);
+  const [activeDemoVideoIndex, setActiveDemoVideoIndex] = useState(0);
   const homepageAdSlot = process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_HOME_SLOT;
+  const demoVideoRef = useRef<HTMLVideoElement | null>(null);
+  const demoTransitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const toggleDemoVideoPlayback = () => {
+    const video = demoVideoRef.current;
+    if (!video) return;
+
+    if (video.paused) {
+      video.play();
+      setIsDemoPlaying(true);
+      return;
+    }
+
+    video.pause();
+    setIsDemoPlaying(false);
+  };
+
+  const playNextDemoVideo = () => {
+    if (demoTransitionTimeoutRef.current) {
+      clearTimeout(demoTransitionTimeoutRef.current);
+      demoTransitionTimeoutRef.current = null;
+    }
+
+    if (activeDemoVideoIndex >= demoVideoSources.length - 1) {
+      return;
+    }
+
+    demoTransitionTimeoutRef.current = setTimeout(() => {
+      setActiveDemoVideoIndex((currentIndex) => {
+        if (currentIndex >= demoVideoSources.length - 1) {
+          return currentIndex;
+        }
+
+        return currentIndex + 1;
+      });
+      demoTransitionTimeoutRef.current = null;
+    }, 60000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (demoTransitionTimeoutRef.current) {
+        clearTimeout(demoTransitionTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div className="flex min-h-screen flex-col bg-white font-sans text-slate-900 lg:pl-[17rem] lg:pr-[24rem]">
 
-      <aside className="fixed left-6 top-28 z-40 hidden w-52 rounded-[1.75rem] border border-slate-200 bg-white/92 p-5 shadow-[0_18px_40px_rgba(15,23,42,0.08)] backdrop-blur lg:block">
-        <p className="mb-4 text-[11px] font-black uppercase tracking-[0.24em] text-yellow-600">Navigate</p>
-        <nav className="flex flex-col gap-3 text-sm font-semibold text-slate-600">
-          <a href="#how-to" className="transition-colors hover:text-slate-900">How It Works</a>
-          <a href="#features" className="transition-colors hover:text-slate-900">Features</a>
-          <Link href="/blog" className="transition-colors hover:text-slate-900">Blog</Link>
-          <Link href="/community" className="transition-colors hover:text-slate-900">Community</Link>
-          <Link href="/about" className="transition-colors hover:text-slate-900">About</Link>
-        </nav>
+      <aside className="fixed left-6 top-28 z-40 hidden w-52 lg:block">
+        <div className="rounded-[1.75rem] border border-slate-200 bg-white/92 p-5 shadow-[0_18px_40px_rgba(15,23,42,0.08)] backdrop-blur">
+          <p className="mb-4 text-[11px] font-black uppercase tracking-[0.24em] text-yellow-600">Navigate</p>
+          <nav className={`${whisperingSignature.className} flex flex-col gap-3 text-xl text-slate-600`}>
+            <a href="#how-to" className="transition-colors hover:text-slate-900">How It Works</a>
+            <a href="#features" className="transition-colors hover:text-slate-900">Features</a>
+            <Link href="/blog" className="transition-colors hover:text-slate-900">Blog</Link>
+            <Link href="/community" className="transition-colors hover:text-slate-900">Community</Link>
+            <Link href="/about" className="transition-colors hover:text-slate-900">About</Link>
+          </nav>
+        </div>
+
+        <div className="mt-4 overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white/92 p-3 shadow-[0_18px_40px_rgba(15,23,42,0.08)] backdrop-blur">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <p className="text-[11px] font-black uppercase tracking-[0.24em] text-yellow-600">Studio Demo</p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={toggleDemoVideoPlayback}
+                className="rounded-full border border-slate-300 bg-slate-100 px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:bg-slate-200"
+              >
+                {isDemoPlaying ? "Stop" : "Play"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsDemoPopupOpen(true)}
+                className="rounded-full border border-slate-300 bg-slate-100 px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:bg-slate-200"
+              >
+                Max
+              </button>
+            </div>
+          </div>
+          <video
+            ref={demoVideoRef}
+            className="w-full rounded-xl"
+            autoPlay
+            muted
+            playsInline
+            preload="metadata"
+            onEnded={playNextDemoVideo}
+            key={demoVideoSources[activeDemoVideoIndex]}
+          >
+            <source src={demoVideoSources[activeDemoVideoIndex]} type="video/mp4" />
+          </video>
+        </div>
       </aside>
+
+      {isDemoPopupOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/80 p-6 backdrop-blur-sm">
+          <div className="relative w-full max-w-4xl rounded-[2rem] border border-slate-200 bg-white p-4 shadow-[0_30px_80px_rgba(15,23,42,0.35)]">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <p className="text-sm font-black uppercase tracking-[0.2em] text-yellow-600">Studio Demo</p>
+              <button
+                type="button"
+                onClick={() => setIsDemoPopupOpen(false)}
+                className="rounded-full border border-slate-300 bg-slate-100 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:bg-slate-200"
+              >
+                Close
+              </button>
+            </div>
+            <video
+              className="w-full rounded-[1.25rem]"
+              controls
+              autoPlay
+              muted
+              playsInline
+              preload="metadata"
+              onEnded={playNextDemoVideo}
+              key={`popup-${demoVideoSources[activeDemoVideoIndex]}`}
+            >
+              <source src={demoVideoSources[activeDemoVideoIndex]} type="video/mp4" />
+            </video>
+          </div>
+        </div>
+      )}
 
       {/* ── NAV ── */}
       <nav className="sticky top-0 z-50 border-b border-slate-100 bg-white/90 px-4 py-4 shadow-sm backdrop-blur md:px-6">
@@ -213,7 +323,7 @@ export default function LandingPage() {
       <section id="how-to" className="hidden lg:block lg:absolute lg:right-0 lg:top-28 lg:w-[24rem] lg:px-6">
         <div className="lg:sticky lg:top-28 lg:w-[22rem] lg:rounded-[1.75rem] lg:border lg:border-slate-200 lg:bg-white/92 lg:p-6 lg:shadow-[0_18px_40px_rgba(15,23,42,0.08)] lg:backdrop-blur">
         <p className="mb-2 text-center text-xs font-bold uppercase tracking-widest text-yellow-500 lg:text-left">How It Works</p>
-        <h2 className="mb-12 text-center text-3xl font-black text-slate-900 md:text-4xl lg:mb-8 lg:text-left lg:text-2xl">
+        <h2 className={`${whisperingSignature.className} mb-12 text-center text-3xl text-slate-900 md:text-4xl lg:mb-8 lg:text-left lg:text-3xl`}>
           From sketch to try-on in 3 steps
         </h2>
 

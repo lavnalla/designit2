@@ -1,5 +1,6 @@
 import React from "react";
 import Link from "next/link";
+import { whisperingSignature } from "../lib/fonts";
 
 export default function Footer() {
   return (
@@ -10,7 +11,7 @@ export default function Footer() {
       <div className="relative z-10 mx-auto mb-8 grid max-w-6xl grid-cols-1 gap-8 md:grid-cols-4">
         <div>
           <div className="flex items-center gap-2 mb-4">
-            <span className="font-serif text-3xl font-bold tracking-tight text-transparent bg-gradient-to-r from-amber-700 via-orange-700 to-cyan-800 bg-clip-text">
+            <span className={`${whisperingSignature.className} text-4xl tracking-tight text-transparent bg-gradient-to-r from-amber-700 via-orange-700 to-cyan-800 bg-clip-text`}>
               DesignIt
             </span>
           </div>
@@ -20,10 +21,10 @@ export default function Footer() {
         </div>
 
         <div>
-          <h3 className="mb-4 inline-block border-b-2 border-cyan-700 pb-1 text-lg font-black uppercase tracking-widest text-cyan-900">
+          <h3 className={`${whisperingSignature.className} mb-4 inline-block border-b-2 border-cyan-700 pb-1 text-2xl text-cyan-900`}>
             Quick Links
           </h3>
-          <ul className="space-y-2 font-medium">
+          <ul className={`${whisperingSignature.className} space-y-2 text-xl text-slate-700`}>
             <li><Link href="/" className="transition-colors hover:text-orange-700">Home</Link></li>
             <li><Link href="/blog" className="transition-colors hover:text-orange-700">Blog</Link></li>
             <li><Link href="/studio" className="transition-colors hover:text-orange-700">Design Studio</Link></li>
@@ -34,10 +35,10 @@ export default function Footer() {
         </div>
 
         <div>
-          <h3 className="mb-4 inline-block border-b-2 border-cyan-700 pb-1 text-lg font-black uppercase tracking-widest text-cyan-900">
+          <h3 className={`${whisperingSignature.className} mb-4 inline-block border-b-2 border-cyan-700 pb-1 text-2xl text-cyan-900`}>
             Trust & Legal
           </h3>
-          <ul className="space-y-2 font-medium">
+          <ul className={`${whisperingSignature.className} space-y-2 text-xl text-slate-700`}>
             <li><Link href="/privacy-policy" className="transition-colors hover:text-orange-700">Privacy Policy</Link></li>
             <li><Link href="/terms-of-service" className="transition-colors hover:text-orange-700">Terms of Service</Link></li>
             <li><Link href="/about" className="transition-colors hover:text-orange-700">About Us</Link></li>
@@ -46,7 +47,7 @@ export default function Footer() {
         </div>
 
         <div>
-          <h3 className="mb-4 inline-block border-b-2 border-cyan-700 pb-1 text-lg font-black uppercase tracking-widest text-cyan-900">
+          <h3 className={`${whisperingSignature.className} mb-4 inline-block border-b-2 border-cyan-700 pb-1 text-2xl text-cyan-900`}>
             Contact
           </h3>
           <p className="text-sm leading-7 text-slate-700">

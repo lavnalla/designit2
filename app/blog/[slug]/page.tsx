@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { whisperingSignature } from '../../../src/lib/fonts';
 import { getBlogPostBySlug, getBlogPosts } from '../../../src/lib/blog-storage';
 
 export async function generateStaticParams() {
@@ -32,9 +33,9 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
   return (
     <main className="min-h-screen bg-[linear-gradient(180deg,#ffffff_0%,#fffaf0_12%,#f8fafc_100%)] text-slate-900">
       <article className="mx-auto max-w-3xl px-6 py-16">
-        <Link href="/blog" className="text-sm font-black uppercase tracking-[0.18em] text-cyan-700 hover:text-cyan-900">Back to blog</Link>
+        <Link href="/blog" className={`${whisperingSignature.className} text-2xl text-cyan-700 hover:text-cyan-900`}>Back to blog</Link>
         <p className="mt-8 text-xs font-black uppercase tracking-[0.28em] text-amber-600">{post.category}</p>
-        <h1 className="mt-4 text-4xl font-black leading-tight tracking-tight text-slate-900 sm:text-5xl">{post.title}</h1>
+        <h1 className={`${whisperingSignature.className} mt-4 text-5xl leading-tight tracking-tight text-slate-900 sm:text-6xl`}>{post.title}</h1>
         <p className="mt-6 text-lg leading-8 text-slate-600">{post.excerpt}</p>
         <div className="mt-4 text-xs font-bold uppercase tracking-[0.18em] text-slate-400">{post.readTime} · {new Date(post.publishedAt).toLocaleDateString()}</div>
         <div className="mt-10 space-y-6 text-base leading-8 text-slate-700">
