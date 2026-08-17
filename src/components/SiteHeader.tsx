@@ -24,14 +24,14 @@ export default function SiteHeader() {
   }
 
   return (
-    <nav className="border-b border-[#ece5db] bg-[#fffdfa] px-5 py-5 md:px-8">
+    <nav className="border-b border-[#ead8dc] bg-[#fffaf2] px-5 py-5 md:px-8">
       <div className="mx-auto flex w-full max-w-[1120px] flex-wrap items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
           <div>
             <span className={`${hughIsLife.className} block truncate text-2xl leading-none tracking-tight text-slate-900 sm:text-3xl`}>
-              Design<span className="text-[#9b5a2e]">It</span>
+              Design<span className="text-[#8a644a]">It</span>
             </span>
-            <span className="text-[10px] uppercase tracking-[0.18em] text-slate-400">Browser Design Studio</span>
+            <span className="text-[10px] uppercase tracking-[0.18em] text-[#8a644a]/70">Browser Design Studio</span>
           </div>
         </div>
         <button
@@ -40,7 +40,7 @@ export default function SiteHeader() {
           aria-controls="site-header-mobile-nav"
           aria-label="Toggle navigation menu"
           onClick={() => setMobileMenuOpen((open) => !open)}
-          className="inline-flex items-center justify-center border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 md:hidden"
+          className="inline-flex items-center justify-center border border-[#ead8dc] bg-[#fffdf8] px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-[#fff7f8] md:hidden"
         >
           Menu
         </button>
@@ -67,7 +67,7 @@ export default function SiteHeader() {
           </Link>
         </div>
         {mobileMenuOpen && (
-          <div id="site-header-mobile-nav" className="flex w-full flex-col gap-3 border-t border-slate-100 pt-4 text-sm font-medium text-slate-600 md:hidden">
+          <div id="site-header-mobile-nav" className="flex w-full flex-col gap-3 border-t border-[#f0e6e8] pt-4 text-sm font-medium text-slate-600 md:hidden">
             {NAV_LINKS.map((link) => {
               const isActive = pathname === link.href;
 
