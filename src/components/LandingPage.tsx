@@ -91,12 +91,16 @@ const HERO_CARDS = [
     body: "In a workflow where design ideas move from sketch to visualization with speed, clarity, and creative freedom.",
     ctaLabel: "About The Studio",
     ctaHref: "/about",
+    beforeImage: "designto.png", // Replace with your actual asset path
+    afterImage: "designfrom.png",   // Replace with your actual asset path
   },
   {
     eyebrow: "Try It On",
     body: "Preview clothes and jewelry in a more intuitive way by moving from design mode into live try-on, so you can evaluate proportion, placement, and style before making your next creative decision.",
     ctaLabel: "Open The Studio",
     ctaHref: "/studio",
+    beforeImage: "earrings.png", // Replace with your actual asset path
+    afterImage: "wearingearrings.png",   // Replace with your actual asset path
   },
 ];
 
@@ -201,7 +205,7 @@ export default function LandingPage() {
   const activeHeroCard = HERO_CARDS[activeHeroCardIndex];
 
   return (
-    <div className="min-h-screen bg-[#e8e0d9] px-4 py-6 font-sans text-slate-900 md:px-8 lg:px-10">
+    <div className="min-h-screen bg-[#e8e0d9] px-4 pt-0 font-sans text-slate-900 md:px-8 lg:px-10">
       <aside className="fixed left-2 top-28 z-40 hidden w-44 lg:block xl:left-[max(1rem,calc((100vw-1120px)/2-15.5rem))]">
         <div className="border border-[#ddd3c9] bg-[#fffdfb] p-5 text-[#4b5563] shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
           <p className="mb-4 text-[11px] font-black uppercase tracking-[0.24em] text-[#8a644a]">Navigate</p>
@@ -270,17 +274,45 @@ export default function LandingPage() {
                   </Link>
                 </div>
               </div>
-            <div className="relative flex min-h-[34rem] flex-col justify-end overflow-hidden bg-[linear-gradient(180deg,#f7b64f_0%,#f6cb67_38%,#5d82a8_72%,#7a4bbb_100%)] p-6 md:p-8">
-              <div className="absolute inset-x-6 top-8 border border-white/20 bg-[#7c49b4] p-8 text-white shadow-[0_18px_36px_rgba(15,23,42,0.18)] md:left-6 md:right-6 md:top-[7rem] lg:left-8 lg:right-8">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-white/70">{activeHeroCard.eyebrow}</p>
-                <p className="mt-4 text-2xl leading-10 md:text-[2rem]">
-                  {activeHeroCard.body}
-                </p>
-                <Link href={activeHeroCard.ctaHref} className="mt-6 inline-block bg-black px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white">
-                  {activeHeroCard.ctaLabel}
-                </Link>
-              </div>
-            </div>
+            <div className="relative flex min-h-[34rem] flex-col justify-between overflow-hidden bg-[linear-gradient(180deg,#f7b64f_0%,#f6cb67_38%,#5d82a8_72%,#7a4bbb_100%)] p-6 md:p-8">
+  {/* Before & After Images at Top */}
+  <div className="grid grid-cols-2 gap-3 mb-6">
+    <div className="relative overflow-hidden border border-white/20 bg-black/20">
+      <span className="absolute left-2 top-2 z-10 bg-black/60 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white">
+        Before
+      </span>
+      <img
+        src={activeHeroCard.beforeImage}
+        alt="Before transformation"
+        className="h-36 w-full object-cover md:h-44"
+      />
+    </div>
+    <div className="relative overflow-hidden border border-white/20 bg-black/20">
+      <span className="absolute left-2 top-2 z-10 bg-black/60 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white">
+        After
+      </span>
+      <img
+        src={activeHeroCard.afterImage}
+        alt="After transformation"
+        className="h-36 w-full object-cover md:h-44"
+      />
+    </div>
+  </div>
+
+  {/* Card Content Below Images */}
+  <div className="border border-white/20 bg-[#7c49b4] p-6 md:p-8 text-white shadow-[0_18px_36px_rgba(15,23,42,0.18)]">
+    <p className="text-[10px] uppercase tracking-[0.18em] text-white/70">{activeHeroCard.eyebrow}</p>
+    <p className="mt-3 text-xl leading-8 md:text-2xl md:leading-9">
+      {activeHeroCard.body}
+    </p>
+    <Link
+      href={activeHeroCard.ctaHref}
+      className="mt-5 inline-block bg-black px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-800"
+    >
+      {activeHeroCard.ctaLabel}
+    </Link>
+  </div>
+</div>
 
             <div className="border border-[#e6ddd4] bg-[#fffdfa] p-3 shadow-[0_18px_36px_rgba(15,23,42,0.08)] lg:absolute lg:left-[2rem] lg:top-[20rem] lg:z-20 lg:w-[18rem] xl:left-[2.5rem] xl:top-[20.5rem] xl:w-[19rem]">
               <div className="mb-2 flex items-center justify-between gap-2">

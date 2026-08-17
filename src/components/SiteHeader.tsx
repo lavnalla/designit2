@@ -24,7 +24,7 @@ export default function SiteHeader() {
   }
 
   return (
-    <nav className="border-b border-[#6f5168] bg-[#ffffff] px-5 py-5 text-black shadow-[0_14px_30px_rgba(79,38,79,0.22)] md:px-8">
+    <nav className=" bg-[#ffffff] pt-0 py-5 text-black ">
       <div className="mx-auto flex w-full max-w-[1120px] flex-wrap items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
           <div>
