@@ -2,7 +2,6 @@
 
 import React from "react";
 import Link from "next/link";
-import Footer from "../../src/components/Footer";
 
 export default function PrivacyPolicyPageClient() {
   return (
@@ -48,9 +47,22 @@ export default function PrivacyPolicyPageClient() {
               <li><strong>Usage Data:</strong> Information about how you use our website, including your IP address, browser type, operating system, pages visited, and time spent on the site.</li>
               <li><strong>Cookies and Tracking Technologies:</strong> We use cookies and similar tracking technologies to track activity on our website and hold certain information.</li>
               <li><strong>Contact Information:</strong> If you contact us, we may collect your name, email address, and the contents of your message.</li>
+              <li><strong>Camera and Photo Inputs:</strong> If you choose to use live try-on or upload an image for AR preview features, your webcam stream and uploaded images are used only to generate the on-screen preview you request.</li>
+              <li><strong>Face and Landmark Processing:</strong> For browser-based AR placement, the app may analyze face or body landmarks in memory so earrings, necklaces, garments, or other assets can be positioned on the preview.</li>
             </ul>
 
-            <h2 className="text-2xl font-bold text-slate-800 mt-8 mb-4">3. How We Use Your Information</h2>
+            <h2 className="text-2xl font-bold text-slate-800 mt-8 mb-4">3. Camera, Webcam, and AR Disclosure</h2>
+            <p className="mb-4">
+              DesignIt&apos;s webcam and upload-based AR tools are optional. We only access your camera after you grant browser permission. Camera frames, uploaded images, and landmark calculations are used to render the preview experience in your browser or in the processing flow required for the feature you selected.
+            </p>
+            <ul className="list-disc pl-6 mb-4 space-y-2">
+              <li>We do not require camera access to browse the site, read the blog, or use non-AR sections.</li>
+              <li>We do not sell webcam data or uploaded images.</li>
+              <li>You control when to start or stop camera-based previews through your browser and device settings.</li>
+              <li>If you contact us for support, we may review materials you intentionally send us to troubleshoot your issue.</li>
+            </ul>
+
+            <h2 className="text-2xl font-bold text-slate-800 mt-8 mb-4">4. How We Use Your Information</h2>
             <p className="mb-4">We use the collected information for various purposes, including:</p>
             <ul className="list-disc pl-6 mb-4 space-y-2">
               <li>To provide and maintain our service</li>
@@ -60,7 +72,7 @@ export default function PrivacyPolicyPageClient() {
               <li>To serve advertisements (see "Advertising" section below)</li>
             </ul>
 
-            <h2 className="text-2xl font-bold text-slate-800 mt-8 mb-4">4. Advertising and Google AdSense</h2>
+            <h2 className="text-2xl font-bold text-slate-800 mt-8 mb-4">5. Advertising and Google AdSense</h2>
             <p className="mb-4">
               We use Google AdSense to display ads on our website. Google, as a third-party vendor, uses cookies to serve ads based on your prior visits to our website or other websites.
             </p>
@@ -70,27 +82,27 @@ export default function PrivacyPolicyPageClient() {
               <li>Alternatively, you can opt out of a third-party vendor&apos;s use of cookies for personalized advertising by visiting <a href="https://optout.aboutads.info/" target="_blank" rel="noopener noreferrer" className="text-amber-600 hover:underline">www.aboutads.info</a>.</li>
             </ul>
 
-            <h2 className="text-2xl font-bold text-slate-800 mt-8 mb-4">5. Third-Party Services</h2>
+            <h2 className="text-2xl font-bold text-slate-800 mt-8 mb-4">6. Third-Party Services</h2>
             <p className="mb-4">
               We may employ third-party companies and individuals to facilitate our service, provide the service on our behalf, perform service-related services, or assist us in analyzing how our service is used (e.g., Vercel Analytics). These third parties have access to your personal data only to perform these tasks on our behalf and are obligated not to disclose or use it for any other purpose.
             </p>
 
-            <h2 className="text-2xl font-bold text-slate-800 mt-8 mb-4">6. Data Security</h2>
+            <h2 className="text-2xl font-bold text-slate-800 mt-8 mb-4">7. Data Security</h2>
             <p className="mb-4">
               The security of your data is important to us, but remember that no method of transmission over the Internet or method of electronic storage is 100% secure. While we strive to use commercially acceptable means to protect your personal data, we cannot guarantee its absolute security.
             </p>
 
-            <h2 className="text-2xl font-bold text-slate-800 mt-8 mb-4">7. Children&apos;s Privacy</h2>
+            <h2 className="text-2xl font-bold text-slate-800 mt-8 mb-4">8. Children&apos;s Privacy</h2>
             <p className="mb-4">
               Our service does not address anyone under the age of 13. We do not knowingly collect personally identifiable information from anyone under the age of 13.
             </p>
 
-            <h2 className="text-2xl font-bold text-slate-800 mt-8 mb-4">8. Changes to This Privacy Policy</h2>
+            <h2 className="text-2xl font-bold text-slate-800 mt-8 mb-4">9. Changes to This Privacy Policy</h2>
             <p className="mb-4">
               We may update our Privacy Policy from time to time. We will notify you of any changes by posting the new Privacy Policy on this page and updating the "Last updated" date.
             </p>
 
-            <h2 className="text-2xl font-bold text-slate-800 mt-8 mb-4">9. Contact Us</h2>
+            <h2 className="text-2xl font-bold text-slate-800 mt-8 mb-4">10. Contact Us</h2>
             <p className="mb-4">
               If you have any questions about this Privacy Policy, please contact us at:
               <br />
@@ -100,7 +112,6 @@ export default function PrivacyPolicyPageClient() {
         </div>
       </main>
 
-      <Footer />
     </div>
   );
 }

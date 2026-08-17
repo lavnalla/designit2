@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import Footer from '../../../src/components/Footer';
 import { getBlogPostBySlug, getBlogPosts } from '../../../src/lib/blog-storage';
 
 export async function generateStaticParams() {
@@ -44,7 +43,6 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
           ))}
         </div>
       </article>
-      <Footer />
     </main>
   );
 }
