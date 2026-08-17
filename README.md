@@ -18,6 +18,21 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
+## Browser Extension
+
+The repo includes an unpacked browser extension at `public/designit-extension`.
+
+To install it in Chrome or Edge:
+
+```text
+1. Open the browser extensions page.
+2. Turn on Developer mode.
+3. Choose Load unpacked.
+4. Select the public/designit-extension folder.
+```
+
+After installation, right-click any image and choose `Open in DesignIt`. The extension opens Studio with the image preloaded into Source through `/studio?source=...`.
+
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
 ## Environment Variables

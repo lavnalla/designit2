@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import Footer from "./Footer";
+import { useRouter } from "next/navigation";
 import AdSlot from "./AdSlot";
 import { CommunityShowcase } from "./CommunityShowcase";
 import { hughIsLife, whisperingSignature } from "../lib/fonts";
@@ -101,6 +101,7 @@ const HERO_CARDS = [
 ];
 
 export default function LandingPage() {
+  const router = useRouter();
   const demoVideoSources = ["/demo_video1.mp4", "/demo_video2.mp4"];
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -111,6 +112,13 @@ export default function LandingPage() {
   const homepageAdSlot = process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_HOME_SLOT;
   const demoVideoRef = useRef<HTMLVideoElement | null>(null);
   const demoTransitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const openStudioWithSourceAsset = (assetPath: string) => {
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem("designit-studio-source-image", assetPath);
+    }
+    router.push("/studio?source=landing");
+  };
 
   const playDemoVideo = async (video: HTMLVideoElement) => {
     try {
@@ -347,9 +355,13 @@ export default function LandingPage() {
                   Move from blank canvas to polished visual in a browser studio built for garments, jewelry, swatches, and AR previews.
                 </p>
                 <div className="mt-6 flex flex-wrap gap-3">
-                  <Link href="/studio" className="bg-black px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white">
-                    Open The Studio
-                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => openStudioWithSourceAsset("/template1.png")}
+                    className="bg-black px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white"
+                  >
+                    Try On In Studio
+                  </button>
                   <Link href="/blog" className="border border-slate-300 px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700">
                     Read The Guides
                   </Link>
@@ -584,7 +596,6 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <Footer />
       </div>
     </div>
   );
