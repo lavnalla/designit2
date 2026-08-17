@@ -6,6 +6,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import NecklaceTryOn from "./NecklaceTryOn";
+import { hughIsLife, whisperingSignature } from "../lib/fonts";
 
 import type { NextConfig } from 'next';
 
@@ -22,12 +23,12 @@ export default nextConfig;
 
 const MOBILE_BREAKPOINT = 1024;
 
-const toolbarControlClass = "relative flex h-10 min-w-0 items-center justify-center overflow-hidden rounded-full border px-3 text-[11px] font-black uppercase tracking-[0.04em] transition-all sm:px-4 whitespace-nowrap";
-const toolbarSelectClass = "h-10 min-w-0 w-full rounded-full border border-cyan-900/25 bg-gradient-to-b from-cyan-200 via-cyan-300 to-cyan-400 px-3 text-[9px] font-black uppercase text-cyan-950 shadow-[inset_0_2px_0_rgba(255,255,255,0.65),0_8px_18px_rgba(8,145,178,0.18),0_3px_0_rgba(14,116,144,0.45)] transition-all focus:outline-none focus:ring-2 focus:ring-cyan-900 cursor-pointer sm:px-4";
-const toolbarCanvasWrapperClass = `${toolbarControlClass} w-full max-w-[52vw] gap-2 bg-gradient-to-b from-white via-slate-50 to-slate-100 border-slate-300 px-3 shadow-[inset_0_2px_0_rgba(255,255,255,0.95),inset_0_-1px_0_rgba(148,163,184,0.22),0_14px_32px_rgba(15,23,42,0.14),0_4px_10px_rgba(15,23,42,0.08)] backdrop-blur-md sm:max-w-[12.5rem]`;
+const toolbarControlClass = `${whisperingSignature.className} relative flex h-9 min-w-0 items-center justify-center overflow-hidden rounded-2xl border px-2 text-xs tracking-[0.01em] transition-all whitespace-nowrap sm:px-3`;
+const toolbarSelectClass = `${whisperingSignature.className} h-9 min-w-0 w-full rounded-2xl border border-cyan-900/25 bg-gradient-to-b from-cyan-200 via-cyan-300 to-cyan-400 px-2 text-[11px] text-cyan-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_5px_12px_rgba(8,145,178,0.16),0_2px_0_rgba(14,116,144,0.4)] transition-all focus:outline-none focus:ring-2 focus:ring-cyan-900 cursor-pointer sm:px-3`;
+const toolbarCanvasWrapperClass = `${toolbarControlClass} w-[9rem] gap-1.5 bg-gradient-to-b from-white via-slate-50 to-slate-100 border-slate-300 px-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),inset_0_-1px_0_rgba(148,163,184,0.22),0_10px_22px_rgba(15,23,42,0.1),0_3px_8px_rgba(15,23,42,0.06)] backdrop-blur-md`;
 const toolbarButtonBaseClass = `${toolbarControlClass} bg-white border-slate-300 text-black [text-shadow:0_1px_0_rgba(255,255,255,0.55),0_0_1px_rgba(0,0,0,0.9)] shadow-[inset_0_2px_0_rgba(255,255,255,0.82),inset_0_-1px_0_rgba(148,163,184,0.18),0_10px_22px_rgba(15,23,42,0.14),0_3px_0_rgba(71,85,105,0.24)]`;
 const toolbarButtonInteractiveClass = `${toolbarButtonBaseClass} active:scale-95 active:translate-y-[1px] active:shadow-[inset_0_1px_0_rgba(255,255,255,0.5),0_4px_10px_rgba(15,23,42,0.12),0_1px_0_rgba(51,65,85,0.18)]`;
-const leftToolButtonBaseClass = "group relative flex h-10 items-center justify-center rounded-xl border px-3 text-black transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.78),0_8px_18px_rgba(15,23,42,0.14),0_2px_0_rgba(51,65,85,0.18)] hover:-translate-y-0.5 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_12px_24px_rgba(15,23,42,0.18),0_3px_0_rgba(51,65,85,0.22)] active:translate-y-[1px] active:shadow-[inset_0_2px_4px_rgba(15,23,42,0.14),0_4px_8px_rgba(15,23,42,0.12)]";
+const leftToolButtonBaseClass = `${whisperingSignature.className} group relative flex h-9 items-center justify-center rounded-lg border px-2 text-sm text-black transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.78),0_6px_14px_rgba(15,23,42,0.12),0_2px_0_rgba(51,65,85,0.16)] hover:-translate-y-0.5 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_10px_18px_rgba(15,23,42,0.16),0_3px_0_rgba(51,65,85,0.2)] active:translate-y-[1px] active:shadow-[inset_0_2px_4px_rgba(15,23,42,0.14),0_4px_8px_rgba(15,23,42,0.12)]`;
 const ghostCursorHotspot = { x: 16, y: 16 };
 const leftToolColorMap = {
   source: {
@@ -885,6 +886,8 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   const [mounted, setMounted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isTopMenuDocked, setIsTopMenuDocked] = useState(true);
+  const [isLeftMenuDocked, setIsLeftMenuDocked] = useState(true);
   const [isRemovingBg, setIsRemovingBg] = useState(false);
   const [tutorialStep, setTutorialStep] = useState<number | null>(null);
   const [tutorialDisabled, setTutorialDisabled] = useState(false);
@@ -3734,7 +3737,6 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
       if (isAreaPaste && !fabricPasteArea) {
         return st;
       }
-
       const existingAreas = st.fabricPasteAreas && st.fabricPasteAreas.length > 0
         ? st.fabricPasteAreas
         : (st.fabricPasteArea ? [st.fabricPasteArea] : []);
@@ -4937,7 +4939,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
   if (!mounted) return null;
 
   return (
-    <div className="flex flex-col h-[100dvh] w-full overflow-hidden bg-gradient-to-br from-slate-50 via-white to-stone-50 text-slate-900 select-none" onClick={() => setContextMenu(null)}>
+    <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-[#fffdfa] text-slate-900 select-none" onClick={() => setContextMenu(null)}>
       {aiDraping.active && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-md">
            <div className="bg-white p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4">
@@ -5038,103 +5040,85 @@ const extractSelection = useCallback(async (asJpeg = false) => {
           </div>
         </div>
       )}
-      <header className="z-[100] flex min-h-16 flex-wrap items-center justify-between gap-2 border-b border-slate-300/80 bg-[radial-gradient(circle_at_top,rgba(255,244,200,0.9),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(237,242,247,0.97)_44%,rgba(203,213,225,0.98)_100%)] px-2 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(148,163,184,0.22),0_14px_32px_rgba(15,23,42,0.14)] lg:px-8 shrink-0">
-  <div className="flex items-center gap-2 sm:gap-4">
-    <div onClick={onBack} className="flex flex-col cursor-pointer active:scale-95 px-2">
-      <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-[0.2em] text-yellow-600 drop-shadow-sm">
-        DesignIt <span className="text-yellow-400">♦</span>
-      </span>
-      <span className="hidden xs:block text-[7px] font-medium uppercase text-yellow-500">Studio</span>
+      <header className={`z-[100] shrink-0 border-b border-[#ece5db] bg-[#fffdfa] px-3 py-3 transition-all duration-300 lg:px-6 ${isTopMenuDocked ? 'relative' : 'fixed inset-x-0 top-0 shadow-[0_18px_36px_rgba(15,23,42,0.12)]'}`}>
+  <div className="flex items-center gap-3 overflow-x-auto whitespace-nowrap">
+    <div className="flex shrink-0 items-center gap-3 sm:gap-5">
+      <div onClick={onBack} className="flex cursor-pointer flex-col px-1 active:scale-95">
+        <span className={`${hughIsLife.className} text-2xl leading-none tracking-tight text-slate-900 sm:text-3xl`}>
+          Design<span className="text-[#9b5a2e]">It</span>
+        </span>
+        <span className="hidden text-[10px] uppercase tracking-[0.18em] text-slate-400 xs:block">Browser Design Studio</span>
+      </div>
+      <div className="relative hidden md:block">
+        <button
+          type="button"
+          onClick={() => setShowTopPanelMenu((prev) => !prev)}
+          className="flex h-7 items-center justify-center rounded-sm border border-slate-400 bg-[#fdfcf9] px-3 text-[11px] font-semibold text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] transition-colors hover:bg-white"
+          aria-expanded={showTopPanelMenu}
+          aria-controls="studio-header-page-menu"
+        >
+          Menu
+        </button>
+        {showTopPanelMenu && (
+          <div
+            id="studio-header-page-menu"
+            className="absolute left-0 top-[calc(100%+0.5rem)] z-[260] flex w-[11rem] flex-col rounded-xl border border-slate-200 bg-white p-2 shadow-2xl"
+          >
+            <Link href="/" onClick={() => setShowTopPanelMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Home</Link>
+            <Link href="/blog" onClick={() => setShowTopPanelMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Blog</Link>
+            <Link href="/community" onClick={() => setShowTopPanelMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Community</Link>
+            <Link href="/about" onClick={() => setShowTopPanelMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">About</Link>
+            <Link href="/contact" onClick={() => setShowTopPanelMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Contact</Link>
+            <Link href="/privacy-policy" onClick={() => setShowTopPanelMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Privacy</Link>
+            <Link href="/terms-of-service" onClick={() => setShowTopPanelMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Terms</Link>
+          </div>
+        )}
+      </div>
     </div>
-    <div className="hidden md:flex items-center gap-3 lg:gap-4">
-      <Link href="/" className="text-black font-bold hover:text-amber-700 text-[9px] uppercase transition-colors">
-        Home
-      </Link>
-      <Link href="/blog" className="text-black font-bold hover:text-amber-700 text-[9px] uppercase transition-colors">
-        Blog
-      </Link>
-      <Link href="/community" className="text-black font-bold hover:text-amber-700 text-[9px] uppercase transition-colors">
-        Community
-      </Link>
-      <Link href="/about" className="text-black font-bold hover:text-amber-700 text-[9px] uppercase transition-colors">
-        About
-      </Link>
-      <Link href="/contact" className="text-black font-bold hover:text-amber-700 text-[9px] uppercase transition-colors">
-        Contact
-      </Link>
-      <Link href="/privacy-policy" className="text-black font-bold hover:text-amber-700 text-[9px] uppercase transition-colors">
-        Privacy
-      </Link>
-      <Link href="/terms-of-service" className="text-black font-bold hover:text-amber-700 text-[9px] uppercase transition-colors">
-        Terms
-      </Link>
+    <div className="ml-auto flex shrink-0 items-center gap-1 rounded-md border border-slate-300 bg-[#f4efe7] px-1 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
+      <button
+        type="button"
+        onClick={() => setIsTopMenuDocked((prev) => !prev)}
+        className="flex h-6 min-w-[3.25rem] items-center justify-center rounded-sm border border-slate-400 bg-[#fdfcf9] px-2 text-[10px] font-semibold text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] transition-colors hover:bg-white"
+        title={isTopMenuDocked ? 'Undock top menu' : 'Dock top menu'}
+      >
+        {isTopMenuDocked ? 'Float' : 'Dock'}
+      </button>
     </div>
-  </div>
-
-  <div className="flex max-w-full flex-1 items-center justify-end gap-2 sm:flex-none">
-    <button
+    <div className="flex shrink-0 items-center gap-1 transition-all duration-300">
+      <button
       id="tutorial-btn-header"
       type="button"
       onClick={openHelpVideos}
       aria-label="Open studio demo videos"
       title="Open studio demo videos"
-      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-sky-700 bg-sky-300 font-bold text-sky-950 transition-colors hover:bg-sky-400 active:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+      className="flex h-8 w-8 shrink-0 items-center justify-center border border-slate-300 bg-white text-xs font-black text-slate-700 transition-colors hover:bg-slate-50 active:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
     >
       ?
     </button>
-  </div>
 
-  {isHelpVideoOpen && (
-    <div className="fixed inset-0 z-[160] flex items-center justify-center bg-slate-950/80 p-6 backdrop-blur-sm">
-      <div className="relative w-full max-w-5xl rounded-[2rem] border border-slate-200 bg-white p-4 shadow-[0_30px_80px_rgba(15,23,42,0.35)]">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <p className="text-sm font-black uppercase tracking-[0.2em] text-yellow-600">Studio Demo</p>
-          <button
-            type="button"
-            onClick={closeHelpVideos}
-            className="rounded-full border border-slate-300 bg-slate-100 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:bg-slate-200"
-          >
-            Close
-          </button>
-        </div>
-        <video
-          className="w-full rounded-[1.25rem]"
-          controls
-          autoPlay
-          muted
-          playsInline
-          preload="metadata"
-          onEnded={playNextHelpVideo}
-          key={`studio-help-${helpVideoSources[activeHelpVideoIndex]}`}
-        >
-          <source src={helpVideoSources[activeHelpVideoIndex]} type="video/mp4" />
-        </video>
+      <div className={`${toolbarCanvasWrapperClass} shrink-0`}>
+      <span className="text-[9px] font-black uppercase text-black">Canvas BG:</span>
+      <select
+        value={workspaceBgColor}
+        onChange={(e) => setWorkspaceBgColor(e.target.value)}
+        className={toolbarSelectClass}
+        style={{ color: '#083344', fontWeight: 'bold', backgroundColor: '#67e8f9', minWidth: '0', width: '100%' }}
+      >
+        <option value="white" className="font-bold text-cyan-950 bg-cyan-200">White</option>
+        <option value="amber" className="font-bold text-cyan-950 bg-cyan-200">Amber</option>
+        <option value="slate" className="font-bold text-cyan-950 bg-cyan-200">Slate</option>
+        <option value="gray" className="font-bold text-cyan-950 bg-cyan-200">Gray</option>
+        <option value="blue" className="font-bold text-cyan-950 bg-cyan-200">Blue</option>
+      </select>
       </div>
-    </div>
-  )}
 
-  <div className={`${toolbarCanvasWrapperClass} order-3 md:order-none`}>
-    <span className="text-[9px] font-black uppercase text-black">Canvas BG:</span>
-    <select
-      value={workspaceBgColor}
-      onChange={(e) => setWorkspaceBgColor(e.target.value)}
-      className={toolbarSelectClass}
-      style={{ color: '#083344', fontWeight: 'bold', backgroundColor: '#67e8f9', minWidth: '0', width: '100%' }}
-    >
-      <option value="white" className="font-bold text-cyan-950 bg-cyan-200">White</option>
-      <option value="amber" className="font-bold text-cyan-950 bg-cyan-200">Amber</option>
-      <option value="slate" className="font-bold text-cyan-950 bg-cyan-200">Slate</option>
-      <option value="gray" className="font-bold text-cyan-950 bg-cyan-200">Gray</option>
-      <option value="blue" className="font-bold text-cyan-950 bg-cyan-200">Blue</option>
-    </select>
-  </div>
-
-  <div className="relative flex max-w-full flex-wrap items-center justify-end gap-1 sm:gap-2">
+      <div className="relative flex shrink-0 items-center justify-end gap-1">
     <div className="flex items-center overflow-hidden rounded-xl border-2 border-slate-300 bg-white shadow-sm">
       <select
         value={tryOnMode}
         onChange={(e) => setTryOnMode(e.target.value as "garment" | "necklace" | "earrings")}
-        className="rounded-xl bg-white px-2 py-2 text-[8px] font-black uppercase text-slate-700 outline-none sm:px-3 sm:text-[9px]"
+        className="rounded-xl bg-white px-2 py-1.5 text-[8px] font-black uppercase text-slate-700 outline-none sm:text-[9px]"
       >
         <option value="garment">Garment</option>
         <option value="necklace">Necklace</option>
@@ -5166,7 +5150,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
           setRenderedWorkspaceImg(null);
         }
       }}
-      className={`${toolbarButtonInteractiveClass} inline-flex min-w-0 max-w-[42vw] gap-1 px-2 text-[10px] sm:max-w-none sm:gap-2 sm:px-3 sm:text-[11px]`}
+      className={`${toolbarButtonInteractiveClass} inline-flex min-w-0 gap-1 px-2 text-[9px] sm:gap-1.5 sm:px-2.5 sm:text-[10px]`}
       style={showTryOn
         ? { backgroundColor: '#fde68a', borderColor: '#f59e0b', color: '#000000' }
         : { backgroundColor: '#fef08a', borderColor: '#eab308', color: '#000000' }}
@@ -5308,8 +5292,40 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     >
       Lock
     </button>
+    </div>
+    </div>
   </div>
+
+  {isHelpVideoOpen && (
+    <div className="fixed inset-0 z-[160] flex items-center justify-center bg-slate-950/80 p-6 backdrop-blur-sm">
+      <div className="relative w-full max-w-5xl rounded-[2rem] border border-slate-200 bg-white p-4 shadow-[0_30px_80px_rgba(15,23,42,0.35)]">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <p className="text-sm font-black uppercase tracking-[0.2em] text-yellow-600">Studio Demo</p>
+          <button
+            type="button"
+            onClick={closeHelpVideos}
+            className="rounded-full border border-slate-300 bg-slate-100 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:bg-slate-200"
+          >
+            Close
+          </button>
+        </div>
+        <video
+          className="w-full rounded-[1.25rem]"
+          controls
+          autoPlay
+          muted
+          playsInline
+          preload="metadata"
+          onEnded={playNextHelpVideo}
+          key={`studio-help-${helpVideoSources[activeHelpVideoIndex]}`}
+        >
+          <source src={helpVideoSources[activeHelpVideoIndex]} type="video/mp4" />
+        </video>
+      </div>
+    </div>
+  )}
 </header>
+{!isTopMenuDocked && <div className="h-[4.75rem] shrink-0" />}
       <div className="flex-1 flex overflow-hidden relative">
         <main className="flex-1 bg-[#F9F9FB] relative overflow-visible">
           {showWelcomePrompt && (
@@ -5756,11 +5772,20 @@ const extractSelection = useCallback(async (asJpeg = false) => {
   </div>
 </div>
 {showSourceWindow && (
-  <aside className={`fixed lg:static inset-0 lg:ml-20 lg:w-[320px] bg-slate-50 lg:border-r-2 border-slate-200 flex flex-col z-[200] lg:z-0 transition-transform shadow-lg ${isSidebarOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}`}>
+  <aside className={`border-slate-200 bg-[#fffdfa] shadow-[0_18px_36px_rgba(15,23,42,0.12)] transition-all duration-300 ${isLeftMenuDocked ? 'fixed inset-0 z-[200] flex flex-col lg:static lg:z-0 lg:ml-20 lg:w-[320px] lg:border-r lg:shadow-none' : 'fixed left-0 top-[5.25rem] z-[210] flex h-[calc(100dvh-5.25rem)] w-[320px] max-w-[88vw] flex-col border-r'} ${isSidebarOpen ? 'translate-x-0 translate-y-0 opacity-100' : `${isLeftMenuDocked ? 'translate-y-full lg:translate-y-0' : '-translate-x-full'} opacity-0 lg:opacity-100`}`}>
     <div className="p-6 shrink-0 bg-white border-b-2 border-slate-200">
       <div className="flex justify-between items-center mb-6">
-        <h3 className="text-xs font-black uppercase text-slate-800">Source <span className="text-yellow-500">✨</span></h3>
-        <button onClick={() => { setShowSourceWindow(false); setIsSidebarOpen(false); }} className="lg:hidden text-slate-500 hover:text-slate-800 text-xs font-bold transition-colors">CLOSE ✕</button>
+        <h3 className={`${whisperingSignature.className} text-2xl text-slate-800`}>Source <span className="text-yellow-500">✨</span></h3>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsLeftMenuDocked((prev) => !prev)}
+            className="flex h-6 min-w-[3.25rem] items-center justify-center rounded-sm border border-slate-400 bg-[#fdfcf9] px-2 text-[10px] font-semibold text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] transition-colors hover:bg-white"
+          >
+            {isLeftMenuDocked ? 'Float' : 'Dock'}
+          </button>
+          <button onClick={() => { setShowSourceWindow(false); setIsSidebarOpen(false); }} className="text-slate-500 hover:text-slate-800 text-xs font-bold transition-colors">CLOSE ✕</button>
+        </div>
       </div>
       <div className="grid grid-cols-2 gap-2 mb-3">
         <button 
@@ -5778,11 +5803,11 @@ const extractSelection = useCallback(async (asJpeg = false) => {
             setShowSourceWindow(false);
             setIsSidebarOpen(false);
           }}
-          className="col-span-2 bg-gradient-to-r from-yellow-500 to-amber-600 text-white py-2 rounded-md text-[9px] font-bold uppercase shadow-sm hover:shadow-md transition-all"
+          className={`${whisperingSignature.className} col-span-2 bg-gradient-to-r from-yellow-500 to-amber-600 py-2 text-base text-white shadow-sm transition-all hover:shadow-md`}
         >
           Add Original Image As-Is
         </button>
-        <button onClick={() => fileInputRef.current?.click()} className="bg-gradient-to-br from-slate-500 to-slate-600 text-white py-1.5 px-2 rounded-md text-[8px] font-bold uppercase shadow-sm hover:shadow-md transition-all">Upload<input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="image/*" className="hidden" /></button>
+        <button onClick={() => fileInputRef.current?.click()} className={`${whisperingSignature.className} bg-gradient-to-br from-slate-500 to-slate-600 px-2 py-1.5 text-base text-white shadow-sm transition-all hover:shadow-md`}>Upload<input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="image/*" className="hidden" /></button>
         <button id="add-btn" onClick={() => { 
           const ns = "http://www.w3.org/2000/svg"; 
           let pts: Dot[] = []; 
@@ -5805,14 +5830,14 @@ const extractSelection = useCallback(async (asJpeg = false) => {
             setShowSourceWindow(false);
             setIsSidebarOpen(false);
           }
-        }} disabled={candidates.filter(c => c.selected).length === 0} className="bg-gradient-to-br from-slate-800 to-slate-900 text-yellow-300 py-1.5 px-2 rounded-md text-[8px] font-bold uppercase shadow-sm hover:shadow-md transition-all disabled:opacity-30">Add to Canvas</button>
+        }} disabled={candidates.filter(c => c.selected).length === 0} className={`${whisperingSignature.className} bg-gradient-to-br from-slate-800 to-slate-900 px-2 py-1.5 text-base text-yellow-300 shadow-sm transition-all hover:shadow-md disabled:opacity-30`}>Add to Canvas</button>
       </div>
       {selectedImage && (
         <div className="mb-3">
           <button 
             onClick={handleRemoveBackground} 
             disabled={isRemovingBg}
-            className="w-full bg-gradient-to-r from-yellow-500 to-amber-600 text-white py-2 rounded-md text-[8px] font-black uppercase shadow-md hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+            className={`${whisperingSignature.className} flex w-full items-center justify-center gap-2 bg-gradient-to-r from-yellow-500 to-amber-600 py-2 text-base text-white shadow-md transition-all hover:shadow-lg disabled:opacity-50`}
           >
             {isRemovingBg ? (
               <>
