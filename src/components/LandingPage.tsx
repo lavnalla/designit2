@@ -203,14 +203,14 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-[#f9e8ee] px-4 py-6 font-sans text-slate-900 md:px-8 lg:px-10">
       <aside className="fixed left-2 top-28 z-40 hidden w-44 lg:block xl:left-[max(1rem,calc((100vw-1120px)/2-15.5rem))]">
-        <div className="border border-[#ead8dc] bg-[#fffaf2] p-5 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
-          <p className="mb-4 text-[11px] font-black uppercase tracking-[0.24em] text-[#8a644a]">Navigate</p>
-          <nav className={`${whisperingSignature.className} flex flex-col gap-3 text-lg text-slate-600`}>
-            <a href="#how-to" className="transition-colors hover:text-slate-900">How It Works</a>
-            <a href="#features" className="transition-colors hover:text-slate-900">Features</a>
-            <Link href="/blog" className="transition-colors hover:text-slate-900">Blog</Link>
-            <Link href="/community" className="transition-colors hover:text-slate-900">Community</Link>
-            <Link href="/about" className="transition-colors hover:text-slate-900">About</Link>
+        <div className="border border-[#6f5168] bg-[#8f6a88] p-5 text-white shadow-[0_18px_40px_rgba(79,38,79,0.22)]">
+          <p className="mb-4 text-[11px] font-black uppercase tracking-[0.24em] text-[#f3dec8]">Navigate</p>
+          <nav className={`${whisperingSignature.className} flex flex-col gap-3 text-lg text-[#f6e3e8]`}>
+            <a href="#how-to" className="transition-colors hover:text-white">How It Works</a>
+            <a href="#features" className="transition-colors hover:text-white">Features</a>
+            <Link href="/blog" className="transition-colors hover:text-white">Blog</Link>
+            <Link href="/community" className="transition-colors hover:text-white">Community</Link>
+            <Link href="/about" className="transition-colors hover:text-white">About</Link>
           </nav>
         </div>
       </aside>
@@ -244,8 +244,8 @@ export default function LandingPage() {
         </div>
       )}
 
-      <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-[1120px] flex-col overflow-hidden bg-[#dff6e8] shadow-[0_28px_80px_rgba(15,23,42,0.12)]">
-        <section className="bg-[#dff6e8] px-5 py-8 md:px-8 md:py-10">
+      <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-[1120px] flex-col overflow-hidden bg-[#f3dec8] shadow-[0_28px_80px_rgba(15,23,42,0.12)]">
+        <section className="bg-[#f3dec8] px-5 py-8 md:px-8 md:py-10">
           <div className="relative grid gap-5 lg:grid-cols-[1.05fr_0.95fr] lg:pb-8">
             <div className="max-w-xl lg:pb-24">
                 <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#8a644a]">Creative Technology For Fashion</p>
@@ -282,7 +282,7 @@ export default function LandingPage() {
               </div>
             </div>
 
-            <div className="border border-[#ead8dc] bg-[#fffaf2] p-3 shadow-[0_18px_36px_rgba(15,23,42,0.08)] lg:absolute lg:left-[2rem] lg:top-[20rem] lg:z-20 lg:w-[18rem] xl:left-[2.5rem] xl:top-[20.5rem] xl:w-[19rem]">
+            <div className="border border-[#e3ccc5] bg-[#fff4ea] p-3 shadow-[0_18px_36px_rgba(15,23,42,0.08)] lg:absolute lg:left-[2rem] lg:top-[20rem] lg:z-20 lg:w-[18rem] xl:left-[2.5rem] xl:top-[20.5rem] xl:w-[19rem]">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#8a644a]">Studio Demo</p>
                 <div className="flex items-center gap-2">
@@ -320,7 +320,7 @@ export default function LandingPage() {
         </section>
 
         <section className="px-5 py-8 md:px-8">
-          <div className="border-t border-[#ead8dc] pt-6">
+          <div className="border-t border-[#e3ccc5] pt-6">
             <div className="mb-6 flex items-center justify-between gap-4">
               <div>
                 <p className={`${whisperingSignature.className} text-3xl text-[#4f264f]`}>Features</p>
@@ -330,7 +330,7 @@ export default function LandingPage() {
                 See More
               </Link>
             </div>
-            <div id="features" className="divide-y divide-[#ead8dc] border-y border-[#ead8dc] bg-[#fffaf8]">
+            <div id="features" className="divide-y divide-[#e3ccc5] border-y border-[#e3ccc5] bg-[#fff4ea]">
               {FEATURES.map((feature, index) => (
                 <div key={feature.title} className="grid items-center gap-4 px-4 py-5 md:grid-cols-[5rem_1fr_auto] md:px-0">
                   <div className="text-center text-2xl font-light text-slate-500">{String(index + 1).padStart(2, "0")}</div>
@@ -349,7 +349,7 @@ export default function LandingPage() {
 
         {homepageAdSlot && (
           <section className="px-5 py-6 md:px-8" aria-label="Advertisement">
-            <div className="mx-auto max-w-5xl border border-[#ead8dc] bg-[#fff4ed] p-4">
+            <div className="mx-auto max-w-5xl border border-[#e3ccc5] bg-[#fff0e4] p-4">
               <p className="mb-3 text-center text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">
                 Sponsored
               </p>
@@ -373,15 +373,15 @@ export default function LandingPage() {
                   </Link>
                 </div>
               </div>
-              <div className="overflow-hidden bg-[#f7e6d2]">
+              <div className="overflow-hidden bg-[#fff0e4]">
                 <img src="/design3.png" alt="Creative community inspiration" className="h-full w-full object-cover" />
               </div>
             </div>
 
             <section className="py-12">
-              <div className="grid grid-cols-2 gap-0 border border-[#ead8dc] bg-[#fffaf8] text-center md:grid-cols-4">
+              <div className="grid grid-cols-2 gap-0 border border-[#e3ccc5] bg-[#fff4ea] text-center md:grid-cols-4">
                 {VALUE_POINTS.map((item) => (
-                  <div key={item.label} className="flex flex-col items-center gap-1 border border-[#ead8dc] p-6 sm:p-7">
+                  <div key={item.label} className="flex flex-col items-center gap-1 border border-[#e3ccc5] p-6 sm:p-7">
                     <span className="text-2xl font-black text-[#4f264f]">{item.stat}</span>
                     <span className="text-xs font-medium text-slate-500">{item.label}</span>
                   </div>
@@ -391,7 +391,7 @@ export default function LandingPage() {
 
             <CommunityShowcase />
 
-            <section className="border-t border-[#ead8dc] bg-[#fff4ed] px-5 py-16 sm:px-6 sm:py-20">
+            <section className="border-t border-[#e3ccc5] bg-[#fff0e4] px-5 py-16 sm:px-6 sm:py-20">
               <div className="mx-auto max-w-2xl">
                 <p className="mb-2 text-center text-xs font-bold uppercase tracking-widest text-[#8a644a]">FAQ</p>
                 <h2 className="mb-10 text-center text-3xl font-black text-slate-900">Frequently Asked Questions</h2>
@@ -422,7 +422,7 @@ export default function LandingPage() {
           </div>
 
           <section id="how-to" className="hidden lg:block">
-            <div className="sticky top-28 border border-[#ead8dc] bg-[#fffaf2] p-6 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
+            <div className="sticky top-28 border border-[#e3ccc5] bg-[#fff4ea] p-6 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
               <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[#8a644a]">How It Works</p>
               <h2 className={`${whisperingSignature.className} mb-8 text-3xl text-slate-900`}>
                 From sketch to try-on in 3 steps
@@ -430,7 +430,7 @@ export default function LandingPage() {
 
               <div className="grid grid-cols-1 gap-4">
                 {STEPS.map((step) => (
-                  <div key={step.num} className="border border-[#f0e6e8] bg-[#fff7f8] p-5">
+                  <div key={step.num} className="border border-[#ecd7d0] bg-[#fff7f0] p-5">
                     <span className="mb-3 block text-4xl font-black text-[#4f264f]">{step.num}</span>
                     <h3 className="mb-2 text-lg font-bold text-slate-800">{step.title}</h3>
                     <p className="text-sm leading-relaxed text-slate-500">{step.desc}</p>
@@ -448,14 +448,14 @@ export default function LandingPage() {
         </section>
 
         <section className="px-5 pb-10 lg:hidden md:px-8">
-          <div className="border border-[#ead8dc] bg-[#fffaf2] p-6 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
+          <div className="border border-[#e3ccc5] bg-[#fff4ea] p-6 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
             <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[#8a644a]">How It Works</p>
             <h2 className={`${whisperingSignature.className} mb-8 text-3xl text-slate-900`}>
               From sketch to try-on in 3 steps
             </h2>
             <div className="grid gap-4">
               {STEPS.map((step) => (
-                <div key={`mobile-${step.num}`} className="border border-[#f0e6e8] bg-[#fff7f8] p-5">
+                <div key={`mobile-${step.num}`} className="border border-[#ecd7d0] bg-[#fff7f0] p-5">
                   <span className="mb-3 block text-4xl font-black text-[#4f264f]">{step.num}</span>
                   <h3 className="mb-2 text-lg font-bold text-slate-800">{step.title}</h3>
                   <p className="text-sm leading-relaxed text-slate-500">{step.desc}</p>
@@ -481,7 +481,7 @@ export default function LandingPage() {
                   placeholder="Enter your email here"
                   className="min-w-0 flex-1 border border-white/30 bg-white/10 px-4 py-3 text-sm text-white placeholder:text-white/60 focus:outline-none"
                 />
-                <button className="bg-[#fffaf2] px-4 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-[#4f264f]">
+                <button className="bg-[#fff4ea] px-4 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-[#4f264f]">
                   Submit
                 </button>
               </div>
