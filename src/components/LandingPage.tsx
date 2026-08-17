@@ -156,10 +156,10 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-[#ece8e3] px-4 py-6 font-sans text-slate-900 md:px-8 lg:px-10">
-      <aside className="fixed left-2 top-28 z-40 hidden w-56 lg:block xl:left-[max(1rem,calc((100vw-1120px)/2-16.5rem))]">
+      <aside className="fixed left-2 top-28 z-40 hidden w-44 lg:block xl:left-[max(1rem,calc((100vw-1120px)/2-15.5rem))]">
         <div className="border border-[#e5dfd7] bg-[#fffdfa] p-5 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
           <p className="mb-4 text-[11px] font-black uppercase tracking-[0.24em] text-[#7c4a26]">Navigate</p>
-          <nav className={`${whisperingSignature.className} flex flex-col gap-3 text-xl text-slate-600`}>
+          <nav className={`${whisperingSignature.className} flex flex-col gap-3 text-lg text-slate-600`}>
             <a href="#how-to" className="transition-colors hover:text-slate-900">How It Works</a>
             <a href="#features" className="transition-colors hover:text-slate-900">Features</a>
             <Link href="/blog" className="transition-colors hover:text-slate-900">Blog</Link>
@@ -217,7 +217,6 @@ export default function LandingPage() {
                   {item.label}
                 </Link>
               ))}
-              <Link href="/blog" className="transition-colors hover:text-[#7d47b5]">Read Our Blog</Link>
             </div>
             <div className="hidden items-center gap-3 lg:flex">
               <button
@@ -354,7 +353,7 @@ export default function LandingPage() {
               </div>
             </div>
             <div className="relative flex min-h-[26rem] flex-col justify-end overflow-hidden bg-[linear-gradient(180deg,#f4b24f_0%,#f6cf73_24%,#2d6aa0_58%,#6f37b6_100%)] p-6 md:p-8">
-              <div className="absolute inset-x-6 top-8 border border-white/30 bg-[#7d47b5] p-8 text-white shadow-[0_18px_36px_rgba(15,23,42,0.18)] md:left-[-3rem] md:right-6 md:top-[7rem]">
+              <div className="absolute inset-x-6 top-8 border border-white/30 bg-[#7d47b5] p-8 text-white shadow-[0_18px_36px_rgba(15,23,42,0.18)] md:left-6 md:right-6 md:top-[7rem] lg:left-8 lg:right-8">
                 <p className="text-[10px] uppercase tracking-[0.18em] text-white/70">We Believe</p>
                 <p className="mt-4 text-2xl leading-10 md:text-[2rem]">
                   In a workflow where design ideas move from sketch to visualization with speed, clarity, and creative freedom.
