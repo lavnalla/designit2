@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import Image from 'next/image';
 import { getApprovedSubmissions } from '../../src/lib/storage';
-import CommunityBackButton from './CommunityBackButton';
 
 export const metadata: Metadata = {
   title: 'DesignIt Community Gallery',
@@ -25,14 +24,6 @@ export default async function CommunityPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <header className="bg-gradient-to-r from-yellow-600 via-yellow-500 to-yellow-600 border-b-4 border-[#B87333] sticky top-0 z-10 w-full px-6 py-4 flex items-center justify-between shadow-md">
-        <CommunityBackButton />
-        <h1 className="text-2xl font-black tracking-tight text-white drop-shadow-md">
-          COMMUNITY <span className="text-[#e2e8f0]">GALLERY</span>
-        </h1>
-        <div className="w-24" /> {/* Spacer */}
-      </header>
-
       <main className="max-w-7xl mx-auto px-6 py-12">
         {designs.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-slate-400">

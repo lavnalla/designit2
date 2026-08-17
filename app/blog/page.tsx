@@ -15,8 +15,8 @@ export default async function BlogPage() {
   const posts = await getBlogPosts();
 
   return (
-    <main className="min-h-screen bg-[#ece8e3] px-4 py-6 text-slate-900 md:px-8 lg:px-10">
-      <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-[1120px] flex-col overflow-hidden bg-[#fffdfa] shadow-[0_28px_80px_rgba(15,23,42,0.12)]">
+    <main className="min-h-screen bg-[#F03E7C] px-4 py-6 text-slate-900 md:px-8 lg:px-10">
+      <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-[1120px] flex-col overflow-hidden bg-[#98F527] shadow-[0_28px_80px_rgba(15,23,42,0.12)]">
         <section className="border-b border-[#ece5db] bg-[#fffdfa] px-5 py-12 md:px-8 md:py-14">
           <div className="mx-auto max-w-5xl">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#ece5db] pb-5">

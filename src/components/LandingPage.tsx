@@ -104,7 +104,6 @@ export default function LandingPage() {
   const router = useRouter();
   const demoVideoSources = ["/demo_video1.mp4", "/demo_video2.mp4"];
   const [openFaq, setOpenFaq] = useState<number | null>(null);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isDemoPlaying, setIsDemoPlaying] = useState(true);
   const [isDemoPopupOpen, setIsDemoPopupOpen] = useState(false);
   const [activeDemoVideoIndex, setActiveDemoVideoIndex] = useState(0);
@@ -202,7 +201,7 @@ export default function LandingPage() {
   const activeHeroCard = HERO_CARDS[activeHeroCardIndex];
 
   return (
-    <div className="min-h-screen bg-[#ece8e3] px-4 py-6 font-sans text-slate-900 md:px-8 lg:px-10">
+    <div className="min-h-screen bg-[#F03E7C] px-4 py-6 font-sans text-slate-900 md:px-8 lg:px-10">
       <aside className="fixed left-2 top-28 z-40 hidden w-44 lg:block xl:left-[max(1rem,calc((100vw-1120px)/2-15.5rem))]">
         <div className="border border-[#e5dfd7] bg-[#fffdfa] p-5 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
           <p className="mb-4 text-[11px] font-black uppercase tracking-[0.24em] text-[#7c4a26]">Navigate</p>
@@ -245,103 +244,8 @@ export default function LandingPage() {
         </div>
       )}
 
-      <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-[1120px] flex-col overflow-hidden bg-[#fffdfa] shadow-[0_28px_80px_rgba(15,23,42,0.12)]">
-        <nav className="border-b border-[#ece5db] bg-[#fffdfa] px-5 py-5 md:px-8">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex min-w-0 items-center gap-3">
-              <div>
-                <span className={`${hughIsLife.className} block truncate text-2xl leading-none tracking-tight text-slate-900 sm:text-3xl`}>
-                  Design<span className="text-[#9b5a2e]">It</span>
-                </span>
-                <span className="text-[10px] uppercase tracking-[0.18em] text-slate-400">Browser Design Studio</span>
-              </div>
-            </div>
-            <div className="hidden items-center gap-6 text-[11px] font-medium text-slate-600 lg:flex">
-              <a href="#how-to" className="transition-colors hover:text-slate-900">Programs & Services</a>
-              {FEATURED_LINKS.map((item) => (
-                <Link key={item.href} href={item.href} className="transition-colors hover:text-slate-900">
-                  {item.label}
-                </Link>
-              ))}
-            </div>
-            <div className="hidden items-center gap-3 lg:flex">
-              <button
-                type="button"
-                onClick={toggleDemoVideoPlayback}
-                className="border border-slate-300 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:bg-slate-50"
-              >
-                {isDemoPlaying ? "Stop" : "Play"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsDemoPopupOpen(true)}
-                className="bg-black px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-800"
-              >
-                Max Demo
-              </button>
-              <Link
-                href="/studio"
-                className="bg-black px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-800"
-              >
-                Make a Design
-              </Link>
-            </div>
-            <button
-              type="button"
-              aria-expanded={mobileMenuOpen}
-              aria-controls="mobile-nav-menu"
-              aria-label="Toggle navigation menu"
-              onClick={() => setMobileMenuOpen((open) => !open)}
-              className="inline-flex items-center justify-center border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 lg:hidden"
-            >
-              Menu
-            </button>
-          </div>
-          {mobileMenuOpen && (
-            <div id="mobile-nav-menu" className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-4 lg:hidden">
-              <a href="#how-to" onClick={() => setMobileMenuOpen(false)} className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900">How It Works</a>
-              <a href="#features" onClick={() => setMobileMenuOpen(false)} className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900">Features</a>
-              {FEATURED_LINKS.map((item) => (
-                <Link
-                  key={`mobile-${item.href}`}
-                  href={item.href}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900"
-                >
-                  {item.label}
-                </Link>
-              ))}
-              <div className="mt-2 flex gap-3">
-                <button
-                  type="button"
-                  onClick={toggleDemoVideoPlayback}
-                  className="flex-1 border border-slate-300 bg-white px-3 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700"
-                >
-                  {isDemoPlaying ? "Stop" : "Play"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsDemoPopupOpen(true);
-                    setMobileMenuOpen(false);
-                  }}
-                  className="flex-1 bg-black px-3 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white"
-                >
-                  Max Demo
-                </button>
-              </div>
-              <Link
-                href="/studio"
-                onClick={() => setMobileMenuOpen(false)}
-                className="mt-2 inline-flex items-center justify-center bg-black px-4 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white"
-              >
-                Make a Design
-              </Link>
-            </div>
-          )}
-        </nav>
-
-        <section className="px-5 py-8 md:px-8 md:py-10">
+      <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-[1120px] flex-col overflow-hidden bg-[#98F527] shadow-[0_28px_80px_rgba(15,23,42,0.12)]">
+        <section className="bg-#EEF8F1 px-5 py-8 md:px-8 md:py-10">
           <div className="relative grid gap-5 lg:grid-cols-[1.05fr_0.95fr] lg:pb-8">
             <div className="max-w-xl lg:pb-24">
                 <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#7c4a26]">Creative Technology For Fashion</p>

@@ -5913,7 +5913,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
   </div>
 </div>
 {showSourceWindow && (
-  <aside className={`border-slate-200 bg-[#fffdfa] shadow-[0_18px_36px_rgba(15,23,42,0.12)] transition-all duration-300 fixed inset-x-0 top-0 bottom-0 z-[200] flex min-h-0 max-h-screen flex-col overflow-y-auto lg:static lg:z-0 lg:ml-20 lg:h-[100dvh] lg:max-h-[100dvh] lg:w-[320px] lg:border-r lg:shadow-none ${isSidebarOpen ? 'translate-x-0 translate-y-0 opacity-100' : 'translate-y-full opacity-0 lg:translate-y-0 lg:opacity-100'}`}>
+  <aside className={`border-slate-200 bg-[#F03E7C] shadow-[0_18px_36px_rgba(15,23,42,0.12)] transition-all duration-300 fixed inset-x-0 top-0 bottom-0 z-[200] flex min-h-0 max-h-screen flex-col overflow-y-auto lg:static lg:z-0 lg:ml-20 lg:h-[100dvh] lg:max-h-[100dvh] lg:w-[320px] lg:border-r lg:shadow-none ${isSidebarOpen ? 'translate-x-0 translate-y-0 opacity-100' : 'translate-y-full opacity-0 lg:translate-y-0 lg:opacity-100'}`}>
     <div className="p-3 shrink-0 bg-white border-b border-slate-200">
       <div className="flex justify-between items-center mb-3">
         <h3 className={`${whisperingSignature.className} text-xl text-slate-800`}>Source <span className="text-yellow-500">✨</span></h3>

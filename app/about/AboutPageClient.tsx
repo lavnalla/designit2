@@ -6,31 +6,8 @@ import { hughIsLife, whisperingSignature } from "../../src/lib/fonts";
 
 export default function AboutPageClient() {
   return (
-    <div className="min-h-screen bg-[#ece8e3] px-4 py-6 text-slate-900 md:px-8 lg:px-10">
-      <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-[1120px] flex-col overflow-hidden bg-[#fffdfa] shadow-[0_28px_80px_rgba(15,23,42,0.12)]">
-        <nav className="border-b border-[#ece5db] bg-[#fffdfa] px-5 py-5 md:px-8">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex min-w-0 items-center gap-3">
-              <div>
-                <span className={`${hughIsLife.className} block truncate text-2xl leading-none tracking-tight text-slate-900 sm:text-3xl`}>
-                  Design<span className="text-[#9b5a2e]">It</span>
-                </span>
-                <span className="text-[10px] uppercase tracking-[0.18em] text-slate-400">Browser Design Studio</span>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-6 text-[11px] font-medium text-slate-600">
-              <Link href="/" className="transition-colors hover:text-slate-900">Home</Link>
-              <Link href="/blog" className="transition-colors hover:text-slate-900">Blog</Link>
-              <Link href="/community" className="transition-colors hover:text-slate-900">Community</Link>
-              <Link href="/about" className="text-slate-900">About</Link>
-              <Link href="/contact" className="transition-colors hover:text-slate-900">Contact</Link>
-              <Link href="/studio" className="bg-black px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-800">
-                Make a Design
-              </Link>
-            </div>
-          </div>
-        </nav>
-
+    <div className="min-h-screen bg-[#F03E7C] px-4 py-6 text-slate-900 md:px-8 lg:px-10">
+      <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-[1120px] flex-col overflow-hidden bg-[#98F527] shadow-[0_28px_80px_rgba(15,23,42,0.12)]">
         <main className="flex-1 px-5 py-12 md:px-8 md:py-14">
           <div className="mx-auto max-w-5xl">
             <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#7c4a26]">About DesignIt</p>
