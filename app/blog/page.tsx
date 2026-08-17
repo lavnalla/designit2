@@ -15,21 +15,43 @@ export default async function BlogPage() {
   const posts = await getBlogPosts();
 
   return (
-    <main className="min-h-screen bg-[linear-gradient(180deg,#fffdf5_0%,#ffffff_18%,#f8fafc_100%)] text-slate-900">
-      <section className="border-b border-amber-100 bg-white/90 px-6 py-16 backdrop-blur-sm">
-        <div className="mx-auto max-w-5xl">
-          <p className="text-xs font-black uppercase tracking-[0.28em] text-amber-600">For</p>
-          <h1 className={`${whisperingSignature.className} mt-4 max-w-4xl text-5xl tracking-tight text-slate-900 sm:text-6xl`}>Fashion Design, AR Try-On & Vector Editing Guides</h1>
-          <p className="mt-5 max-w-4xl text-base leading-8 text-slate-600">Welcome to the iDesignIts editorial space-a practical resource for anyone exploring fashion, jewelry, digital design, and online shopping.</p>
-          <p className="mt-4 max-w-4xl text-base leading-8 text-slate-600">Whether you are an online shopper trying to visualize a piece before buying, a designer developing a new idea, or a creative experimenting with digital artwork, our guides are designed to make the process easier to understand and more accessible.</p>
-          <div className="mt-8 flex flex-wrap gap-3 text-sm font-bold">
-            <Link href="/studio" className="rounded-full border border-amber-300 bg-amber-100 px-5 py-3 text-amber-900 transition-colors hover:bg-amber-200">Open Design Studio</Link>
-            <Link href="/about" className="rounded-full border border-slate-200 bg-white px-5 py-3 text-slate-700 transition-colors hover:bg-slate-50">About DesignIt</Link>
+    <main className="min-h-screen bg-[#ece8e3] px-4 py-6 text-slate-900 md:px-8 lg:px-10">
+      <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-[1120px] flex-col overflow-hidden bg-[#fffdfa] shadow-[0_28px_80px_rgba(15,23,42,0.12)]">
+        <section className="border-b border-[#ece5db] bg-[#fffdfa] px-5 py-12 md:px-8 md:py-14">
+          <div className="mx-auto max-w-5xl">
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#ece5db] pb-5">
+              <div className="flex min-w-0 items-center gap-3">
+                <img src="/logo.png" alt="DesignIt" className="h-8 w-auto" />
+                <div>
+                  <span className="block truncate text-lg font-black tracking-tight text-slate-900 sm:text-xl">
+                    Design<span className="text-[#9b5a2e]">It</span>
+                  </span>
+                  <span className="text-[10px] uppercase tracking-[0.18em] text-slate-400">Browser Design Studio</span>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-6 text-[11px] font-medium text-slate-600">
+                <Link href="/" className="transition-colors hover:text-slate-900">Home</Link>
+                <Link href="/blog" className="text-slate-900">Blog</Link>
+                <Link href="/community" className="transition-colors hover:text-slate-900">Community</Link>
+                <Link href="/about" className="transition-colors hover:text-slate-900">About</Link>
+                <Link href="/contact" className="transition-colors hover:text-slate-900">Contact</Link>
+                <Link href="/studio" className="bg-black px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-800">
+                  Make a Design
+                </Link>
+              </div>
+            </div>
+            <p className="mt-10 text-[11px] font-black uppercase tracking-[0.22em] text-[#7c4a26]">Editorial Space</p>
+            <h1 className={`${whisperingSignature.className} mt-4 max-w-4xl text-5xl tracking-tight text-slate-900 sm:text-6xl`}>Fashion Design, AR Try-On & Vector Editing Guides</h1>
+            <p className="mt-5 max-w-4xl text-base leading-8 text-slate-600">Welcome to the iDesignIts editorial space-a practical resource for anyone exploring fashion, jewelry, digital design, and online shopping.</p>
+            <p className="mt-4 max-w-4xl text-base leading-8 text-slate-600">Whether you are an online shopper trying to visualize a piece before buying, a designer developing a new idea, or a creative experimenting with digital artwork, our guides are designed to make the process easier to understand and more accessible.</p>
+            <div className="mt-8 flex flex-wrap gap-3 text-sm font-bold">
+              <Link href="/studio" className="bg-black px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-800">Open Design Studio</Link>
+              <Link href="/about" className="border border-slate-200 bg-white px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:bg-slate-50">About DesignIt</Link>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section className="mx-auto max-w-5xl px-6 py-14 text-slate-700">
+        <section className="mx-auto max-w-5xl px-5 py-14 text-slate-700 md:px-8">
         <div className="space-y-12">
           <section>
             <h2 className={`${whisperingSignature.className} text-4xl tracking-tight text-slate-900`}>Fashion Design Guides</h2>
@@ -123,22 +145,23 @@ export default async function BlogPage() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-5xl px-6 py-14">
+      <section className="mx-auto max-w-5xl px-5 py-14 md:px-8">
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
           {posts.map((post) => (
-            <article key={post.id} className="rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
-              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-amber-600">{post.category}</p>
+            <article key={post.id} className="border border-slate-200 bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-[#7c4a26]">{post.category}</p>
               <h2 className={`${whisperingSignature.className} mt-3 text-3xl leading-tight text-slate-900`}>{post.title}</h2>
               <p className="mt-3 text-sm leading-7 text-slate-600">{post.excerpt}</p>
               <div className="mt-5 flex items-center justify-between text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
                 <span>{post.readTime}</span>
                 <span>{new Date(post.publishedAt).toLocaleDateString()}</span>
               </div>
-              <Link href={`/blog/${post.slug}`} className="mt-6 inline-flex text-sm font-black text-cyan-700 transition-colors hover:text-cyan-900">Read article</Link>
+              <Link href={`/blog/${post.slug}`} className="mt-6 inline-flex text-sm font-black text-[#7d47b5] transition-colors hover:text-[#5f2f8c]">Read article</Link>
             </article>
           ))}
         </div>
       </section>
+      </div>
     </main>
   );
 }

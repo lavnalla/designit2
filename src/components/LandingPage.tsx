@@ -296,9 +296,8 @@ export default function LandingPage() {
         </nav>
 
         <section className="px-5 py-8 md:px-8 md:py-10">
-          <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
-            <div className="grid gap-5 lg:grid-cols-[1fr_1.25fr] lg:grid-rows-[auto_1fr]">
-              <div className="lg:col-span-2 max-w-xl">
+          <div className="relative grid gap-5 lg:grid-cols-[1.05fr_0.95fr] lg:pb-8">
+            <div className="max-w-xl lg:pb-24">
                 <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#7c4a26]">Creative Technology For Fashion</p>
                 <h1 className={`${hughIsLife.className} mt-3 text-4xl leading-tight tracking-tight text-[#6b2fa2] md:text-5xl xl:text-6xl`}>
                   Design Clothes & Jewelry.
@@ -318,40 +317,6 @@ export default function LandingPage() {
                   </Link>
                 </div>
               </div>
-              <div className="lg:col-span-2 overflow-hidden border border-[#e3d7c6] bg-white p-4 shadow-[0_18px_36px_rgba(15,23,42,0.08)]">
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#7c4a26]">Studio Demo</p>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={toggleDemoVideoPlayback}
-                      className="border border-slate-300 bg-white px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:bg-slate-50"
-                    >
-                      {isDemoPlaying ? "Stop" : "Play"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsDemoPopupOpen(true)}
-                      className="bg-black px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-800"
-                    >
-                      Max
-                    </button>
-                  </div>
-                </div>
-                <video
-                  ref={demoVideoRef}
-                  className="h-[20rem] w-full border border-[#eadfce] object-cover md:h-[24rem]"
-                  autoPlay
-                  muted
-                  playsInline
-                  preload="metadata"
-                  onEnded={playNextDemoVideo}
-                  key={demoVideoSources[activeDemoVideoIndex]}
-                >
-                  <source src={demoVideoSources[activeDemoVideoIndex]} type="video/mp4" />
-                </video>
-              </div>
-            </div>
             <div className="relative flex min-h-[26rem] flex-col justify-end overflow-hidden bg-[linear-gradient(180deg,#f4b24f_0%,#f6cf73_24%,#2d6aa0_58%,#6f37b6_100%)] p-6 md:p-8">
               <div className="absolute inset-x-6 top-8 border border-white/30 bg-[#7d47b5] p-8 text-white shadow-[0_18px_36px_rgba(15,23,42,0.18)] md:left-6 md:right-6 md:top-[7rem] lg:left-8 lg:right-8">
                 <p className="text-[10px] uppercase tracking-[0.18em] text-white/70">We Believe</p>
@@ -362,6 +327,40 @@ export default function LandingPage() {
                   About The Studio
                 </Link>
               </div>
+            </div>
+
+            <div className="border border-[#e3d7c6] bg-white p-3 shadow-[0_18px_36px_rgba(15,23,42,0.08)] lg:absolute lg:left-[2rem] lg:top-[20rem] lg:z-20 lg:w-[18rem] xl:left-[2.5rem] xl:top-[20.5rem] xl:w-[19rem]">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#7c4a26]">Studio Demo</p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={toggleDemoVideoPlayback}
+                    className="border border-slate-300 bg-white px-2 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:bg-slate-50"
+                  >
+                    {isDemoPlaying ? "Stop" : "Play"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsDemoPopupOpen(true)}
+                    className="bg-black px-2 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-800"
+                  >
+                    Max
+                  </button>
+                </div>
+              </div>
+              <video
+                ref={demoVideoRef}
+                className="aspect-video w-full border border-[#eadfce] bg-white object-contain"
+                autoPlay
+                muted
+                playsInline
+                preload="metadata"
+                onEnded={playNextDemoVideo}
+                key={demoVideoSources[activeDemoVideoIndex]}
+              >
+                <source src={demoVideoSources[activeDemoVideoIndex]} type="video/mp4" />
+              </video>
             </div>
           </div>
 
