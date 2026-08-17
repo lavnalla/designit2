@@ -72,7 +72,7 @@ export default function ContactPageClient() {
             Contact
           </Link>
           <Link href="/" className="bg-white text-yellow-700 border border-yellow-200 px-8 py-3 rounded-full font-bold text-sm uppercase transition-all hover:scale-105 shadow-md hover:shadow-lg hover:bg-yellow-50">
-            Launch Studio
+            Launch Design Studio
           </Link>
         </div>
       </nav>
@@ -247,7 +247,7 @@ export default function ContactPageClient() {
               Click the yellow "?" button in the studio to start learning!
             </p>
             <Link href="/" className="inline-block bg-white text-amber-600 px-10 py-4 rounded-full font-black uppercase text-sm shadow-xl hover:scale-105 transition-transform">
-              Launch Studio →
+              Launch Design Studio →
             </Link>
           </div>
         </div>

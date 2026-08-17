@@ -13,6 +13,15 @@ interface Design {
   status: 'pending' | 'approved' | 'rejected';
 }
 
+interface BlogPostDraft {
+  title: string;
+  slug: string;
+  excerpt: string;
+  category: string;
+  readTime: string;
+  content: string;
+}
+
 export default function AdminPage() {
   const [submissions, setSubmissions] = useState<Design[]>([]);
   const [loading, setLoading] = useState(false);
@@ -23,6 +32,16 @@ export default function AdminPage() {
   const [password, setPassword] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [authError, setAuthError] = useState(false);
+  const [blogDraft, setBlogDraft] = useState<BlogPostDraft>({
+    title: '',
+    slug: '',
+    excerpt: '',
+    category: '',
+    readTime: '',
+    content: '',
+  });
+  const [blogSaving, setBlogSaving] = useState(false);
+  const [blogMessage, setBlogMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -88,6 +107,56 @@ export default function AdminPage() {
     }
   };
 
+  const handleBlogPublish = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBlogSaving(true);
+    setBlogMessage(null);
+
+    try {
+      const paragraphs = blogDraft.content
+        .split(/\n\s*\n/)
+        .map(part => part.trim())
+        .filter(Boolean);
+
+      const res = await fetch('/api/blog', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-password': password,
+        },
+        body: JSON.stringify({
+          slug: blogDraft.slug,
+          title: blogDraft.title,
+          excerpt: blogDraft.excerpt,
+          category: blogDraft.category,
+          readTime: blogDraft.readTime,
+          published: true,
+          content: paragraphs,
+        }),
+      });
+
+      if (!res.ok) {
+        setBlogMessage('Unable to publish article.');
+        return;
+      }
+
+      setBlogDraft({
+        title: '',
+        slug: '',
+        excerpt: '',
+        category: '',
+        readTime: '',
+        content: '',
+      });
+      setBlogMessage('Article published.');
+    } catch (err) {
+      console.error(err);
+      setBlogMessage('Unable to publish article.');
+    } finally {
+      setBlogSaving(false);
+    }
+  };
+
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -142,7 +211,33 @@ export default function AdminPage() {
         <div className="w-20" />
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-10">
+      <main className="max-w-6xl mx-auto px-6 py-10 space-y-10">
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.2em] text-cyan-700">Admin-only publishing</p>
+              <h2 className="text-2xl font-bold text-slate-900">Create blog articles for everyone to read</h2>
+              <p className="text-sm leading-6 text-slate-500">This keeps article publishing restricted to admins while making the blog publicly readable for AdSense-friendly content growth.</p>
+            </div>
+            <Link href="/blog" className="text-sm font-bold text-cyan-700 hover:text-cyan-900">View blog</Link>
+          </div>
+
+          <form onSubmit={handleBlogPublish} className="mt-6 grid gap-4 md:grid-cols-2">
+            <input value={blogDraft.title} onChange={(e) => setBlogDraft(prev => ({ ...prev, title: e.target.value }))} placeholder="Article title" className="rounded-lg border border-slate-300 px-4 py-3 outline-none focus:border-cyan-500" />
+            <input value={blogDraft.slug} onChange={(e) => setBlogDraft(prev => ({ ...prev, slug: e.target.value }))} placeholder="article-slug" className="rounded-lg border border-slate-300 px-4 py-3 outline-none focus:border-cyan-500" />
+            <input value={blogDraft.category} onChange={(e) => setBlogDraft(prev => ({ ...prev, category: e.target.value }))} placeholder="Category" className="rounded-lg border border-slate-300 px-4 py-3 outline-none focus:border-cyan-500" />
+            <input value={blogDraft.readTime} onChange={(e) => setBlogDraft(prev => ({ ...prev, readTime: e.target.value }))} placeholder="8 min read" className="rounded-lg border border-slate-300 px-4 py-3 outline-none focus:border-cyan-500" />
+            <input value={blogDraft.excerpt} onChange={(e) => setBlogDraft(prev => ({ ...prev, excerpt: e.target.value }))} placeholder="Short summary" className="rounded-lg border border-slate-300 px-4 py-3 outline-none focus:border-cyan-500 md:col-span-2" />
+            <textarea value={blogDraft.content} onChange={(e) => setBlogDraft(prev => ({ ...prev, content: e.target.value }))} placeholder="Write paragraphs separated by blank lines" rows={10} className="rounded-lg border border-slate-300 px-4 py-3 outline-none focus:border-cyan-500 md:col-span-2" />
+            <div className="md:col-span-2 flex items-center justify-between gap-4">
+              <span className={`text-sm ${blogMessage === 'Article published.' ? 'text-green-600' : 'text-slate-500'}`}>{blogMessage ?? 'Only admins can publish. Visitors can only read.'}</span>
+              <button type="submit" disabled={blogSaving} className="rounded-full bg-cyan-700 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-cyan-800 disabled:opacity-60">
+                {blogSaving ? 'Publishing...' : 'Publish article'}
+              </button>
+            </div>
+          </form>
+        </section>
+
         <div className="space-y-6">
           {submissions.length === 0 && (
             <p className="text-center text-slate-400 py-12 text-lg">No submissions found.</p>
