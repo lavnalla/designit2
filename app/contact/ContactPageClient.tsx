@@ -55,35 +55,12 @@ export default function ContactPageClient() {
   };
 
   return (
-    <div className="min-h-screen bg-[#ece8e3] px-4 py-6 text-slate-900 md:px-8 lg:px-10">
-      <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-[1120px] flex-col overflow-hidden bg-[#fffdfa] shadow-[0_28px_80px_rgba(15,23,42,0.12)]">
-        <nav className="border-b border-[#ece5db] bg-[#fffdfa] px-5 py-5 md:px-8">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex min-w-0 items-center gap-3">
-              <div>
-                <span className={`${hughIsLife.className} block truncate text-2xl leading-none tracking-tight text-slate-900 sm:text-3xl`}>
-                  Design<span className="text-[#9b5a2e]">It</span>
-                </span>
-                <span className="text-[10px] uppercase tracking-[0.18em] text-slate-400">Browser Design Studio</span>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-6 text-[11px] font-medium text-slate-600">
-              <Link href="/" className="transition-colors hover:text-slate-900">Home</Link>
-              <Link href="/blog" className="transition-colors hover:text-slate-900">Blog</Link>
-              <Link href="/community" className="transition-colors hover:text-slate-900">Community</Link>
-              <Link href="/about" className="transition-colors hover:text-slate-900">About</Link>
-              <Link href="/contact" className="text-slate-900">Contact</Link>
-              <Link href="/studio" className="bg-black px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-800">
-                Make a Design
-              </Link>
-            </div>
-          </div>
-        </nav>
-
+    <div className="min-h-screen bg-[#f9e8ee] px-4 py-6 text-slate-900 md:px-8 lg:px-10">
+      <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-[1120px] flex-col overflow-hidden bg-[#dff6e8] shadow-[0_28px_80px_rgba(15,23,42,0.12)]">
         <main className="flex-1 px-5 py-12 md:px-8 md:py-14">
           <div className="mx-auto max-w-5xl">
-            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#7c4a26]">Contact DesignIt</p>
-            <h1 className={`${hughIsLife.className} mt-3 text-5xl leading-tight tracking-tight text-[#6b2fa2] md:text-6xl`}>
+            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#8a644a]">Contact DesignIt</p>
+            <h1 className={`${hughIsLife.className} mt-3 text-5xl leading-tight tracking-tight text-[#4f264f] md:text-6xl`}>
               Get In Touch
             </h1>
             <p className="mt-5 max-w-3xl text-base leading-8 text-slate-600">
@@ -97,14 +74,14 @@ export default function ContactPageClient() {
               <div className="space-y-6">
                 <div>
                   <h3 className="mb-2 text-lg font-black text-slate-900">Email</h3>
-                  <a href="mailto:info@idesignits.com" className="text-slate-600 hover:text-amber-600 transition-colors font-medium">
+                  <a href="mailto:info@idesignits.com" className="font-medium text-slate-600 transition-colors hover:text-[#8f6a88]">
                     info@idesignits.com
                   </a>
                 </div>
 
                 <div>
                   <h3 className="mb-2 text-lg font-black text-slate-900">Support</h3>
-                  <a href="mailto:support@idesignits.com" className="text-slate-600 hover:text-amber-600 transition-colors font-medium">
+                  <a href="mailto:support@idesignits.com" className="font-medium text-slate-600 transition-colors hover:text-[#8f6a88]">
                     support@idesignits.com
                   </a>
                 </div>
@@ -120,20 +97,20 @@ export default function ContactPageClient() {
                 <div>
                   <h3 className="mb-2 text-lg font-black text-slate-900">Social Media</h3>
                   <div className="flex gap-4">
-                    <a href="#" className="text-slate-600 hover:text-amber-600 transition-colors font-medium">
+                    <a href="#" className="font-medium text-slate-600 transition-colors hover:text-[#8f6a88]">
                       Twitter
                     </a>
-                    <a href="#" className="text-slate-600 hover:text-amber-600 transition-colors font-medium">
+                    <a href="#" className="font-medium text-slate-600 transition-colors hover:text-[#8f6a88]">
                       Instagram
                     </a>
-                    <a href="#" className="text-slate-600 hover:text-amber-600 transition-colors font-medium">
+                    <a href="#" className="font-medium text-slate-600 transition-colors hover:text-[#8f6a88]">
                       LinkedIn
                     </a>
                   </div>
                 </div>
               </div>
 
-              <div className="mt-12 border border-[#e5dfd7] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+              <div className="mt-12 border border-[#ead8dc] bg-[#fffaf8] p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
                 <h3 className="mb-3 text-lg font-black text-slate-900">Office Hours</h3>
                 <p className="text-slate-600 mb-2">Monday - Friday: 9:00 AM - 6:00 PM EST</p>
                 <p className="text-slate-600">Saturday - Sunday: Closed</p>
@@ -178,7 +155,7 @@ export default function ContactPageClient() {
                       value={formData.name}
                       onChange={handleChange}
                       required
-                      className="w-full border border-slate-200 px-4 py-3 focus:border-[#7d47b5] focus:outline-none"
+                      className="w-full border border-[#ead8dc] bg-white px-4 py-3 focus:border-[#8f6a88] focus:outline-none"
                       placeholder="Your name"
                     />
                   </div>
@@ -194,7 +171,7 @@ export default function ContactPageClient() {
                       value={formData.email}
                       onChange={handleChange}
                       required
-                      className="w-full border border-slate-200 px-4 py-3 focus:border-[#7d47b5] focus:outline-none"
+                      className="w-full border border-[#ead8dc] bg-white px-4 py-3 focus:border-[#8f6a88] focus:outline-none"
                       placeholder="your@email.com"
                     />
                   </div>
@@ -210,7 +187,7 @@ export default function ContactPageClient() {
                       value={formData.subject}
                       onChange={handleChange}
                       required
-                      className="w-full border border-slate-200 px-4 py-3 focus:border-[#7d47b5] focus:outline-none"
+                      className="w-full border border-[#ead8dc] bg-white px-4 py-3 focus:border-[#8f6a88] focus:outline-none"
                       placeholder="What&apos;s this about?"
                     />
                   </div>
@@ -226,7 +203,7 @@ export default function ContactPageClient() {
                       onChange={handleChange}
                       required
                       rows={6}
-                      className="w-full resize-none border border-slate-200 px-4 py-3 focus:border-[#7d47b5] focus:outline-none"
+                      className="w-full resize-none border border-[#ead8dc] bg-white px-4 py-3 focus:border-[#8f6a88] focus:outline-none"
                       placeholder="Tell us more..."
                     />
                   </div>
@@ -247,13 +224,13 @@ export default function ContactPageClient() {
             </div>
           </div>
 
-          <div className="mt-16 bg-[#7d47b5] p-8 text-center text-white shadow-[0_18px_36px_rgba(15,23,42,0.12)] md:p-12">
+          <div className="mt-16 bg-[#8f6a88] p-8 text-center text-white shadow-[0_18px_36px_rgba(15,23,42,0.12)] md:p-12">
             <h2 className="mb-4 text-3xl font-black">Need Help Getting Started?</h2>
             <p className="text-white mb-6 max-w-2xl mx-auto font-medium">
               Check out our interactive tutorial that guides you through all the features of DesignIt.
               Click the yellow "?" button in the studio to start learning!
             </p>
-            <Link href="/studio" className="inline-block bg-white px-10 py-4 text-sm font-black uppercase text-[#7d47b5] transition-transform hover:scale-105">
+            <Link href="/studio" className="inline-block bg-[#fffaf2] px-10 py-4 text-sm font-black uppercase text-[#4f264f] transition-transform hover:scale-105">
               Launch Design Studio
             </Link>
           </div>

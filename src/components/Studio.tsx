@@ -194,6 +194,25 @@ interface Stroke {
 }
 type HistoryItem = { shapes: DistortableShape[]; strokes: Stroke[] };
 type Candidate = { id: string; d: string; area: number; selected: boolean; };
+type DetectedSourceArticle = {
+  id: string;
+  label: string;
+  classId: number;
+  imageDataUrl: string;
+  bounds: { x: number; y: number; width: number; height: number };
+  pixelCount: number;
+  rawLabel?: string;
+  color?: { r: number; g: number; b: number; a: number };
+};
+
+const toArticlePreviewColor = (color?: { r: number; g: number; b: number; a: number }) => {
+  if (!color) return 'rgba(241, 245, 249, 1)';
+  const red = Math.round(color.r * 255);
+  const green = Math.round(color.g * 255);
+  const blue = Math.round(color.b * 255);
+  const alpha = Math.max(0.18, Math.min(color.a, 0.35));
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+};
 
 interface MannequinMeasurements {
   bust: number;
@@ -879,8 +898,6 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   const [mounted, setMounted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isTopMenuDocked, setIsTopMenuDocked] = useState(true);
-  const [isLeftMenuDocked, setIsLeftMenuDocked] = useState(true);
   const [isRemovingBg, setIsRemovingBg] = useState(false);
   const [tutorialStep, setTutorialStep] = useState<number | null>(null);
   const [tutorialDisabled, setTutorialDisabled] = useState(false);
@@ -921,6 +938,9 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   
   const [templates, setTemplates] = useState<string[]>([]);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [originalSourceImage, setOriginalSourceImage] = useState<string | null>(null);
+  const [detectedSourceArticles, setDetectedSourceArticles] = useState<DetectedSourceArticle[]>([]);
+  const [isDetectingSourceArticles, setIsDetectingSourceArticles] = useState(false);
   const [svgContent, setSvgContent] = useState<string | null>(null);
   const [imgDims, setImgDims] = useState({ width: 0, height: 0 });
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -986,6 +1006,61 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   const ERASE_RADIUS = 15;
   const hasImportedSource = Boolean(selectedImage && !templates.includes(selectedImage));
 
+  const handleDetectSourceArticles = async () => {
+    const detectImage = originalSourceImage ?? selectedImage;
+
+    if (!detectImage) {
+      alert('Article detection currently works on uploaded or captured source images.');
+      return;
+    }
+
+    try {
+      setIsDetectingSourceArticles(true);
+      let imageDataUrl = detectImage;
+
+      if (!imageDataUrl.startsWith('data:image/')) {
+        const response = await fetch(imageDataUrl);
+        if (!response.ok) {
+          throw new Error('Could not load the source image for article detection.');
+        }
+
+        const imageBlob = await response.blob();
+        imageDataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            if (typeof reader.result === 'string') {
+              resolve(reader.result);
+              return;
+            }
+
+            reject(new Error('Could not read the source image for article detection.'));
+          };
+          reader.onerror = () => reject(new Error('Could not read the source image for article detection.'));
+          reader.readAsDataURL(imageBlob);
+        });
+      }
+
+      const response = await fetch('/api/source-detect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageDataUrl }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.details || data?.error || 'Detection failed');
+      }
+
+      setDetectedSourceArticles(Array.isArray(data?.articles) ? data.articles : []);
+    } catch (error) {
+      console.error('Source article detection failed', error);
+      const message = error instanceof Error ? error.message : 'Could not detect articles in this image.';
+      alert(message);
+    } finally {
+      setIsDetectingSourceArticles(false);
+    }
+  };
+
   useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
@@ -994,6 +1069,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
     if (!pendingSourceImage) return;
 
     setSelectedImage(pendingSourceImage);
+    setOriginalSourceImage(pendingSourceImage);
     setShowSourceWindow(true);
     setIsSidebarOpen(true);
     window.sessionStorage.removeItem('designit-studio-source-image');
@@ -4001,7 +4077,11 @@ const extractSelection = useCallback(async (asJpeg = false) => {
         if (Array.isArray(data) && data.length > 0) {
           setTemplates(data);
           setSelectedImage((prev) => prev ?? data[0]);
+          return;
         }
+
+        setTemplates(["/template1.png"]);
+        setSelectedImage((prev) => prev ?? "/template1.png");
       } catch (e) {
         setTemplates(["/template1.png"]);
         setSelectedImage((prev) => prev ?? "/template1.png");
@@ -4013,7 +4093,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
   const runTrace = useCallback(() => {
     if (!selectedImage) return;
 
-    const isRemoteSource = /^https?:\/\//i.test(selectedImage);
+    const isRemoteSource = /^https?:\/\//i.test(selectedImage) || selectedImage.startsWith('/api/source-image');
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
@@ -4037,7 +4117,6 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       setSvgContent(null);
       setCandidates([]);
       setSourceDots([]);
-      alert('This image host blocks source tracing in the browser. The image is still loaded into Source, and you can upload it locally for tracing tools.');
     };
     img.src = selectedImage;
   }, [selectedImage]);
@@ -4105,6 +4184,8 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       const reader = new FileReader();
       reader.onload = (event) => {
         const url = event.target?.result as string;
+        setDetectedSourceArticles([]);
+        setOriginalSourceImage(url);
         setSelectedImage(url);
       };
       reader.readAsDataURL(file);
@@ -4165,6 +4246,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       reader.onloadend = () => {
         const base64data = reader.result as string;
         setSelectedImage(base64data);
+        setDetectedSourceArticles([]);
         setIsRemovingBg(false);
         console.log("Background removal complete!");
       };
@@ -5067,20 +5149,20 @@ const extractSelection = useCallback(async (asJpeg = false) => {
           </div>
         </div>
       )}
-      <header className={`z-[100] shrink-0 border-b border-[#ece5db] bg-[#fffdfa] px-3 py-3 transition-all duration-300 lg:px-6 ${isTopMenuDocked ? 'relative' : 'fixed inset-x-0 top-0 shadow-[0_18px_36px_rgba(15,23,42,0.12)]'}`}>
+      <header className="relative z-[100] shrink-0 border-b border-[#6f5168] bg-[#8f6a88] px-3 py-3 text-white shadow-[0_14px_30px_rgba(79,38,79,0.22)] transition-all duration-300 lg:px-6">
   <div className="flex items-center gap-3 overflow-x-auto whitespace-nowrap">
     <div className="flex shrink-0 items-center gap-3 sm:gap-5">
       <div onClick={onBack} className="flex cursor-pointer flex-col px-1 active:scale-95">
-        <span className={`${hughIsLife.className} text-2xl leading-none tracking-tight text-slate-900 sm:text-3xl`}>
-          Design<span className="text-[#9b5a2e]">It</span>
+          <span className={`${hughIsLife.className} text-2xl leading-none tracking-tight text-black sm:text-3xl`}>
+            Design<span className="text-black">It</span>
         </span>
-        <span className="hidden text-[10px] uppercase tracking-[0.18em] text-slate-400 xs:block">Browser Design Studio</span>
+        <span className="hidden text-[10px] uppercase tracking-[0.18em] text-[#f6e3e8] xs:block">Browser Design Studio</span>
       </div>
       <div className="relative hidden md:block">
         <button
           type="button"
           onClick={() => setShowHeaderMenu((prev) => !prev)}
-          className="flex h-7 items-center justify-center rounded-sm border border-slate-400 bg-[#fdfcf9] px-3 text-[11px] font-semibold text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] transition-colors hover:bg-white"
+          className="flex h-7 items-center justify-center rounded-sm border border-white/30 bg-[#7c5b77] px-3 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] transition-colors hover:bg-[#6f5168]"
           aria-expanded={showHeaderMenu}
           aria-controls="studio-header-page-menu"
         >
@@ -5089,15 +5171,15 @@ const extractSelection = useCallback(async (asJpeg = false) => {
         {showHeaderMenu && (
           <div
             id="studio-header-page-menu"
-            className="absolute left-0 top-[calc(100%+0.5rem)] z-[260] flex w-[11rem] flex-col rounded-xl border border-slate-200 bg-white p-2 shadow-2xl"
+            className="absolute left-0 top-[calc(100%+0.5rem)] z-[260] flex w-[11rem] flex-col rounded-xl border border-[#6f5168] bg-[#8f6a88] p-2 shadow-2xl"
           >
-            <Link href="/" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Home</Link>
-            <Link href="/blog" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Blog</Link>
-            <Link href="/community" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Community</Link>
-            <Link href="/about" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">About</Link>
-            <Link href="/contact" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Contact</Link>
-            <Link href="/privacy-policy" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Privacy</Link>
-            <Link href="/terms-of-service" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900">Terms</Link>
+            <Link href="/" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-[#f6e3e8] transition-colors hover:bg-[#7c5b77] hover:text-white">Home</Link>
+            <Link href="/blog" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-[#f6e3e8] transition-colors hover:bg-[#7c5b77] hover:text-white">Blog</Link>
+            <Link href="/community" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-[#f6e3e8] transition-colors hover:bg-[#7c5b77] hover:text-white">Community</Link>
+            <Link href="/about" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-[#f6e3e8] transition-colors hover:bg-[#7c5b77] hover:text-white">About</Link>
+            <Link href="/contact" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-[#f6e3e8] transition-colors hover:bg-[#7c5b77] hover:text-white">Contact</Link>
+            <Link href="/privacy-policy" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-[#f6e3e8] transition-colors hover:bg-[#7c5b77] hover:text-white">Privacy</Link>
+            <Link href="/terms-of-service" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-[#f6e3e8] transition-colors hover:bg-[#7c5b77] hover:text-white">Terms</Link>
           </div>
         )}
       </div>
@@ -5108,16 +5190,6 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     >
       Add Extension
     </a>
-    <div className="ml-auto flex shrink-0 items-center gap-1 rounded-md border border-slate-300 bg-[#f4efe7] px-1 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
-      <button
-        type="button"
-        onClick={() => setIsTopMenuDocked((prev) => !prev)}
-        className="flex h-6 min-w-[3.25rem] items-center justify-center rounded-sm border border-slate-400 bg-[#fdfcf9] px-2 text-[10px] font-semibold text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] transition-colors hover:bg-white"
-        title={isTopMenuDocked ? 'Undock top menu' : 'Dock top menu'}
-      >
-        {isTopMenuDocked ? 'Float' : 'Dock'}
-      </button>
-    </div>
     <div className="flex shrink-0 items-center gap-1 transition-all duration-300">
       <button
       id="tutorial-btn-header"
@@ -5366,7 +5438,6 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     </div>
   )}
 </header>
-{!isTopMenuDocked && <div className="h-[4.75rem] shrink-0" />}
       <div className="flex-1 flex overflow-hidden relative">
         <main className="flex-1 bg-[#F9F9FB] relative overflow-visible">
           {showWelcomePrompt && (
@@ -5842,22 +5913,15 @@ const extractSelection = useCallback(async (asJpeg = false) => {
   </div>
 </div>
 {showSourceWindow && (
-  <aside className={`border-slate-200 bg-[#fffdfa] shadow-[0_18px_36px_rgba(15,23,42,0.12)] transition-all duration-300 ${isLeftMenuDocked ? 'fixed inset-0 z-[200] flex flex-col lg:static lg:z-0 lg:ml-20 lg:w-[320px] lg:border-r lg:shadow-none' : 'fixed left-0 top-[5.25rem] z-[210] flex h-[calc(100dvh-5.25rem)] w-[320px] max-w-[88vw] flex-col border-r'} ${isSidebarOpen ? 'translate-x-0 translate-y-0 opacity-100' : `${isLeftMenuDocked ? 'translate-y-full lg:translate-y-0' : '-translate-x-full'} opacity-0 lg:opacity-100`}`}>
-    <div className="p-6 shrink-0 bg-white border-b-2 border-slate-200">
-      <div className="flex justify-between items-center mb-6">
-        <h3 className={`${whisperingSignature.className} text-2xl text-slate-800`}>Source <span className="text-yellow-500">✨</span></h3>
+  <aside className={`border-slate-200 bg-[#F03E7C] shadow-[0_18px_36px_rgba(15,23,42,0.12)] transition-all duration-300 fixed inset-x-0 top-0 bottom-0 z-[200] flex min-h-0 max-h-screen flex-col overflow-y-auto lg:static lg:z-0 lg:ml-20 lg:h-[100dvh] lg:max-h-[100dvh] lg:w-[320px] lg:border-r lg:shadow-none ${isSidebarOpen ? 'translate-x-0 translate-y-0 opacity-100' : 'translate-y-full opacity-0 lg:translate-y-0 lg:opacity-100'}`}>
+    <div className="p-3 shrink-0 bg-white border-b border-slate-200">
+      <div className="flex justify-between items-center mb-3">
+        <h3 className={`${whisperingSignature.className} text-xl text-slate-800`}>Source <span className="text-yellow-500">✨</span></h3>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setIsLeftMenuDocked((prev) => !prev)}
-            className="flex h-6 min-w-[3.25rem] items-center justify-center rounded-sm border border-slate-400 bg-[#fdfcf9] px-2 text-[10px] font-semibold text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] transition-colors hover:bg-white"
-          >
-            {isLeftMenuDocked ? 'Float' : 'Dock'}
-          </button>
           <button onClick={() => { setShowSourceWindow(false); setIsSidebarOpen(false); }} className="text-slate-500 hover:text-slate-800 text-xs font-bold transition-colors">CLOSE ✕</button>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-2 mb-3">
+      <div className="grid grid-cols-2 gap-2 mb-2">
         <button 
           onClick={() => {
             saveForUndo();
@@ -5873,11 +5937,11 @@ const extractSelection = useCallback(async (asJpeg = false) => {
             setShowSourceWindow(false);
             setIsSidebarOpen(false);
           }}
-          className={`${whisperingSignature.className} col-span-2 bg-gradient-to-r from-yellow-500 to-amber-600 py-2 text-base text-white shadow-sm transition-all hover:shadow-md`}
+          className={`${whisperingSignature.className} col-span-2 bg-gradient-to-r from-yellow-500 to-amber-600 py-1.5 text-sm text-white shadow-sm transition-all hover:shadow-md`}
         >
           Add Original Image As-Is
         </button>
-        <button onClick={() => fileInputRef.current?.click()} className={`${whisperingSignature.className} bg-gradient-to-br from-slate-500 to-slate-600 px-2 py-1.5 text-base text-white shadow-sm transition-all hover:shadow-md`}>Upload<input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="image/*" className="hidden" /></button>
+        <button onClick={() => fileInputRef.current?.click()} className={`${whisperingSignature.className} bg-gradient-to-br from-slate-500 to-slate-600 px-2 py-1 text-sm text-white shadow-sm transition-all hover:shadow-md`}>Upload<input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="image/*" className="hidden" /></button>
         <button id="add-btn" onClick={() => { 
           const ns = "http://www.w3.org/2000/svg"; 
           let pts: Dot[] = []; 
@@ -5900,10 +5964,10 @@ const extractSelection = useCallback(async (asJpeg = false) => {
             setShowSourceWindow(false);
             setIsSidebarOpen(false);
           }
-        }} disabled={candidates.filter(c => c.selected).length === 0} className={`${whisperingSignature.className} bg-gradient-to-br from-slate-800 to-slate-900 px-2 py-1.5 text-base text-yellow-300 shadow-sm transition-all hover:shadow-md disabled:opacity-30`}>Add to Canvas</button>
+        }} disabled={candidates.filter(c => c.selected).length === 0} className={`${whisperingSignature.className} bg-gradient-to-br from-slate-800 to-slate-900 px-2 py-1 text-sm text-yellow-300 shadow-sm transition-all hover:shadow-md disabled:opacity-30`}>Add to Canvas</button>
       </div>
       {selectedImage && (
-        <div className="mb-3">
+        <div className="mb-2">
           {hasImportedSource && templates.length > 0 && (
             <div className="mb-3 rounded-2xl border border-sky-200 bg-sky-50/80 px-3 py-2 text-xs font-semibold text-sky-900">
               Imported image is active in Source.
@@ -5919,7 +5983,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
           <button 
             onClick={handleRemoveBackground} 
             disabled={isRemovingBg}
-            className={`${whisperingSignature.className} flex w-full items-center justify-center gap-2 bg-gradient-to-r from-yellow-500 to-amber-600 py-2 text-base text-white shadow-md transition-all hover:shadow-lg disabled:opacity-50`}
+            className={`${whisperingSignature.className} flex w-full items-center justify-center gap-2 bg-gradient-to-r from-yellow-500 to-amber-600 py-1.5 text-sm text-white shadow-md transition-all hover:shadow-lg disabled:opacity-50`}
           >
             {isRemovingBg ? (
               <>
@@ -5929,11 +5993,19 @@ const extractSelection = useCallback(async (asJpeg = false) => {
               <>✨ AI Remove BG</>
             )}
           </button>
+          <button
+            type="button"
+            onClick={handleDetectSourceArticles}
+            disabled={isDetectingSourceArticles || !selectedImage}
+            className={`${whisperingSignature.className} mt-2 flex w-full items-center justify-center gap-2 bg-gradient-to-r from-sky-500 to-cyan-600 py-1.5 text-sm text-white shadow-md transition-all hover:shadow-lg disabled:opacity-50`}
+          >
+            {isDetectingSourceArticles ? 'Detecting Articles...' : 'Detect Articles'}
+          </button>
         </div>
       )}
     </div>
-    <div className="flex-1 p-4 overflow-hidden flex flex-col gap-4">
-      <div className="flex-1 bg-slate-100 rounded-3xl overflow-hidden flex items-center justify-center relative border-2 border-slate-200 shadow-inner">
+    <div className="flex-1 min-h-0 p-3 flex flex-col gap-3 overflow-y-auto">
+      <div className="shrink-0 bg-slate-100 rounded-3xl overflow-hidden flex items-center justify-center relative border-2 border-slate-200 shadow-inner min-h-[11rem]">
         <svg 
           id="trace-svg-container" 
           viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} 
@@ -5946,6 +6018,30 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       </div>
       
       <div className="shrink-0">
+        {detectedSourceArticles.length > 0 && (
+          <div className="mb-4">
+            <h4 className="mb-2 text-[10px] font-black uppercase text-slate-500">Detected Articles</h4>
+            <div className="flex items-center gap-2 overflow-x-auto pb-2">
+              {detectedSourceArticles.map((article) => (
+                <button
+                  key={article.id}
+                  type="button"
+                  onClick={() => setSelectedImage(article.imageDataUrl)}
+                  className="flex min-w-[7rem] shrink-0 flex-col items-center gap-2 rounded-2xl border border-slate-200 bg-white p-2 text-left shadow-sm transition hover:border-sky-300 hover:shadow-md"
+                >
+                  <div
+                    className="flex h-20 w-full items-center justify-center rounded-xl border border-white/70"
+                    style={{ backgroundColor: toArticlePreviewColor(article.color) }}
+                  >
+                    <img src={article.imageDataUrl} alt={article.label} className="h-full w-full rounded-xl object-contain" />
+                  </div>
+                  <span className="text-[11px] font-black uppercase text-slate-700">{article.label}</span>
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] text-slate-500">Click a detected article to load it as the active Source image.</p>
+          </div>
+        )}
         <h4 className="text-[10px] font-black uppercase text-slate-500 mb-2">Templates</h4>
         <div className="flex items-center gap-2 overflow-x-auto pb-2">
           {templates.map((u, i) => (
@@ -5954,7 +6050,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
               id={`template-${i}`}
               src={u}
               onClick={() => setSelectedImage(u)}
-              className={`h-12 w-12 shrink-0 rounded-xl object-contain cursor-pointer border-2 transition-all ${selectedImage === u ? 'border-yellow-500 scale-105 bg-white' : 'border-transparent opacity-70 hover:opacity-100 bg-white/50'}`}
+              className={`h-10 w-10 shrink-0 rounded-lg object-contain cursor-pointer border-2 transition-all ${selectedImage === u ? 'border-yellow-500 scale-105 bg-white' : 'border-transparent opacity-70 hover:opacity-100 bg-white/50'}`}
             />
           ))}
         </div>

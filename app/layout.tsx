@@ -24,6 +24,7 @@ import React from "react";
 import Script from "next/script";
 import CookieConsent from "../src/components/CookieConsent";
 import Footer from "../src/components/Footer";
+import SiteHeader from "../src/components/SiteHeader";
 
 const siteUrl = "https://idesignits.com";
 const siteName = "DesignIt";
@@ -153,7 +154,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport = {
-  themeColor: "#800000",
+  themeColor: "#fffaf2",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -249,6 +250,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js" strategy="beforeInteractive" />
         <Script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix@2.2.0/dist/body-pix.min.js" strategy="beforeInteractive" />
         
+        <SiteHeader />
         {children}
         <Footer />
         <CookieConsent />

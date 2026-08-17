@@ -104,7 +104,6 @@ export default function LandingPage() {
   const router = useRouter();
   const demoVideoSources = ["/demo_video1.mp4", "/demo_video2.mp4"];
   const [openFaq, setOpenFaq] = useState<number | null>(null);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isDemoPlaying, setIsDemoPlaying] = useState(true);
   const [isDemoPopupOpen, setIsDemoPopupOpen] = useState(false);
   const [activeDemoVideoIndex, setActiveDemoVideoIndex] = useState(0);
@@ -202,16 +201,16 @@ export default function LandingPage() {
   const activeHeroCard = HERO_CARDS[activeHeroCardIndex];
 
   return (
-    <div className="min-h-screen bg-[#ece8e3] px-4 py-6 font-sans text-slate-900 md:px-8 lg:px-10">
+    <div className="min-h-screen bg-[#f9e8ee] px-4 py-6 font-sans text-slate-900 md:px-8 lg:px-10">
       <aside className="fixed left-2 top-28 z-40 hidden w-44 lg:block xl:left-[max(1rem,calc((100vw-1120px)/2-15.5rem))]">
-        <div className="border border-[#e5dfd7] bg-[#fffdfa] p-5 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
-          <p className="mb-4 text-[11px] font-black uppercase tracking-[0.24em] text-[#7c4a26]">Navigate</p>
-          <nav className={`${whisperingSignature.className} flex flex-col gap-3 text-lg text-slate-600`}>
-            <a href="#how-to" className="transition-colors hover:text-slate-900">How It Works</a>
-            <a href="#features" className="transition-colors hover:text-slate-900">Features</a>
-            <Link href="/blog" className="transition-colors hover:text-slate-900">Blog</Link>
-            <Link href="/community" className="transition-colors hover:text-slate-900">Community</Link>
-            <Link href="/about" className="transition-colors hover:text-slate-900">About</Link>
+        <div className="border border-[#6f5168] bg-[#8f6a88] p-5 text-white shadow-[0_18px_40px_rgba(79,38,79,0.22)]">
+          <p className="mb-4 text-[11px] font-black uppercase tracking-[0.24em] text-[#f3dec8]">Navigate</p>
+          <nav className={`${whisperingSignature.className} flex flex-col gap-3 text-lg text-[#f6e3e8]`}>
+            <a href="#how-to" className="transition-colors hover:text-white">How It Works</a>
+            <a href="#features" className="transition-colors hover:text-white">Features</a>
+            <Link href="/blog" className="transition-colors hover:text-white">Blog</Link>
+            <Link href="/community" className="transition-colors hover:text-white">Community</Link>
+            <Link href="/about" className="transition-colors hover:text-white">About</Link>
           </nav>
         </div>
       </aside>
@@ -220,7 +219,7 @@ export default function LandingPage() {
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/80 p-6 backdrop-blur-sm">
           <div className="relative w-full max-w-5xl border border-slate-200 bg-white p-4 shadow-[0_30px_80px_rgba(15,23,42,0.35)]">
             <div className="mb-3 flex items-center justify-between gap-3">
-              <p className="text-sm font-black uppercase tracking-[0.2em] text-[#7c4a26]">Studio Demo</p>
+              <p className="text-sm font-black uppercase tracking-[0.2em] text-[#8a644a]">Studio Demo</p>
               <button
                 type="button"
                 onClick={() => setIsDemoPopupOpen(false)}
@@ -245,123 +244,27 @@ export default function LandingPage() {
         </div>
       )}
 
-      <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-[1120px] flex-col overflow-hidden bg-[#fffdfa] shadow-[0_28px_80px_rgba(15,23,42,0.12)]">
-        <nav className="border-b border-[#ece5db] bg-[#fffdfa] px-5 py-5 md:px-8">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex min-w-0 items-center gap-3">
-              <div>
-                <span className={`${hughIsLife.className} block truncate text-2xl leading-none tracking-tight text-slate-900 sm:text-3xl`}>
-                  Design<span className="text-[#9b5a2e]">It</span>
-                </span>
-                <span className="text-[10px] uppercase tracking-[0.18em] text-slate-400">Browser Design Studio</span>
-              </div>
-            </div>
-            <div className="hidden items-center gap-6 text-[11px] font-medium text-slate-600 lg:flex">
-              <a href="#how-to" className="transition-colors hover:text-slate-900">Programs & Services</a>
-              {FEATURED_LINKS.map((item) => (
-                <Link key={item.href} href={item.href} className="transition-colors hover:text-slate-900">
-                  {item.label}
-                </Link>
-              ))}
-            </div>
-            <div className="hidden items-center gap-3 lg:flex">
-              <button
-                type="button"
-                onClick={toggleDemoVideoPlayback}
-                className="border border-slate-300 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:bg-slate-50"
-              >
-                {isDemoPlaying ? "Stop" : "Play"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsDemoPopupOpen(true)}
-                className="bg-black px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-800"
-              >
-                Max Demo
-              </button>
-              <Link
-                href="/studio"
-                className="bg-black px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-800"
-              >
-                Make a Design
-              </Link>
-            </div>
-            <button
-              type="button"
-              aria-expanded={mobileMenuOpen}
-              aria-controls="mobile-nav-menu"
-              aria-label="Toggle navigation menu"
-              onClick={() => setMobileMenuOpen((open) => !open)}
-              className="inline-flex items-center justify-center border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 lg:hidden"
-            >
-              Menu
-            </button>
-          </div>
-          {mobileMenuOpen && (
-            <div id="mobile-nav-menu" className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-4 lg:hidden">
-              <a href="#how-to" onClick={() => setMobileMenuOpen(false)} className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900">How It Works</a>
-              <a href="#features" onClick={() => setMobileMenuOpen(false)} className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900">Features</a>
-              {FEATURED_LINKS.map((item) => (
-                <Link
-                  key={`mobile-${item.href}`}
-                  href={item.href}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900"
-                >
-                  {item.label}
-                </Link>
-              ))}
-              <div className="mt-2 flex gap-3">
-                <button
-                  type="button"
-                  onClick={toggleDemoVideoPlayback}
-                  className="flex-1 border border-slate-300 bg-white px-3 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700"
-                >
-                  {isDemoPlaying ? "Stop" : "Play"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsDemoPopupOpen(true);
-                    setMobileMenuOpen(false);
-                  }}
-                  className="flex-1 bg-black px-3 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white"
-                >
-                  Max Demo
-                </button>
-              </div>
-              <Link
-                href="/studio"
-                onClick={() => setMobileMenuOpen(false)}
-                className="mt-2 inline-flex items-center justify-center bg-black px-4 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white"
-              >
-                Make a Design
-              </Link>
-            </div>
-          )}
-        </nav>
-
-        <section className="px-5 py-8 md:px-8 md:py-10">
+      <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-[1120px] flex-col overflow-hidden bg-[#f3dec8] shadow-[0_28px_80px_rgba(15,23,42,0.12)]">
+        <section className="bg-[#f3dec8] px-5 py-8 md:px-8 md:py-10">
           <div className="relative grid gap-5 lg:grid-cols-[1.05fr_0.95fr] lg:pb-8">
             <div className="max-w-xl lg:pb-24">
-                <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#7c4a26]">Creative Technology For Fashion</p>
-                <h1 className={`${hughIsLife.className} mt-3 text-4xl leading-tight tracking-tight text-[#6b2fa2] md:text-5xl xl:text-6xl`}>
+                <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#8a644a]">Creative Technology For Fashion</p>
+                <h1 className={`${hughIsLife.className} mt-3 text-4xl leading-tight tracking-tight text-[#4f264f] md:text-5xl xl:text-6xl`}>
                   Design Clothes & Jewelry.
                 </h1>
-                <h2 className={`${hughIsLife.className} mt-2 text-2xl leading-tight tracking-tight text-[#6b2fa2] md:text-3xl xl:text-4xl`}>
+                <h2 className={`${hughIsLife.className} mt-2 text-2xl leading-tight tracking-tight text-[#4f264f] md:text-3xl xl:text-4xl`}>
                   Create, Customize & Try Them On.
                 </h2>
                 <p className="mt-4 max-w-md text-base leading-7 text-slate-600">
                   Move from blank canvas to polished visual in a browser studio built for garments, jewelry, swatches, and AR previews.
                 </p>
                 <div className="mt-6 flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    onClick={() => openStudioWithSourceAsset("/template1.png")}
+                  <Link
+                    href="/studio"
                     className="bg-black px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white"
                   >
                     Try On In Studio
-                  </button>
+                  </Link>
                   <Link href="/blog" className="border border-slate-300 px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700">
                     Read The Guides
                   </Link>
@@ -379,9 +282,9 @@ export default function LandingPage() {
               </div>
             </div>
 
-            <div className="border border-[#e3d7c6] bg-white p-3 shadow-[0_18px_36px_rgba(15,23,42,0.08)] lg:absolute lg:left-[2rem] lg:top-[20rem] lg:z-20 lg:w-[18rem] xl:left-[2.5rem] xl:top-[20.5rem] xl:w-[19rem]">
+            <div className="border border-[#e3ccc5] bg-[#fff4ea] p-3 shadow-[0_18px_36px_rgba(15,23,42,0.08)] lg:absolute lg:left-[2rem] lg:top-[20rem] lg:z-20 lg:w-[18rem] xl:left-[2.5rem] xl:top-[20.5rem] xl:w-[19rem]">
               <div className="mb-2 flex items-center justify-between gap-2">
-                <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#7c4a26]">Studio Demo</p>
+                <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#8a644a]">Studio Demo</p>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -401,7 +304,7 @@ export default function LandingPage() {
               </div>
               <video
                 ref={demoVideoRef}
-                className="aspect-video w-full border border-[#eadfce] bg-white object-contain"
+                className="aspect-video w-full border border-[#ead8dc] bg-white object-contain"
                 autoPlay
                 muted
                 playsInline
@@ -417,17 +320,17 @@ export default function LandingPage() {
         </section>
 
         <section className="px-5 py-8 md:px-8">
-          <div className="border-t border-[#ece5db] pt-6">
+          <div className="border-t border-[#e3ccc5] pt-6">
             <div className="mb-6 flex items-center justify-between gap-4">
               <div>
-                <p className={`${whisperingSignature.className} text-3xl text-[#7d47b5]`}>Features</p>
+                <p className={`${whisperingSignature.className} text-3xl text-[#4f264f]`}>Features</p>
                 <p className="mt-1 text-sm text-slate-500">A design workflow built for creative iteration, publishing, and AR previewing.</p>
               </div>
               <Link href="/studio" className="bg-black px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white">
                 See More
               </Link>
             </div>
-            <div id="features" className="divide-y divide-[#ece5db] border-y border-[#ece5db] bg-white">
+            <div id="features" className="divide-y divide-[#e3ccc5] border-y border-[#e3ccc5] bg-[#fff4ea]">
               {FEATURES.map((feature, index) => (
                 <div key={feature.title} className="grid items-center gap-4 px-4 py-5 md:grid-cols-[5rem_1fr_auto] md:px-0">
                   <div className="text-center text-2xl font-light text-slate-500">{String(index + 1).padStart(2, "0")}</div>
@@ -435,7 +338,7 @@ export default function LandingPage() {
                     <h3 className="text-2xl text-slate-900">{feature.title}</h3>
                     <p className="mt-1 text-sm leading-7 text-slate-500">{feature.desc}</p>
                   </div>
-                  <Link href="/studio" className="justify-self-start bg-[#7d47b5] px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white md:justify-self-end">
+                  <Link href="/studio" className="justify-self-start bg-[#8f6a88] px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white md:justify-self-end">
                     Explore
                   </Link>
                 </div>
@@ -446,7 +349,7 @@ export default function LandingPage() {
 
         {homepageAdSlot && (
           <section className="px-5 py-6 md:px-8" aria-label="Advertisement">
-            <div className="mx-auto max-w-5xl border border-[#e5d8c8] bg-[#f3ede5] p-4">
+            <div className="mx-auto max-w-5xl border border-[#e3ccc5] bg-[#fff0e4] p-4">
               <p className="mb-3 text-center text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">
                 Sponsored
               </p>
@@ -458,10 +361,10 @@ export default function LandingPage() {
         <section className="grid gap-8 px-5 py-8 md:px-8 lg:grid-cols-[1fr_22rem]">
           <div>
             <div className="grid gap-5 lg:grid-cols-[0.95fr_1.2fr_0.8fr]">
-              <div className="overflow-hidden bg-[#dcc7aa]">
+              <div className="overflow-hidden bg-[#f3d9df]">
                 <img src="/design2.png" alt="Design workflow inspiration" className="h-full w-full object-cover" />
               </div>
-              <div className="flex min-h-[17rem] items-center bg-[#7d47b5] p-8 text-white">
+              <div className="flex min-h-[17rem] items-center bg-[#8f6a88] p-8 text-white">
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.18em] text-white/70">What We Offer</p>
                   <p className="mt-4 text-3xl leading-10">From vector editing tools to AR preview workflows, the studio brings ideas into focus fast.</p>
@@ -470,16 +373,16 @@ export default function LandingPage() {
                   </Link>
                 </div>
               </div>
-              <div className="overflow-hidden bg-[#b6c5d2]">
+              <div className="overflow-hidden bg-[#fff0e4]">
                 <img src="/design3.png" alt="Creative community inspiration" className="h-full w-full object-cover" />
               </div>
             </div>
 
             <section className="py-12">
-              <div className="grid grid-cols-2 gap-0 border border-[#e5dfd7] bg-white text-center md:grid-cols-4">
+              <div className="grid grid-cols-2 gap-0 border border-[#e3ccc5] bg-[#fff4ea] text-center md:grid-cols-4">
                 {VALUE_POINTS.map((item) => (
-                  <div key={item.label} className="flex flex-col items-center gap-1 border border-[#e5dfd7] p-6 sm:p-7">
-                    <span className="text-2xl font-black text-[#7d47b5]">{item.stat}</span>
+                  <div key={item.label} className="flex flex-col items-center gap-1 border border-[#e3ccc5] p-6 sm:p-7">
+                    <span className="text-2xl font-black text-[#4f264f]">{item.stat}</span>
                     <span className="text-xs font-medium text-slate-500">{item.label}</span>
                   </div>
                 ))}
@@ -488,9 +391,9 @@ export default function LandingPage() {
 
             <CommunityShowcase />
 
-            <section className="border-t border-[#e5d8c8] bg-[#f3ede5] px-5 py-16 sm:px-6 sm:py-20">
+            <section className="border-t border-[#e3ccc5] bg-[#fff0e4] px-5 py-16 sm:px-6 sm:py-20">
               <div className="mx-auto max-w-2xl">
-                <p className="mb-2 text-center text-xs font-bold uppercase tracking-widest text-[#7c4a26]">FAQ</p>
+                <p className="mb-2 text-center text-xs font-bold uppercase tracking-widest text-[#8a644a]">FAQ</p>
                 <h2 className="mb-10 text-center text-3xl font-black text-slate-900">Frequently Asked Questions</h2>
 
                 <div className="flex flex-col gap-3">
@@ -519,16 +422,16 @@ export default function LandingPage() {
           </div>
 
           <section id="how-to" className="hidden lg:block">
-            <div className="sticky top-28 border border-[#e5dfd7] bg-[#fffdfa] p-6 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
-              <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[#7c4a26]">How It Works</p>
+            <div className="sticky top-28 border border-[#e3ccc5] bg-[#fff4ea] p-6 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
+              <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[#8a644a]">How It Works</p>
               <h2 className={`${whisperingSignature.className} mb-8 text-3xl text-slate-900`}>
                 From sketch to try-on in 3 steps
               </h2>
 
               <div className="grid grid-cols-1 gap-4">
                 {STEPS.map((step) => (
-                  <div key={step.num} className="border border-slate-100 bg-slate-50 p-5">
-                    <span className="mb-3 block text-4xl font-black text-[#7d47b5]">{step.num}</span>
+                  <div key={step.num} className="border border-[#ecd7d0] bg-[#fff7f0] p-5">
+                    <span className="mb-3 block text-4xl font-black text-[#4f264f]">{step.num}</span>
                     <h3 className="mb-2 text-lg font-bold text-slate-800">{step.title}</h3>
                     <p className="text-sm leading-relaxed text-slate-500">{step.desc}</p>
                   </div>
@@ -545,15 +448,15 @@ export default function LandingPage() {
         </section>
 
         <section className="px-5 pb-10 lg:hidden md:px-8">
-          <div className="border border-[#e5dfd7] bg-[#fffdfa] p-6 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
-            <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[#7c4a26]">How It Works</p>
+          <div className="border border-[#e3ccc5] bg-[#fff4ea] p-6 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
+            <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[#8a644a]">How It Works</p>
             <h2 className={`${whisperingSignature.className} mb-8 text-3xl text-slate-900`}>
               From sketch to try-on in 3 steps
             </h2>
             <div className="grid gap-4">
               {STEPS.map((step) => (
-                <div key={`mobile-${step.num}`} className="border border-slate-100 bg-slate-50 p-5">
-                  <span className="mb-3 block text-4xl font-black text-[#7d47b5]">{step.num}</span>
+                <div key={`mobile-${step.num}`} className="border border-[#ecd7d0] bg-[#fff7f0] p-5">
+                  <span className="mb-3 block text-4xl font-black text-[#4f264f]">{step.num}</span>
                   <h3 className="mb-2 text-lg font-bold text-slate-800">{step.title}</h3>
                   <p className="text-sm leading-relaxed text-slate-500">{step.desc}</p>
                 </div>
@@ -562,7 +465,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section className="bg-[#7d47b5] px-5 py-12 text-white md:px-8">
+        <section className="bg-[#8f6a88] px-5 py-12 text-white md:px-8">
           <div className="grid gap-8 md:grid-cols-[1fr_1.1fr_0.8fr] md:items-start">
             <div>
               <h2 className="text-3xl font-black">DesignIt</h2>
@@ -578,7 +481,7 @@ export default function LandingPage() {
                   placeholder="Enter your email here"
                   className="min-w-0 flex-1 border border-white/30 bg-white/10 px-4 py-3 text-sm text-white placeholder:text-white/60 focus:outline-none"
                 />
-                <button className="bg-white px-4 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-[#7d47b5]">
+                <button className="bg-[#fff4ea] px-4 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-[#4f264f]">
                   Submit
                 </button>
               </div>

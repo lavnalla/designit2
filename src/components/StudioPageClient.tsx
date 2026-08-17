@@ -14,6 +14,20 @@ export default function StudioPageClient() {
       return;
     }
 
+    const isImageSource = /^https?:\/\//i.test(source)
+      || source.startsWith('data:image/')
+      || source.startsWith('/')
+      || source.startsWith('./')
+      || source.startsWith('../');
+
+    if (!isImageSource) {
+      const nextParams = new URLSearchParams(searchParams.toString());
+      nextParams.delete('source');
+      const nextQuery = nextParams.toString();
+      router.replace(nextQuery ? `/studio?${nextQuery}` : '/studio');
+      return;
+    }
+
     const normalizedSource = /^https?:\/\//i.test(source)
       ? `/api/source-image?url=${encodeURIComponent(source)}`
       : source;
