@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import { hughIsLife } from "../../src/lib/fonts";
 
 export default function PrivacyPolicyPageClient() {
   return (
