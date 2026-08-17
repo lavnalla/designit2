@@ -355,13 +355,12 @@ export default function LandingPage() {
                   Move from blank canvas to polished visual in a browser studio built for garments, jewelry, swatches, and AR previews.
                 </p>
                 <div className="mt-6 flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    onClick={() => openStudioWithSourceAsset("/template1.png")}
+                  <Link
+                    href="/studio"
                     className="bg-black px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white"
                   >
                     Try On In Studio
-                  </button>
+                  </Link>
                   <Link href="/blog" className="border border-slate-300 px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700">
                     Read The Guides
                   </Link>
