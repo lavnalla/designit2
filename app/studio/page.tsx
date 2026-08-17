@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 import StudioPageClient from '../../src/components/StudioPageClient';
 
 export const metadata: Metadata = {
@@ -10,5 +11,9 @@ export const metadata: Metadata = {
 };
 
 export default function StudioPage() {
-  return <StudioPageClient />;
+  return (
+    <Suspense fallback={null}>
+      <StudioPageClient />
+    </Suspense>
+  );
 }
