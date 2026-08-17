@@ -91,8 +91,8 @@ const HERO_CARDS = [
     body: "In a workflow where design ideas move from sketch to visualization with speed, clarity, and creative freedom.",
     ctaLabel: "About The Studio",
     ctaHref: "/about",
-    beforeImage: "designto.png", // Replace with your actual asset path
-    afterImage: "designfrom.png",   // Replace with your actual asset path
+    beforeImage: "designTo.png", // Replace with your actual asset path
+    afterImage: "designFrom.png",   // Replace with your actual asset path
   },
   {
     eyebrow: "Try It On",
