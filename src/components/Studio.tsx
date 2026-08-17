@@ -6,6 +6,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import NecklaceTryOn from "./NecklaceTryOn";
+import AdSlot from "./AdSlot";
 import { hughIsLife, whisperingSignature } from "../lib/fonts";
 
 import ImageTracer from "imagetracerjs";
@@ -57,31 +58,21 @@ const leftToolColorMap = {
   },
 } as const;
 
-/* const AdBanner = () => {
-  useEffect(() => {
-    try {
-      // @ts-ignore
-      const adsbygoogle = window.adsbygoogle || [];
-      // Only push if the ad hasn't been initialized yet
-      if (adsbygoogle.length === 0) {
-        adsbygoogle.push({});
-      }
-    } catch (err) {
-      console.error('AdSense error:', err);
-    }
-  }, []);
+const AdBanner = () => {
+  if (!process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_CLIENT) {
+    return null;
+  }
 
   return (
     <div className="w-full bg-slate-100 border-t border-slate-200 flex justify-center items-center py-2 shrink-0 min-h-[60px] md:min-h-[100px] overflow-hidden z-50 relative">
-      <ins className="adsbygoogle"
-           style={{ display: 'block', width: '100%', maxWidth: '728px', height: '90px' }}
-           data-ad-client="ca-pub-7392693183875834"
-           data-ad-slot="auto"
-           data-ad-format="auto"
-           data-full-width-responsive="true"></ins>
+      <AdSlot
+        slot="auto"
+        format="auto"
+        style={{ width: "100%", maxWidth: "728px", height: "90px" }}
+      />
     </div>
   );
-}; */
+};
 
 interface Dot { id: string; x: number; y: number; }
 interface DotClusterMember {
@@ -5913,7 +5904,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
   </div>
 </div>
 {showSourceWindow && (
-  <aside className={`border-slate-200 bg-[#F03E7C] shadow-[0_18px_36px_rgba(15,23,42,0.12)] transition-all duration-300 fixed inset-x-0 top-0 bottom-0 z-[200] flex min-h-0 max-h-screen flex-col overflow-y-auto lg:static lg:z-0 lg:ml-20 lg:h-[100dvh] lg:max-h-[100dvh] lg:w-[320px] lg:border-r lg:shadow-none ${isSidebarOpen ? 'translate-x-0 translate-y-0 opacity-100' : 'translate-y-full opacity-0 lg:translate-y-0 lg:opacity-100'}`}>
+  <aside className={`border-slate-200 bg-white shadow-[0_18px_36px_rgba(15,23,42,0.12)] transition-all duration-300 fixed inset-x-0 top-0 bottom-0 z-[200] flex min-h-0 max-h-screen flex-col overflow-y-auto lg:static lg:z-0 lg:ml-20 lg:h-[100dvh] lg:max-h-[100dvh] lg:w-[320px] lg:border-r lg:shadow-none ${isSidebarOpen ? 'translate-x-0 translate-y-0 opacity-100' : 'translate-y-full opacity-0 lg:translate-y-0 lg:opacity-100'}`}>
     <div className="p-3 shrink-0 bg-white border-b border-slate-200">
       <div className="flex justify-between items-center mb-3">
         <h3 className={`${whisperingSignature.className} text-xl text-slate-800`}>Source <span className="text-yellow-500">✨</span></h3>
