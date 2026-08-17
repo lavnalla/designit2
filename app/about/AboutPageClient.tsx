@@ -23,7 +23,7 @@ export default function AboutPageClient() {
             Contact
           </Link>
           <Link href="/" className="bg-white text-yellow-700 border border-yellow-200 px-8 py-3 rounded-full font-bold text-sm uppercase transition-all hover:scale-105 shadow-md hover:shadow-lg hover:bg-yellow-50">
-            Launch Studio
+            Launch Design Studio
           </Link>
         </div>
       </nav>

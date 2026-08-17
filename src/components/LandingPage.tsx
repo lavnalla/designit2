@@ -44,7 +44,7 @@ const STEPS = [
   {
     num: "02",
     title: "Design Your Piece",
-    desc: "Draw, trace, and layer shapes. Import fabric swatches, adjust colors, and build your garment or jewelry design.",
+    desc: "Download image and upload to studio or draw from scratch, modify using dot art and trace, and layer shapes. Import fabric swatches, adjust colors, and build your garment or jewelry design.",
   },
   {
     num: "03",
@@ -76,15 +76,10 @@ const FEATURES = [
   },
 ];
 
-export default function LandingPage({ onStart }: { onStart: () => void }) {
+export default function LandingPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const homepageAdSlot = process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_HOME_SLOT;
-
-  const handleStart = () => {
-    setMobileMenuOpen(false);
-    onStart();
-  };
 
   return (
     <div className="flex flex-col min-h-screen bg-white text-slate-900 font-sans">
@@ -101,15 +96,16 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
         <div className="hidden items-center gap-7 text-sm font-medium text-slate-600 md:flex">
           <a href="#how-to" className="hover:text-slate-900 transition-colors">How It Works</a>
           <a href="#features" className="hover:text-slate-900 transition-colors">Features</a>
+          <Link href="/blog" className="hover:text-slate-900 transition-colors">Blog</Link>
           <Link href="/community" className="hover:text-slate-900 transition-colors">Community</Link>
           <Link href="/about" className="hover:text-slate-900 transition-colors">About</Link>
         </div>
-        <button
-          onClick={handleStart}
+        <Link
+          href="/studio"
           className="hidden rounded-full bg-yellow-500 px-5 py-2 text-sm font-bold text-white shadow-md transition-all hover:scale-105 hover:bg-yellow-400 md:inline-flex"
         >
           Launch Studio →
-        </button>
+        </Link>
           <button
             type="button"
             aria-expanded={mobileMenuOpen}
@@ -125,14 +121,16 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
           <div id="mobile-nav-menu" className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-4 md:hidden">
             <a href="#how-to" onClick={() => setMobileMenuOpen(false)} className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900">How It Works</a>
             <a href="#features" onClick={() => setMobileMenuOpen(false)} className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900">Features</a>
+            <Link href="/blog" onClick={() => setMobileMenuOpen(false)} className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900">Blog</Link>
             <Link href="/community" onClick={() => setMobileMenuOpen(false)} className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900">Community</Link>
             <Link href="/about" onClick={() => setMobileMenuOpen(false)} className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900">About</Link>
-            <button
-              onClick={handleStart}
+            <Link
+              href="/studio"
+              onClick={() => setMobileMenuOpen(false)}
               className="mt-2 inline-flex items-center justify-center rounded-full bg-yellow-500 px-5 py-3 text-sm font-bold text-white shadow-md transition-all hover:bg-yellow-400"
             >
               Launch Studio →
-            </button>
+            </Link>
           </div>
         )}
       </nav>
@@ -149,42 +147,33 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
           </div>
 
           <h1 className="mb-4 text-4xl font-black leading-tight tracking-tight text-slate-900 sm:text-5xl md:text-6xl">
-            Design Clothes & Jewelry.{" "}
-            <span className="text-yellow-500">Try Them On.</span>
+            <span className="block">Design Clothes & Jewelry</span>
+            <span className="block text-yellow-500">Try Them On.</span>
           </h1>
 
+          <p className="mx-auto mb-4 max-w-3xl text-base leading-relaxed text-slate-600 sm:text-lg md:text-xl">
+            from scratch or by downloading image from anywhere and modify using dot art.
+          </p>
+
+          <Link href="/blog" className="mx-auto mb-8 inline-flex max-w-2xl text-base font-bold tracking-normal text-cyan-700 transition-colors hover:text-cyan-900 sm:text-lg md:text-xl">
+            Read the blog for how tos.
+          </Link>
+
           <p className="mx-auto mb-8 max-w-lg text-sm leading-relaxed text-slate-500 sm:text-base md:text-lg">
-            The only studio that takes your design from blank canvas to AR try-on in minutes — no apps, no photoshoots, no waiting.
+            The only <Link href="/studio" className="font-bold text-cyan-700 transition-colors hover:text-cyan-900">Design Studio</Link> that takes your design from blank canvas to AR try-on in minutes — no apps, no photoshoots, no waiting.
           </p>
 
           {/* Upload-style CTA — mirrors FitRoom's drop zone */}
-          <button
-            onClick={onStart}
-            className="group mx-auto mb-5 flex w-full max-w-sm cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-yellow-400 bg-yellow-50 px-4 py-8 transition-all hover:border-yellow-500 hover:bg-yellow-100 sm:px-6 sm:py-10"
-          >
-            <div className="w-14 h-14 rounded-full bg-yellow-400 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-              <Upload size={24} className="text-white" />
-            </div>
-            <span className="text-center text-base font-bold text-slate-700">Open the Design Studio</span>
-            <span className="text-center text-xs text-slate-400">No sign-up required — start immediately</span>
-          </button>
-
-          <button
-            onClick={onStart}
-            className="text-yellow-600 text-sm font-semibold hover:underline"
-          >
-            Or launch directly →
-          </button>
         </div>
       </section>
 
       {/* ── TRUSTED BY ── */}
       <section className="py-6 border-y border-slate-100 bg-slate-50">
         <p className="text-center text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">
-          Built for designers, makers & fashion creators
+          Built for online shoppers, designers, makers & fashion creators
         </p>
         <div className="flex justify-center items-center gap-8 flex-wrap px-6 text-slate-400 text-sm font-semibold">
-          {["Jewelry Designers", "Clothing Brands", "Fashion Students", "Boutique Owners", "Hobbyist Makers"].map((label) => (
+          {["online shoppers", "Jewelry Designers", "Clothing Brands", "Fashion Students", "Boutique Owners"].map((label) => (
             <span key={label} className="flex items-center gap-1.5">
               <Gem size={12} className="text-yellow-400" />
               {label}
@@ -226,12 +215,12 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
         </div>
 
         <div className="mt-10 text-center">
-          <button
-            onClick={onStart}
+          <Link
+            href="/studio"
             className="w-full rounded-full bg-yellow-500 px-6 py-3.5 text-sm font-bold text-white shadow-md transition-all hover:scale-105 hover:bg-yellow-400 sm:w-auto sm:px-8"
           >
             Start Designing Now →
-          </button>
+          </Link>
         </div>
       </section>
 
@@ -250,9 +239,9 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
                 <div>
                   <h3 className="font-bold text-slate-800 mb-1">{f.title}</h3>
                   <p className="text-slate-500 text-sm leading-relaxed">{f.desc}</p>
-                  <button onClick={onStart} className="mt-3 text-yellow-600 text-xs font-bold hover:underline">
+                  <Link href="/studio" className="mt-3 inline-flex text-yellow-600 text-xs font-bold hover:underline">
                     Try now →
-                  </button>
+                  </Link>
                 </div>
               </div>
             ))}
@@ -323,12 +312,12 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
         <p className="text-yellow-100 mb-8 text-base max-w-md mx-auto">
           Open the studio now — free, instant, no account required.
         </p>
-        <button
-          onClick={onStart}
+        <Link
+          href="/studio"
           className="w-full rounded-full bg-white px-6 py-3.5 text-sm font-black text-yellow-600 shadow-lg transition-all hover:scale-105 sm:w-auto sm:px-8"
         >
           Launch Studio →
-        </button>
+        </Link>
       </section>
 
       <Footer />

@@ -23,7 +23,7 @@ export default function TermsOfServicePageClient() {
             Contact
           </Link>
           <Link href="/" className="bg-gradient-to-r from-blue-900 to-blue-800 text-white px-8 py-3 rounded-full font-bold text-sm uppercase transition-all hover:scale-105 shadow-lg hover:shadow-xl">
-            Launch Studio
+            Launch Design Studio
           </Link>
         </div>
       </nav>
