@@ -892,6 +892,8 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   const [recordedTutorialSteps, setRecordedTutorialSteps] = useState<RecordedTutorialStep[]>([]);
   const [tutorialAdminUnlocked, setTutorialAdminUnlocked] = useState(false);
   const [tutorialAdminPassword, setTutorialAdminPassword] = useState('');
+  const [isHelpVideoOpen, setIsHelpVideoOpen] = useState(false);
+  const [activeHelpVideoIndex, setActiveHelpVideoIndex] = useState(0);
   const [ghostCursor, setGhostCursor] = useState({ x: 0, y: 0, active: false, clicking: false });
   const [isTutorialPlaying, setIsTutorialPlaying] = useState(false);
   const isTutorialPlayingRef = useRef(false);
@@ -2201,6 +2203,29 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
     setGhostCursor(prev => ({ ...prev, active: false, clicking: false }));
     setContextMenu(null);
     setTutorialDisabled(false);
+  }, []);
+
+  const helpVideoSources = ['/demo_video1.mp4', '/demo_video2.mp4'];
+
+  const playNextHelpVideo = useCallback(() => {
+    setActiveHelpVideoIndex((currentIndex) => {
+      if (currentIndex >= helpVideoSources.length - 1) {
+        return currentIndex;
+      }
+
+      return currentIndex + 1;
+    });
+  }, []);
+
+  const openHelpVideos = useCallback(() => {
+    stopHelpPlayback();
+    setActiveHelpVideoIndex(0);
+    setIsHelpVideoOpen(true);
+  }, [stopHelpPlayback]);
+
+  const closeHelpVideos = useCallback(() => {
+    setIsHelpVideoOpen(false);
+    setActiveHelpVideoIndex(0);
   }, []);
 
   const unlockTutorialRecording = useCallback(async () => {
@@ -5047,46 +5072,46 @@ const extractSelection = useCallback(async (asJpeg = false) => {
   </div>
 
   <div className="flex max-w-full flex-1 items-center justify-end gap-2 sm:flex-none">
-    {!tutorialAdminUnlocked ? (
-      <button
-        id="tutorial-admin-unlock-btn"
-        type="button"
-        onClick={unlockTutorialRecording}
-        className="hidden h-8 max-w-[30vw] min-w-0 items-center justify-center overflow-hidden rounded-full border border-amber-700 bg-amber-300 px-2 text-[8px] font-black uppercase text-amber-950 transition-colors hover:bg-amber-400 active:bg-amber-500 sm:inline-flex sm:max-w-none sm:px-3 sm:text-[9px]"
-      >
-        Unlock Help Record
-      </button>
-    ) : !tutorialRecording ? (
-      <button
-        id="tutorial-record-btn"
-        type="button"
-        onClick={startTutorialRecording}
-        className="inline-flex h-8 max-w-[30vw] min-w-0 items-center justify-center overflow-hidden rounded-full border border-emerald-700 bg-emerald-300 px-2 text-[8px] font-black uppercase text-emerald-950 transition-colors hover:bg-emerald-400 active:bg-emerald-500 sm:max-w-none sm:px-3 sm:text-[9px]"
-      >
-        Record Help
-      </button>
-    ) : (
-      <button
-        id="tutorial-stop-record-btn"
-        type="button"
-        onClick={stopTutorialRecording}
-        className="inline-flex h-8 max-w-[30vw] min-w-0 items-center justify-center overflow-hidden rounded-full border border-rose-700 bg-rose-300 px-2 text-[8px] font-black uppercase text-rose-950 transition-colors hover:bg-rose-400 active:bg-rose-500 sm:max-w-none sm:px-3 sm:text-[9px]"
-      >
-        Stop Recording
-      </button>
-    )}
     <button
       id="tutorial-btn-header"
       type="button"
-      onClick={runTutorial}
-      disabled={tutorialDisabled || tutorialRecording}
-      aria-label="Run interactive tutorial"
-      title="Run interactive tutorial"
+      onClick={openHelpVideos}
+      aria-label="Open studio demo videos"
+      title="Open studio demo videos"
       className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-sky-700 bg-sky-300 font-bold text-sky-950 transition-colors hover:bg-sky-400 active:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
     >
       ?
     </button>
   </div>
+
+  {isHelpVideoOpen && (
+    <div className="fixed inset-0 z-[160] flex items-center justify-center bg-slate-950/80 p-6 backdrop-blur-sm">
+      <div className="relative w-full max-w-5xl rounded-[2rem] border border-slate-200 bg-white p-4 shadow-[0_30px_80px_rgba(15,23,42,0.35)]">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <p className="text-sm font-black uppercase tracking-[0.2em] text-yellow-600">Studio Demo</p>
+          <button
+            type="button"
+            onClick={closeHelpVideos}
+            className="rounded-full border border-slate-300 bg-slate-100 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:bg-slate-200"
+          >
+            Close
+          </button>
+        </div>
+        <video
+          className="w-full rounded-[1.25rem]"
+          controls
+          autoPlay
+          muted
+          playsInline
+          preload="metadata"
+          onEnded={playNextHelpVideo}
+          key={`studio-help-${helpVideoSources[activeHelpVideoIndex]}`}
+        >
+          <source src={helpVideoSources[activeHelpVideoIndex]} type="video/mp4" />
+        </video>
+      </div>
+    </div>
+  )}
 
   <div className={`${toolbarCanvasWrapperClass} order-3 md:order-none`}>
     <span className="text-[9px] font-black uppercase text-black">Canvas BG:</span>
