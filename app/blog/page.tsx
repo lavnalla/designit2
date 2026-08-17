@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { whisperingSignature } from '../../src/lib/fonts';
+import { hughIsLife, whisperingSignature } from '../../src/lib/fonts';
 import { getBlogPosts } from '../../src/lib/blog-storage';
 
 export const metadata: Metadata = {
@@ -21,9 +21,8 @@ export default async function BlogPage() {
           <div className="mx-auto max-w-5xl">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#ece5db] pb-5">
               <div className="flex min-w-0 items-center gap-3">
-                <img src="/logo.png" alt="DesignIt" className="h-8 w-auto" />
                 <div>
-                  <span className="block truncate text-lg font-black tracking-tight text-slate-900 sm:text-xl">
+                  <span className={`${hughIsLife.className} block truncate text-2xl leading-none tracking-tight text-slate-900 sm:text-3xl`}>
                     Design<span className="text-[#9b5a2e]">It</span>
                   </span>
                   <span className="text-[10px] uppercase tracking-[0.18em] text-slate-400">Browser Design Studio</span>

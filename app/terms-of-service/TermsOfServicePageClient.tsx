@@ -8,8 +8,9 @@ export default function TermsOfServicePageClient() {
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-slate-50 via-white to-stone-50 text-slate-900">
       <nav className="flex items-center justify-between px-6 py-5 border-b-2 border-slate-200 bg-white shadow-md">
         <div className="flex items-center gap-2">
-          <img src="/logo.png" alt="DesignIt" className="h-8 w-auto" />
-          <span className="font-black text-2xl tracking-tight bg-gradient-to-r from-yellow-600 to-yellow-400 bg-clip-text text-transparent">DesignIt</span>
+          <span className={`${hughIsLife.className} text-3xl leading-none tracking-tight text-slate-900`}>
+            Design<span className="text-[#9b5a2e]">It</span>
+          </span>
         </div>
         <div className="flex items-center gap-6">
           <Link href="/" className="text-slate-500 hover:text-yellow-600 font-semibold text-sm uppercase transition-colors">
