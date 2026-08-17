@@ -147,20 +147,20 @@ export default function LandingPage() {
           </div>
 
           <h1 className="mb-4 text-4xl font-black leading-tight tracking-tight text-slate-900 sm:text-5xl md:text-6xl">
-            <span className="block">Design Clothes & Jewelry</span>
-            <span className="block text-yellow-500">Try Them On.</span>
+            <span className="block">Design Clothes & Jewelry.</span>
+            <span className="block text-yellow-500">Create, Customize & Try Them On.</span>
           </h1>
 
           <p className="mx-auto mb-4 max-w-3xl text-base leading-relaxed text-slate-600 sm:text-lg md:text-xl">
-            from scratch or by downloading image from anywhere and modify using dot art.
+            Start from a blank canvas or bring in an image from anywhere. Customize and reshape it using powerful tools like <strong>Dot Art, Pen, Ghost, colors, fabrics, and more</strong>.
           </p>
 
           <Link href="/blog" className="mx-auto mb-8 inline-flex max-w-2xl text-base font-bold tracking-normal text-cyan-700 transition-colors hover:text-cyan-900 sm:text-lg md:text-xl">
-            Read the blog for how tos.
+            Explore our how-to guides.
           </Link>
 
-          <p className="mx-auto mb-8 max-w-lg text-sm leading-relaxed text-slate-500 sm:text-base md:text-lg">
-            The only <Link href="/studio" className="font-bold text-cyan-700 transition-colors hover:text-cyan-900">Design Studio</Link> that takes your design from blank canvas to AR try-on in minutes — no apps, no photoshoots, no waiting.
+          <p className="mx-auto mb-8 max-w-3xl text-sm leading-relaxed text-slate-500 sm:text-base md:text-lg">
+            The <Link href="/studio" className="font-bold text-cyan-700 transition-colors hover:text-cyan-900">Design Studio</Link> takes your idea from a blank canvas or existing image to <strong>AR try-on in minutes</strong> - no apps, no photoshoots, no waiting.
           </p>
 
           {/* Upload-style CTA — mirrors FitRoom's drop zone */}
