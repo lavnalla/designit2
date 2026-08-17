@@ -24,8 +24,15 @@ export default function SiteHeader() {
   }
 
   return (
-    <nav className=" bg-[#ffffff] pt-0 py-5 text-black ">
-      <div className="mx-auto flex w-full max-w-[1120px] flex-wrap items-center justify-between gap-4">
+    // Outer nav uses bg-transparent so the page background shows on the sides
+    <nav className="w-full bg-transparent">
+      {/* 
+        Inner container:
+        1. max-w-[1120px] mx-auto matches the exact width of the main container below.
+        2. px-5 md:px-8 aligns the contents flush with the main grid.
+        3. bg-[#fffdfa] and border classes enclose only the inner content box.
+      */}
+      <div className="mx-auto flex w-full max-w-[1120px] flex-wrap items-center justify-between gap-4 border-x border-t border-[#e3ddd6] bg-[#fffdfa] px-5 py-5 md:px-8">
         <div className="flex min-w-0 items-center gap-3">
           <div>
             <span className={`${hughIsLife.className} block truncate text-2xl leading-none tracking-tight text-black sm:text-3xl`}>
@@ -34,6 +41,7 @@ export default function SiteHeader() {
             <span className="text-[10px] uppercase tracking-[0.18em] text-[#000000]">Browser Design Studio</span>
           </div>
         </div>
+
         <button
           type="button"
           aria-expanded={mobileMenuOpen}
@@ -44,6 +52,7 @@ export default function SiteHeader() {
         >
           Menu
         </button>
+
         <div className="hidden flex-wrap items-center gap-6 text-[11px] font-medium text-black md:flex">
           {NAV_LINKS.map((link) => {
             const isActive = pathname === link.href;
@@ -53,7 +62,7 @@ export default function SiteHeader() {
                 key={link.href}
                 href={link.href}
                 onClick={() => setMobileMenuOpen(false)}
-                className={isActive ? "text-black" : "transition-colors hover:text-black"}
+                className={isActive ? "text-black font-bold" : "transition-colors hover:text-black"}
               >
                 {link.label}
               </Link>
@@ -66,8 +75,9 @@ export default function SiteHeader() {
             Make a Design
           </Link>
         </div>
+
         {mobileMenuOpen && (
-          <div id="site-header-mobile-nav" className="flex w-full flex-col gap-3 border-t border-white/20 pt-4 text-sm font-medium text-[#000000] md:hidden">
+          <div id="site-header-mobile-nav" className="flex w-full flex-col gap-3 border-t border-slate-200 pt-4 text-sm font-medium text-[#000000] md:hidden">
             {NAV_LINKS.map((link) => {
               const isActive = pathname === link.href;
 
@@ -76,7 +86,7 @@ export default function SiteHeader() {
                   key={`mobile-${link.href}`}
                   href={link.href}
                   onClick={() => setMobileMenuOpen(false)}
-                  className={isActive ? "text-black" : "transition-colors hover:text-black"}
+                  className={isActive ? "text-black font-bold" : "transition-colors hover:text-black"}
                 >
                   {link.label}
                 </Link>
