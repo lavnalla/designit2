@@ -196,6 +196,8 @@ type DetectedSourceArticle = {
   color?: { r: number; g: number; b: number; a: number };
 };
 
+
+
 const toArticlePreviewColor = (color?: { r: number; g: number; b: number; a: number }) => {
   if (!color) return 'rgba(241, 245, 249, 1)';
   const red = Math.round(color.r * 255);
@@ -243,6 +245,17 @@ export function Studio({ onBack }: { onBack: () => void }) {
       for (let i = 0; i < n; i++) u8arr[i] = bstr.charCodeAt(i);
       return new File([u8arr], filename, { type: mime });
     }
+
+    const closeActiveLoops = useCallback(() => {
+  setStrokes((prevStrokes) =>
+    prevStrokes.map((stroke) => {
+      if (!stroke.closed && stroke.points.length > 2) {
+        return { ...stroke, closed: true };
+      }
+      return stroke;
+    })
+  );
+}, []);
 
 const syncWorkspaceToTryOn = (): Promise<string | null> => {
     return new Promise((resolve) => {
@@ -6572,115 +6585,116 @@ const extractSelection = useCallback(async (asJpeg = false) => {
 // Inside your mouseUp / pointerUp handler:
 // Prevent duplicate execution if already processing
   if (isProcessingRef.current) return;
+  alert(activeTool);
 
- // 2. Process Pen Tool Logic
-  const activePen = penRef.current;
- if (activeTool === 'pen' && activePen && activePen.strokeIds.length > 0) {
-  let updatedStrokes = [...strokes];
-  const activeStrokeId = activePen.strokeIds[activePen.strokeIds.length - 1];
-  const activeStrokeIndex = updatedStrokes.findIndex((s) => s.id === activeStrokeId);
+ const activePen = penRef.current;
 
-  if (activeStrokeIndex !== -1) {
-    const activeStroke = updatedStrokes[activeStrokeIndex];
-    const rawPoints = activeStroke.points;
+// Identify active stroke (from pen creation OR currently active stroke state)
+const strokeToProcess = activePen?.strokeIds?.length
+  ? strokes.find((s) => s.id === activePen.strokeIds[activePen.strokeIds.length - 1])
+  : strokes.find((s) => !s.closed && s.points.length >= 2) || strokes[strokes.length - 1];
 
-    if (rawPoints.length >= 2) {
-      const startPoint = rawPoints[0];
-      const endPoint = rawPoints[rawPoints.length - 1];
-      const SNAP_THRESHOLD = 30;
+if (strokeToProcess && ['cursor', 'ghost', 'pen'].includes(activeTool)) {
+  const rawPoints = strokeToProcess.points;
+  const shape = workspaceShapes.find((s) => s.showDots) || workspaceShapes[0];
 
-      const shape = workspaceShapes[0]; // Active image shape
-      if (shape) {
-        const totalDots = shape.dots.length;
+  if (rawPoints && rawPoints.length >= 2 && shape) {
+    const startPoint = rawPoints[0];
+    const endPoint = rawPoints[rawPoints.length - 1];
+    const SNAP_THRESHOLD = 80; // High threshold to ensure snapping on release
+    const totalDots = shape.dots.length;
 
-        const shapeDots = shape.dots.map((dot, index) => ({
-          index,
-          id: dot.id,
-          x: shape.position.x + dot.x * shape.scale,
-          y: shape.position.y + dot.y * shape.scale,
-        }));
+    // Convert shape dots to absolute world/canvas space
+    const shapeDots = shape.dots.map((dot, index) => ({
+      index,
+      id: dot.id,
+      x: shape.position.x + dot.x * shape.scale,
+      y: shape.position.y + dot.y * shape.scale,
+    }));
 
-        const nearestStartDot = shapeDots.find(
-          (dot) => Math.hypot(startPoint.x - dot.x, startPoint.y - dot.y) <= SNAP_THRESHOLD
-        );
-        const nearestEndDot = shapeDots.find(
-          (dot) => Math.hypot(endPoint.x - dot.x, endPoint.y - dot.y) <= SNAP_THRESHOLD
-        );
+    // Find closest dots to start and end points
+    let nearestStartDot = null;
+    let minStartDist = Infinity;
+    let nearestEndDot = null;
+    let minEndDist = Infinity;
 
-        if (nearestStartDot && nearestEndDot) {
-          const startIndex = nearestStartDot.index;
-          const endIndex = nearestEndDot.index;
-
-          // 1. Clean pen interior points and snap exact endpoints
-          const interiorPoints = rawPoints.slice(1, -1);
-          const snappedStart = { ...startPoint, x: nearestStartDot.x, y: nearestStartDot.y };
-          const snappedEnd = { ...endPoint, x: nearestEndDot.x, y: nearestEndDot.y };
-
-          const cleanPenPath = [snappedStart, ...interiorPoints, snappedEnd];
-
-          // 2. Helper to build continuous boundary path including both start & end dots
-          const buildInclusiveBoundary = (fromIdx: number, toIdx: number, step: number) => {
-            const path: { x: number; y: number }[] = [];
-            let curr = fromIdx;
-            while (curr !== toIdx) {
-              const dot = shape.dots[curr];
-              path.push({
-                x: shape.position.x + dot.x * shape.scale,
-                y: shape.position.y + dot.y * shape.scale,
-              });
-              curr = (curr + step + totalDots) % totalDots;
-            }
-            // Include destination dot to complete boundary
-            const finalDot = shape.dots[toIdx];
-            path.push({
-              x: shape.position.x + finalDot.x * shape.scale,
-              y: shape.position.y + finalDot.y * shape.scale,
-            });
-            return path;
-          };
-
-          // Build two perimeter paths from endIndex to startIndex
-          const pathClockwise = buildInclusiveBoundary(endIndex, startIndex, 1);
-          const pathCounterClockwise = buildInclusiveBoundary(endIndex, startIndex, -1);
-
-          // 3. Separate Upper vs Lower Boundaries based on average Y height
-          const avgYClockwise = pathClockwise.reduce((s, p) => s + p.y, 0) / (pathClockwise.length || 1);
-          const avgYCounter = pathCounterClockwise.reduce((s, p) => s + p.y, 0) / (pathCounterClockwise.length || 1);
-
-          const upperPerimeter = avgYClockwise < avgYCounter ? pathClockwise : pathCounterClockwise;
-          const lowerPerimeter = avgYClockwise < avgYCounter ? pathCounterClockwise : pathClockwise;
-
-          // 4. Construct two clean, continuous closed loops
-          // Upper Polygon: pen path (Start -> End) + upper perimeter (End -> Start)
-          const upperPolygonPoints = [...cleanPenPath, ...upperPerimeter];
-
-          // Lower Polygon: pen path (Start -> End) + lower perimeter (End -> Start)
-          const lowerPolygonPoints = [...cleanPenPath, ...lowerPerimeter];
-
-          // 5. Update strokes
-          updatedStrokes[activeStrokeIndex] = {
-            ...activeStroke,
-            points: upperPolygonPoints,
-            closed: true,
-          };
-
-          const lowerStroke = {
-            ...activeStroke,
-            id: `stroke-lower-${Date.now()}`,
-            points: lowerPolygonPoints,
-            closed: true,
-          };
-
-          updatedStrokes.push(lowerStroke);
-          setStrokes(updatedStrokes);
-        }
+    shapeDots.forEach((dot) => {
+      const dStart = Math.hypot(startPoint.x - dot.x, startPoint.y - dot.y);
+      if (dStart < minStartDist) {
+        minStartDist = dStart;
+        nearestStartDot = dot;
       }
+
+      const dEnd = Math.hypot(endPoint.x - dot.x, endPoint.y - dot.y);
+      if (dEnd < minEndDist) {
+        minEndDist = dEnd;
+        nearestEndDot = dot;
+      }
+    });
+
+    // Check if both ends are within snapping distance
+    if (
+      nearestStartDot &&
+      nearestEndDot &&
+      minStartDist <= SNAP_THRESHOLD &&
+      minEndDist <= SNAP_THRESHOLD
+    ) {
+      const startIndex = (nearestStartDot as any).index;
+      const endIndex = (nearestEndDot as any).index;
+
+      const snappedStart = { ...startPoint, x: (nearestStartDot as any).x, y: (nearestStartDot as any).y };
+      const snappedEnd = { ...endPoint, x: (nearestEndDot as any).x, y: (nearestEndDot as any).y };
+      const cleanPenPath = [snappedStart, ...rawPoints.slice(1, -1), snappedEnd];
+
+      const buildInclusiveBoundary = (fromIdx: number, toIdx: number, step: number) => {
+        const path: { x: number; y: number }[] = [];
+        let curr = fromIdx;
+        while (curr !== toIdx) {
+          const dot = shape.dots[curr];
+          path.push({
+            x: shape.position.x + dot.x * shape.scale,
+            y: shape.position.y + dot.y * shape.scale,
+          });
+          curr = (curr + step + totalDots) % totalDots;
+        }
+        const finalDot = shape.dots[toIdx];
+        path.push({
+          x: shape.position.x + finalDot.x * shape.scale,
+          y: shape.position.y + finalDot.y * shape.scale,
+        });
+        return path;
+      };
+
+      const pathClockwise = buildInclusiveBoundary(endIndex, startIndex, 1);
+      const pathCounterClockwise = buildInclusiveBoundary(endIndex, startIndex, -1);
+
+      const avgYClockwise = pathClockwise.reduce((s, p) => s + p.y, 0) / (pathClockwise.length || 1);
+      const avgYCounter = pathCounterClockwise.reduce((s, p) => s + p.y, 0) / (pathCounterClockwise.length || 1);
+
+      const upperPerimeter = avgYClockwise < avgYCounter ? pathClockwise : pathCounterClockwise;
+      const lowerPerimeter = avgYClockwise < avgYCounter ? pathCounterClockwise : pathClockwise;
+
+      // Split into two closed loops and update state
+      setStrokes((prev) => [
+        ...prev.filter((s) => s.id !== strokeToProcess.id),
+        {
+          ...strokeToProcess,
+          id: `upper-${Date.now()}`,
+          points: [...cleanPenPath, ...upperPerimeter],
+          closed: true,
+        },
+        {
+          ...strokeToProcess,
+          id: `lower-${Date.now()}`,
+          points: [...cleanPenPath, ...lowerPerimeter],
+          closed: true,
+        },
+      ]);
     }
   }
 }
 
-  // 3. Clear pen ref at the end
-  penRef.current = null;
+penRef.current = null;
 
                 if (activeTool === "scissor") {
                    const currTarget = scissorTargetRef.current;
