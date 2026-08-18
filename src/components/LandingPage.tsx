@@ -91,8 +91,8 @@ const HERO_CARDS = [
     body: "In a workflow where design ideas move from sketch to visualization with speed, clarity, and creative freedom.",
     ctaLabel: "About The Studio",
     ctaHref: "/about",
-    beforeImage: "designTo.png", // Replace with your actual asset path
-    afterImage: "designFrom.png",   // Replace with your actual asset path
+    beforeImage: "designFrom.png", // Replace with your actual asset path
+    afterImage: "designTo.png",   // Replace with your actual asset path
   },
   {
     eyebrow: "Try It On",
@@ -282,20 +282,20 @@ export default function LandingPage() {
         Before
       </span>
       <img
-        src={activeHeroCard.beforeImage}
-        alt="Before transformation"
-        className="h-36 w-full object-cover md:h-44"
-      />
+  src={activeHeroCard.beforeImage}
+  alt="Before transformation"
+  className="h-36 w-full object-contain md:h-44 bg-gray-100" // added object-contain and optional background
+/>
     </div>
     <div className="relative overflow-hidden border border-white/20 bg-black/20">
       <span className="absolute left-2 top-2 z-10 bg-black/60 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white">
         After
       </span>
       <img
-        src={activeHeroCard.afterImage}
-        alt="After transformation"
-        className="h-36 w-full object-cover md:h-44"
-      />
+  src={activeHeroCard.afterImage}
+  alt="After transformation"
+  className="h-36 w-full object-contain md:h-44 bg-gray-100" // added object-contain and optional background
+/>
     </div>
   </div>
 

@@ -196,6 +196,8 @@ type DetectedSourceArticle = {
   color?: { r: number; g: number; b: number; a: number };
 };
 
+
+
 const toArticlePreviewColor = (color?: { r: number; g: number; b: number; a: number }) => {
   if (!color) return 'rgba(241, 245, 249, 1)';
   const red = Math.round(color.r * 255);
@@ -225,7 +227,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
     const [showSourceWindow, setShowSourceWindow] = useState(false);
     const [showHeaderMenu, setShowHeaderMenu] = useState(false);
     const [showTopPanelMenu, setShowTopPanelMenu] = useState(false);
-      // Refine image state
+    const isProcessingRef = useRef(false); 
+    // Refine image state
     const [refinePrompt, setRefinePrompt] = useState("");
     const [isRefiningImage, setIsRefiningImage] = useState(false);
     // ...existing state hooks...
@@ -242,6 +245,17 @@ export function Studio({ onBack }: { onBack: () => void }) {
       for (let i = 0; i < n; i++) u8arr[i] = bstr.charCodeAt(i);
       return new File([u8arr], filename, { type: mime });
     }
+
+    const closeActiveLoops = useCallback(() => {
+  setStrokes((prevStrokes) =>
+    prevStrokes.map((stroke) => {
+      if (!stroke.closed && stroke.points.length > 2) {
+        return { ...stroke, closed: true };
+      }
+      return stroke;
+    })
+  );
+}, []);
 
 const syncWorkspaceToTryOn = (): Promise<string | null> => {
     return new Promise((resolve) => {
@@ -1079,22 +1093,161 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
     };
   }, [showTryOn]);
 
-  useEffect(() => {
-    if (!showColorPanel) return;
+  // Distance from point (px, py) to line segment (x1, y1)-(x2, y2)
+// Helper to check line segment intersection: (p0->p1) with (p2->p3)
 
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (!target) return;
-      if (colorPanelRef.current?.contains(target)) return;
-      if (colorSwatchRef.current?.contains(target)) return;
-      setShowColorPanel(false);
-    };
+const getIntersection = (
+  p0: { x: number; y: number },
+  p1: { x: number; y: number },
+  p2: { x: number; y: number },
+  p3: { x: number; y: number }
+) => {
+  const s1_x = p1.x - p0.x;
+  const s1_y = p1.y - p0.y;
+  const s2_x = p3.x - p2.x;
+  const s2_y = p3.y - p2.y;
 
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-    };
-  }, [showColorPanel]);
+  const denom = -s2_x * s1_y + s1_x * s2_y;
+  if (Math.abs(denom) < 1e-6) return null;
+
+  const s = (-s1_y * (p0.x - p2.x) + s1_x * (p0.y - p2.y)) / denom;
+  const t = (s2_x * (p0.y - p2.y) - s2_y * (p0.x - p2.x)) / denom;
+
+  if (s >= 0 && s <= 1 && t >= 0 && t <= 1) {
+    return { x: p0.x + t * s1_x, y: p0.y + t * s1_y };
+  }
+  return null;
+};
+
+const findClosestEdge = (pt: { x: number; y: number }, targetPoints: Stroke['points']) => {
+  let bestIdx = 0;
+  let minDistance = Infinity;
+  let projectedPt = { ...pt };
+
+  for (let i = 0; i < targetPoints.length; i++) {
+    const p1 = targetPoints[i];
+    const p2 = targetPoints[(i + 1) % targetPoints.length];
+
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const lenSq = dx * dx + dy * dy;
+
+    let t = lenSq === 0 ? 0 : ((pt.x - p1.x) * dx + (pt.y - p1.y) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+
+    const projX = p1.x + t * dx;
+    const projY = p1.y + t * dy;
+    const dist = Math.hypot(pt.x - projX, pt.y - projY);
+
+    if (dist < minDistance) {
+      minDistance = dist;
+      bestIdx = i;
+      projectedPt = { id: `proj-${Date.now()}-${Math.random()}`, x: projX, y: projY };
+    }
+  }
+
+  return { edgeIndex: bestIdx, point: projectedPt };
+};
+
+const splitLoopWithLine = (
+  currentStrokes: Stroke[] = [],
+  targetStrokeId: string,
+  dividingStrokeId: string
+): Stroke[] => {
+  alert('This feature is experimental and may not work perfectly. Please save your work before using it.');
+  if (!Array.isArray(currentStrokes)) return currentStrokes;
+
+  const target = currentStrokes.find((s) => s?.id === targetStrokeId);
+  const divider = currentStrokes.find((s) => s?.id === dividingStrokeId);
+
+  if (!target || !divider || target.points.length < 3 || divider.points.length < 2) {
+    return currentStrokes;
+  }
+
+  // 1. Check direct segment intersections
+  type IntersectionHit = { edgeIndex: number; point: { id: string; x: number; y: number } };
+  const hits: IntersectionHit[] = [];
+
+  for (let i = 0; i < target.points.length; i++) {
+    const tp1 = target.points[i];
+    const tp2 = target.points[(i + 1) % target.points.length];
+
+    for (let j = 0; j < divider.points.length - 1; j++) {
+      const dp1 = divider.points[j];
+      const dp2 = divider.points[j + 1];
+
+      const inter = getIntersection(tp1, tp2, dp1, dp2);
+      if (inter) {
+        hits.push({
+          edgeIndex: i,
+          point: { id: `split-pt-${Date.now()}-${hits.length}`, x: inter.x, y: inter.y },
+        });
+      }
+    }
+  }
+
+  let hitA: IntersectionHit;
+  let hitB: IntersectionHit;
+
+  // 2. If true crossings weren't found at both ends, fall back to endpoint projection
+  if (hits.length >= 2) {
+    hitA = hits[0];
+    hitB = hits[hits.length - 1];
+  } else {
+    const startPt = divider.points[0];
+    const endPt = divider.points[divider.points.length - 1];
+
+    hitA = findClosestEdge(startPt, target.points);
+    hitB = findClosestEdge(endPt, target.points);
+  }
+
+  let idx1 = hitA.edgeIndex;
+  let idx2 = hitB.edgeIndex;
+  let pt1 = hitA.point;
+  let pt2 = hitB.point;
+
+  // Prevent invalid identical edge index cut
+  if (idx1 === idx2) {
+    idx2 = (idx2 + 1) % target.points.length;
+  }
+
+  const isAFirst = idx1 < idx2;
+  const startIdx = isAFirst ? idx1 : idx2;
+  const endIdx = isAFirst ? idx2 : idx1;
+  const startPt = isAFirst ? pt1 : pt2;
+  const endPt = isAFirst ? pt2 : pt1;
+
+  // Build new loop boundary segments
+  const segment1 = [startPt, ...target.points.slice(startIdx + 1, endIdx + 1), endPt];
+  const segment2 = [
+    endPt,
+    ...target.points.slice(endIdx + 1),
+    ...target.points.slice(0, startIdx + 1),
+    startPt,
+  ];
+
+  const dividerPts = [...divider.points];
+  const reversedDividerPts = [...dividerPts].reverse();
+
+  const topLoop: Stroke = {
+    ...target,
+    id: `st-top-${Date.now()}`,
+    points: [...segment1, ...reversedDividerPts],
+    closed: true,
+  };
+
+  const bottomLoop: Stroke = {
+    ...target,
+    id: `st-bottom-${Date.now()}`,
+    points: [...segment2, ...dividerPts],
+    closed: true,
+  };
+  alert('Split complete. Two new loops have been created. You may want to delete the dividing stroke.');
+
+  return currentStrokes
+    .filter((s) => s && s.id !== targetStrokeId && s.id !== dividingStrokeId)
+    .concat([topLoop, bottomLoop]);
+};
 
   const saveForUndo = useCallback(() => {
     setHistory(h => [...h, { shapes: JSON.parse(JSON.stringify(workspaceShapes)), strokes: JSON.parse(JSON.stringify(strokes)) }].slice(-50));
@@ -6427,6 +6580,142 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                   setStrokes(prev => prev.map(st => st.id === rotatingId ? { ...st, rotation: angle + 90 } : st));
                 }
               } }} onPointerUp={(e) => { 
+
+                // Place this inside your existing mouse/pointer release handler:
+// Inside your mouseUp / pointerUp handler:
+// Prevent duplicate execution if already processing
+if (isProcessingRef.current) return;
+
+const activePen = penRef.current;
+
+// Find an unclosed stroke that is strictly NOT part of an already closed loop
+const strokeToProcess = activePen?.strokeIds?.length
+  ? strokes.find((s) => s.id === activePen.strokeIds[activePen.strokeIds.length - 1] && !s.closed)
+  : strokes.find((s) => !s.closed && s.points.length >= 2);
+
+if (strokeToProcess && !strokeToProcess.closed && ['cursor', 'ghost', 'pen'].includes(activeTool)) {
+  const rawPoints = strokeToProcess.points;
+  const shape = workspaceShapes.find((s) => s.showDots) || workspaceShapes[0];
+
+  if (rawPoints && rawPoints.length >= 2 && shape) {
+    const startPoint = rawPoints[0];
+    const endPoint = rawPoints[rawPoints.length - 1];
+    const SNAP_THRESHOLD = 30;
+    const totalDots = shape.dots.length;
+
+    const shapeDots = shape.dots.map((dot, index) => ({
+      index,
+      id: dot.id,
+      x: shape.position.x + dot.x * shape.scale,
+      y: shape.position.y + dot.y * shape.scale,
+    }));
+
+    let nearestStartDot = null;
+    let minStartDist = Infinity;
+    let nearestEndDot = null;
+    let minEndDist = Infinity;
+
+    shapeDots.forEach((dot) => {
+      const dStart = Math.hypot(startPoint.x - dot.x, startPoint.y - dot.y);
+      if (dStart < minStartDist) {
+        minStartDist = dStart;
+        nearestStartDot = dot;
+      }
+
+      const dEnd = Math.hypot(endPoint.x - dot.x, endPoint.y - dot.y);
+      if (dEnd < minEndDist) {
+        minEndDist = dEnd;
+        nearestEndDot = dot;
+      }
+    });
+
+    if (
+      nearestStartDot &&
+      nearestEndDot &&
+      minStartDist <= SNAP_THRESHOLD &&
+      minEndDist <= SNAP_THRESHOLD
+    ) {
+      // Lock execution immediately
+      isProcessingRef.current = true;
+
+      const startIndex = (nearestStartDot as any).index;
+      const endIndex = (nearestEndDot as any).index;
+
+      const snappedStart = { ...startPoint, x: (nearestStartDot as any).x, y: (nearestStartDot as any).y };
+      const snappedEnd = { ...endPoint, x: (nearestEndDot as any).x, y: (nearestEndDot as any).y };
+      const cleanPenPath = [snappedStart, ...rawPoints.slice(1, -1), snappedEnd];
+
+      const buildInclusiveBoundary = (fromIdx: number, toIdx: number, step: number) => {
+        const path: { x: number; y: number }[] = [];
+        let curr = fromIdx;
+        while (curr !== toIdx) {
+          const dot = shape.dots[curr];
+          path.push({
+            x: shape.position.x + dot.x * shape.scale,
+            y: shape.position.y + dot.y * shape.scale,
+          });
+          curr = (curr + step + totalDots) % totalDots;
+        }
+        const finalDot = shape.dots[toIdx];
+        path.push({
+          x: shape.position.x + finalDot.x * shape.scale,
+          y: shape.position.y + finalDot.y * shape.scale,
+        });
+        return path;
+      };
+
+      const pathClockwise = buildInclusiveBoundary(endIndex, startIndex, 1);
+      const pathCounterClockwise = buildInclusiveBoundary(endIndex, startIndex, -1);
+
+      const avgYClockwise = pathClockwise.reduce((s, p) => s + p.y, 0) / (pathClockwise.length || 1);
+      const avgYCounter = pathCounterClockwise.reduce((s, p) => s + p.y, 0) / (pathCounterClockwise.length || 1);
+
+      const upperPerimeter = avgYClockwise < avgYCounter ? pathClockwise : pathCounterClockwise;
+      const lowerPerimeter = avgYClockwise < avgYCounter ? pathCounterClockwise : pathClockwise;
+
+   // Ensure absolute uniqueness by mapping every single point through a generator with unique prefixes
+const formatPoints = (pts: { x: number; y: number }[], prefix: string) =>
+  pts.map((p, idx) => ({
+    id: `${prefix}-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 7)}`,
+    x: p.x,
+    y: p.y,
+  }));
+
+// Clean the raw pen path points while stripping old conflicting IDs
+const cleanPoints = rawPoints.map(p => ({ x: p.x, y: p.y }));
+const formattedCleanPath = formatPoints(cleanPoints, 'shared');
+const upperPerim = formatPoints(upperPerimeter, 'upper');
+const lowerPerim = formatPoints(lowerPerimeter, 'lower');
+
+setStrokes((prev) => [
+  ...prev.filter((s) => s.id !== strokeToProcess.id),
+  {
+    ...strokeToProcess,
+    id: `upper-${Date.now()}`,
+    points: [...formattedCleanPath, ...upperPerim],
+    closed: true,
+  },
+  {
+    ...strokeToProcess,
+    id: `lower-${Date.now()}`,
+    points: [...formattedCleanPath, ...lowerPerim],
+    closed: true,
+  },
+]);
+
+      // Successfully processed, clean up references
+      penRef.current = null;
+      isProcessingRef.current = false;
+      return;
+    } else if (activePen) {
+      // Only alert if it was an active pen/ghost stroke attempt that failed to snap
+      }
+  }
+}
+
+// Always guarantee references are reset at the end of pointerUp
+penRef.current = null;
+isProcessingRef.current = false;
 
                 if (activeTool === "scissor") {
                    const currTarget = scissorTargetRef.current;
