@@ -6584,27 +6584,25 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                 // Place this inside your existing mouse/pointer release handler:
 // Inside your mouseUp / pointerUp handler:
 // Prevent duplicate execution if already processing
-  if (isProcessingRef.current) return;
-  alert(activeTool);
+if (isProcessingRef.current) return;
 
- const activePen = penRef.current;
+const activePen = penRef.current;
 
-// Identify active stroke (from pen creation OR currently active stroke state)
+// Find an unclosed stroke that is strictly NOT part of an already closed loop
 const strokeToProcess = activePen?.strokeIds?.length
-  ? strokes.find((s) => s.id === activePen.strokeIds[activePen.strokeIds.length - 1])
-  : strokes.find((s) => !s.closed && s.points.length >= 2) || strokes[strokes.length - 1];
+  ? strokes.find((s) => s.id === activePen.strokeIds[activePen.strokeIds.length - 1] && !s.closed)
+  : strokes.find((s) => !s.closed && s.points.length >= 2);
 
-if (strokeToProcess && ['cursor', 'ghost', 'pen'].includes(activeTool)) {
+if (strokeToProcess && !strokeToProcess.closed && ['cursor', 'ghost', 'pen'].includes(activeTool)) {
   const rawPoints = strokeToProcess.points;
   const shape = workspaceShapes.find((s) => s.showDots) || workspaceShapes[0];
 
   if (rawPoints && rawPoints.length >= 2 && shape) {
     const startPoint = rawPoints[0];
     const endPoint = rawPoints[rawPoints.length - 1];
-    const SNAP_THRESHOLD = 80; // High threshold to ensure snapping on release
+    const SNAP_THRESHOLD = 30;
     const totalDots = shape.dots.length;
 
-    // Convert shape dots to absolute world/canvas space
     const shapeDots = shape.dots.map((dot, index) => ({
       index,
       id: dot.id,
@@ -6612,7 +6610,6 @@ if (strokeToProcess && ['cursor', 'ghost', 'pen'].includes(activeTool)) {
       y: shape.position.y + dot.y * shape.scale,
     }));
 
-    // Find closest dots to start and end points
     let nearestStartDot = null;
     let minStartDist = Infinity;
     let nearestEndDot = null;
@@ -6632,13 +6629,15 @@ if (strokeToProcess && ['cursor', 'ghost', 'pen'].includes(activeTool)) {
       }
     });
 
-    // Check if both ends are within snapping distance
     if (
       nearestStartDot &&
       nearestEndDot &&
       minStartDist <= SNAP_THRESHOLD &&
       minEndDist <= SNAP_THRESHOLD
     ) {
+      // Lock execution immediately
+      isProcessingRef.current = true;
+
       const startIndex = (nearestStartDot as any).index;
       const endIndex = (nearestEndDot as any).index;
 
@@ -6674,27 +6673,49 @@ if (strokeToProcess && ['cursor', 'ghost', 'pen'].includes(activeTool)) {
       const upperPerimeter = avgYClockwise < avgYCounter ? pathClockwise : pathCounterClockwise;
       const lowerPerimeter = avgYClockwise < avgYCounter ? pathCounterClockwise : pathClockwise;
 
-      // Split into two closed loops and update state
-      setStrokes((prev) => [
-        ...prev.filter((s) => s.id !== strokeToProcess.id),
-        {
-          ...strokeToProcess,
-          id: `upper-${Date.now()}`,
-          points: [...cleanPenPath, ...upperPerimeter],
-          closed: true,
-        },
-        {
-          ...strokeToProcess,
-          id: `lower-${Date.now()}`,
-          points: [...cleanPenPath, ...lowerPerimeter],
-          closed: true,
-        },
-      ]);
-    }
+   // Ensure absolute uniqueness by mapping every single point through a generator with unique prefixes
+const formatPoints = (pts: { x: number; y: number }[], prefix: string) =>
+  pts.map((p, idx) => ({
+    id: `${prefix}-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 7)}`,
+    x: p.x,
+    y: p.y,
+  }));
+
+// Clean the raw pen path points while stripping old conflicting IDs
+const cleanPoints = rawPoints.map(p => ({ x: p.x, y: p.y }));
+const formattedCleanPath = formatPoints(cleanPoints, 'shared');
+const upperPerim = formatPoints(upperPerimeter, 'upper');
+const lowerPerim = formatPoints(lowerPerimeter, 'lower');
+
+setStrokes((prev) => [
+  ...prev.filter((s) => s.id !== strokeToProcess.id),
+  {
+    ...strokeToProcess,
+    id: `upper-${Date.now()}`,
+    points: [...formattedCleanPath, ...upperPerim],
+    closed: true,
+  },
+  {
+    ...strokeToProcess,
+    id: `lower-${Date.now()}`,
+    points: [...formattedCleanPath, ...lowerPerim],
+    closed: true,
+  },
+]);
+
+      // Successfully processed, clean up references
+      penRef.current = null;
+      isProcessingRef.current = false;
+      return;
+    } else if (activePen) {
+      // Only alert if it was an active pen/ghost stroke attempt that failed to snap
+      }
   }
 }
 
+// Always guarantee references are reset at the end of pointerUp
 penRef.current = null;
+isProcessingRef.current = false;
 
                 if (activeTool === "scissor") {
                    const currTarget = scissorTargetRef.current;
