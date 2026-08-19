@@ -106,7 +106,7 @@ const HERO_CARDS = [
 
 export default function LandingPage() {
   const router = useRouter();
-  const demoVideoSources = ["/demo_video1.mp4", "/demo_video2.mp4"];
+  const demoVideoSources = ["/demo_video1.mp4"];
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [isDemoPlaying, setIsDemoPlaying] = useState(true);
   const [isDemoPopupOpen, setIsDemoPopupOpen] = useState(false);
