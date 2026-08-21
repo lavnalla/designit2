@@ -79,15 +79,15 @@ def estimate_param_memory(model: torch.nn.Module) -> dict[str, float]:
     }
 
 
-def colorize_mask(seg: np.ndarray, id2label: dict[int, str]) -> np.ndarray:
-    """Map class ids to distinct RGB colors (deterministic)."""
+def build_palette(seg: np.ndarray, id2label: dict[int, str]) -> np.ndarray:
+    """Deterministic id -> RGB table, shared by the mask and the legend."""
     rng = np.random.default_rng(42)
     max_id = max(int(seg.max()), max(id2label.keys(), default=0))
     palette = np.zeros((max_id + 1, 3), dtype=np.uint8)
     palette[0] = (20, 20, 20)  # Unlabelled / background
     for class_id in range(1, max_id + 1):
         palette[class_id] = rng.integers(40, 255, size=3, dtype=np.uint8)
-    return palette[seg]
+    return palette
 
 
 def overlay_mask(image: Image.Image, color_mask: np.ndarray, alpha: float = 0.55) -> Image.Image:
@@ -121,7 +121,8 @@ def save_visualization(
     detections: list[dict],
     output_dir: Path,
 ) -> dict[str, str]:
-    color_mask = colorize_mask(seg, id2label)
+    palette = build_palette(seg, id2label)
+    color_mask = palette[seg]
     overlay = overlay_mask(image, color_mask)
 
     mask_path = output_dir / "segmentation_mask.png"
@@ -147,11 +148,12 @@ def save_visualization(
 
     legend_items = [d for d in detections if d["id"] != 0 and d["percent"] >= 0.05]
     if legend_items:
-        rng = np.random.default_rng(42)
-        palette = {0: (20 / 255, 20 / 255, 20 / 255)}
-        for class_id in range(1, max(id2label.keys()) + 1):
-            palette[class_id] = tuple((rng.integers(40, 255, size=3) / 255.0).tolist())
-        handles = [plt.Rectangle((0, 0), 1, 1, color=palette[d["id"]]) for d in legend_items[:18]]
+        # Index the same palette the mask was drawn from. Re-deriving it here meant the
+        # swatches could not be trusted to match the colors in the image.
+        handles = [
+            plt.Rectangle((0, 0), 1, 1, color=tuple(palette[d["id"]] / 255.0))
+            for d in legend_items[:18]
+        ]
         labels = [f"{d['label']} ({d['percent']}%)" for d in legend_items[:18]]
         fig.legend(handles, labels, loc="lower center", ncol=3, fontsize=8, frameon=False)
         fig.tight_layout(rect=(0, 0.14, 1, 1))

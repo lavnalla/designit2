@@ -1,9 +1,9 @@
 """
 Local FastAPI service for sayeed99/segformer-b3-fashion.
 
-Run (from repo root):
-  fashion-segmentation-test/.venv/bin/pip install fastapi uvicorn python-multipart
-  fashion-segmentation-test/.venv/bin/uvicorn server:app --app-dir fashion-segmentation-service --host 127.0.0.1 --port 8000
+Run (from repo root, inside the project venv):
+  pip install -r fashion-segmentation-test/requirements.txt -r fashion-segmentation-service/requirements.txt
+  python -m uvicorn server:app --app-dir fashion-segmentation-service --host 127.0.0.1 --port 8000
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from PIL import Image
+from PIL import Image, ImageOps
 
 from inference import MODEL_ID, segmenter
 
@@ -53,11 +53,15 @@ def health():
 
 
 @app.post("/segment")
-async def segment(file: UploadFile = File(...)):
+def segment(file: UploadFile = File(...)):
+    # Deliberately sync: FastAPI runs plain `def` handlers in a threadpool, so the
+    # multi-second torch forward pass never blocks the event loop. As `async def` it
+    # starved every other request for the whole inference — including /health, which
+    # the Next.js proxy polls with a 4s timeout and then reports "service offline".
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Upload an image file (jpeg/png/webp).")
 
-    raw = await file.read()
+    raw = file.file.read()
     if not raw:
         raise HTTPException(status_code=400, detail="Empty file.")
     if len(raw) > 12 * 1024 * 1024:
@@ -66,6 +70,10 @@ async def segment(file: UploadFile = File(...)):
     try:
         image = Image.open(io.BytesIO(raw))
         image.load()
+        # Browsers apply EXIF orientation when they render the preview, PIL does not.
+        # Without this a portrait phone photo is segmented sideways, so the mask,
+        # overlay and image_size all disagree with what the user saw.
+        image = ImageOps.exif_transpose(image)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=f"Could not read image: {exc}") from exc
 
@@ -84,7 +92,6 @@ async def segment(file: UploadFile = File(...)):
         "image_size": result.image_size,
         "detections": visible,
         "detections_all": result.detections,
-        "original_data_url": result.original_data_url,
         "mask_data_url": result.mask_data_url,
         "overlay_data_url": result.overlay_data_url,
     }

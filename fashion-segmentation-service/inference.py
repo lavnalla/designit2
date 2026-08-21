@@ -71,7 +71,6 @@ class SegmentResult:
     detections: list[dict]
     mask_data_url: str
     overlay_data_url: str
-    original_data_url: str
     inference_seconds: float
     device: str
     image_size: dict[str, int]
@@ -125,11 +124,12 @@ class FashionSegmenter:
         overlay = overlay_mask(rgb, color_mask)
         detections = summarize_detections(seg, self.id2label)
 
+        # The source image is not echoed back: the client already has it locally, and
+        # re-encoding it as lossless PNG added ~1MB of base64 to every live-mode pass.
         return SegmentResult(
             detections=detections,
             mask_data_url=image_to_data_url(Image.fromarray(color_mask)),
             overlay_data_url=image_to_data_url(overlay),
-            original_data_url=image_to_data_url(rgb),
             inference_seconds=round(infer_s, 3),
             device=str(self.device),
             image_size={"width": width, "height": height},

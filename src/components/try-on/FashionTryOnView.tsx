@@ -16,7 +16,6 @@ type SegmentResponse = {
   inference_seconds: number;
   image_size: { width: number; height: number };
   detections: Detection[];
-  original_data_url: string;
   mask_data_url: string;
   overlay_data_url: string;
   detail?: string;
@@ -102,6 +101,9 @@ export function FashionTryOnView() {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const liveRef = useRef(false);
   const previewObjectUrlRef = useRef<string | null>(null);
+  // `busy` is only set once inference starts, so it leaves the camera-start and
+  // frame-wait awaits unguarded. This ref closes that window against double-clicks.
+  const inFlightRef = useRef(false);
 
   const cameraMode = mode === "snapshot" || mode === "video";
   const activeOption = MODE_OPTIONS.find((o) => o.value === mode) ?? MODE_OPTIONS[0];
@@ -171,6 +173,10 @@ export function FashionTryOnView() {
     canvas.height = video.videoHeight;
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
+    // The preview is mirrored (scale-x-[-1]) so it reads like a mirror; mirror the
+    // capture to match, otherwise the frame the user composed comes back flipped.
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     const blob = await new Promise<Blob | null>((resolve) =>
@@ -198,8 +204,6 @@ export function FashionTryOnView() {
           throw new Error(data.detail || data.error || `Request failed (${res.status})`);
         }
         setResult(data);
-        // Live mode keeps the camera feed visible instead of freezing on a still.
-        if (!isLive) setPreview(data.original_data_url);
         return true;
       } catch (err) {
         if (!isLive) setResult(null);
@@ -237,12 +241,19 @@ export function FashionTryOnView() {
   }, [captureBlob, runSegment]);
 
   const startLive = useCallback(async () => {
-    const ready = await startCamera();
-    if (!ready) return;
-    setLiveFrames(0);
-    liveRef.current = true;
-    setLive(true);
-    void liveLoop();
+    if (inFlightRef.current || liveRef.current) return;
+    inFlightRef.current = true;
+    try {
+      const ready = await startCamera();
+      if (!ready) return;
+      setLiveFrames(0);
+      // Set before releasing the guard so a second click sees the loop is running.
+      liveRef.current = true;
+      setLive(true);
+      void liveLoop();
+    } finally {
+      inFlightRef.current = false;
+    }
   }, [liveLoop, startCamera]);
 
   const stopLive = useCallback(() => {
@@ -285,8 +296,20 @@ export function FashionTryOnView() {
   }
 
   async function captureSnapshot() {
-    const ready = await startCamera();
-    if (!ready) return;
+    if (inFlightRef.current) return;
+
+    // With the camera off this click only reopens the preview so the user can frame
+    // the shot; the next click takes it. Capturing here would fire the shutter on the
+    // first available frame, before auto-exposure and white balance settle.
+    if (!cameraOn) {
+      inFlightRef.current = true;
+      try {
+        await startCamera();
+      } finally {
+        inFlightRef.current = false;
+      }
+      return;
+    }
 
     const video = videoRef.current;
     if (!video) {
@@ -294,23 +317,28 @@ export function FashionTryOnView() {
       return;
     }
 
+    inFlightRef.current = true;
     try {
-      await waitForVideoFrame(video);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Camera frame is not ready.");
-      return;
-    }
+      try {
+        await waitForVideoFrame(video);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Camera frame is not ready.");
+        return;
+      }
 
-    const shot = await captureBlob();
-    if (!shot) {
-      setError("Could not capture camera frame");
-      return;
-    }
+      const shot = await captureBlob();
+      if (!shot) {
+        setError("Could not capture camera frame");
+        return;
+      }
 
-    // Freeze the exact submitted frame in the preview while inference runs.
-    setPreview(shot.dataUrl);
-    stopCamera();
-    await runSegment(shot.blob, { previewUrl: shot.dataUrl });
+      // Freeze the exact submitted frame in the preview while inference runs.
+      setPreview(shot.dataUrl);
+      stopCamera();
+      await runSegment(shot.blob, { previewUrl: shot.dataUrl });
+    } finally {
+      inFlightRef.current = false;
+    }
   }
 
   const showVideoFeed = cameraMode && cameraOn;
@@ -411,7 +439,9 @@ export function FashionTryOnView() {
                     ? "Segmenting snapshot…"
                     : cameraOn
                       ? "Capture & segment"
-                      : "Retake snapshot"}
+                      : preview
+                        ? "Retake snapshot"
+                        : "Open camera"}
                 </button>
               )}
 
