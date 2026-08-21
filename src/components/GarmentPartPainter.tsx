@@ -49,10 +49,12 @@ export default function GarmentPartPainter({
   const [strokes, setStrokes] = useState<Stroke[]>([]);
   const [isAutoDetecting, setIsAutoDetecting] = useState(false);
   const [autoDetectError, setAutoDetectError] = useState<string | null>(null);
+  const [hasAutoRun, setHasAutoRun] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     const img = new Image();
+    setHasAutoRun(false);
 
     img.onload = () => {
       if (cancelled) return;
@@ -216,6 +218,14 @@ export default function GarmentPartPainter({
     }
   };
 
+  useEffect(() => {
+    if (imageSize && !hasAutoRun) {
+      setHasAutoRun(true);
+      void handleAutoDetect();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imageSize, hasAutoRun]);
+
   const handleSave = (): string | null => {
     const canvas = maskCanvasRef.current;
     if (!canvas) return null;
@@ -272,8 +282,9 @@ export default function GarmentPartPainter({
             Mark Garment Parts
           </h3>
           <p style={{ color: "#94a3b8", fontSize: "11px", margin: "4px 0 0" }}>
-            Pick a part below, then draw directly on the shirt to mark it. This is a manual
-            outline, not an automatic detector.
+            {isAutoDetecting
+              ? "Detecting garment parts automatically…"
+              : "Auto-detected below — pick a part and draw over anything that's wrong or missing."}
           </p>
         </div>
 
@@ -331,7 +342,7 @@ export default function GarmentPartPainter({
               opacity: isAutoDetecting ? 0.6 : 1,
             }}
           >
-            {isAutoDetecting ? "Detecting…" : "✨ Auto-Detect"}
+            {isAutoDetecting ? "Detecting…" : hasAutoRun ? "🔄 Re-detect" : "✨ Auto-Detect"}
           </button>
         </div>
 
@@ -348,7 +359,7 @@ export default function GarmentPartPainter({
             aspectRatio: imageSize
               ? `${imageSize.width} / ${imageSize.height}`
               : "3 / 4",
-            background: "#000",
+            background: "#f1f5f9",
             borderRadius: "10px",
             overflow: "hidden",
           }}
