@@ -464,8 +464,8 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
                   const faceWidth = Math.max(1, Math.hypot(rightTempleX - leftTempleX, rightTempleY - leftTempleY));
                   const leftEarY = (leftEye.y * h) + ((leftMouth.y - leftEye.y) * h * 0.62) - faceWidth * 0.035 + manualOffsetYRef.current;
                   const rightEarY = (rightEye.y * h) + ((rightMouth.y - rightEye.y) * h * 0.62) - faceWidth * 0.035 + manualOffsetYRef.current;
-                  const leftEarX = leftTempleX - faceWidth * 0.015 + manualOffsetXRef.current;
-                  const rightEarX = rightTempleX + faceWidth * 0.015 + manualOffsetXRef.current;
+                    const leftEarX = leftTempleX - faceWidth * 0.05 + manualOffsetXRef.current;
+                    const rightEarX = rightTempleX + faceWidth * 0.06 + manualOffsetXRef.current;
                   const earringWidth = faceWidth * 0.22 * manualScaleRef.current;
                   const tilt = Math.atan2((rightEye.y - leftEye.y) * h, (rightEye.x - leftEye.x) * w);
 

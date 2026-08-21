@@ -1,33 +1,10 @@
 "use client";
 
 import React from "react";
-import Link from "next/link";
-import Footer from "../../src/components/Footer";
 
 export default function TermsOfServicePageClient() {
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-slate-50 via-white to-stone-50 text-slate-900">
-      <nav className="flex items-center justify-between px-6 py-5 border-b-2 border-slate-200 bg-white shadow-md">
-        <div className="flex items-center gap-2">
-          <img src="/logo.png" alt="DesignIt" className="h-8 w-auto" />
-          <span className="font-black text-2xl tracking-tight bg-gradient-to-r from-yellow-600 to-yellow-400 bg-clip-text text-transparent">DesignIt</span>
-        </div>
-        <div className="flex items-center gap-6">
-          <Link href="/" className="text-slate-500 hover:text-yellow-600 font-semibold text-sm uppercase transition-colors">
-            Home
-          </Link>
-          <Link href="/about" className="text-slate-500 hover:text-yellow-600 font-semibold text-sm uppercase transition-colors">
-            About
-          </Link>
-          <Link href="/contact" className="text-slate-500 hover:text-yellow-600 font-semibold text-sm uppercase transition-colors">
-            Contact
-          </Link>
-          <Link href="/" className="bg-gradient-to-r from-blue-900 to-blue-800 text-white px-8 py-3 rounded-full font-bold text-sm uppercase transition-all hover:scale-105 shadow-lg hover:shadow-xl">
-            Launch Studio
-          </Link>
-        </div>
-      </nav>
-
       <main className="flex-1 px-6 py-16">
         <div className="max-w-4xl mx-auto bg-white p-8 md:p-12 rounded-3xl shadow-xl border border-slate-100">
           <h1 className="text-4xl md:text-5xl font-black mb-8 text-slate-800">
@@ -89,8 +66,6 @@ export default function TermsOfServicePageClient() {
           </div>
         </div>
       </main>
-
-      <Footer />
     </div>
   );
 }

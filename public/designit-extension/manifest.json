@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "DesignIt Studio",
+  "version": "0.1.0",
+  "description": "Right-click any image and open it directly in DesignIt Studio.",
+  "permissions": ["activeTab", "contextMenus", "scripting", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["picker.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "DesignIt Studio"
+  }
+}

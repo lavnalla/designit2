@@ -6,28 +6,23 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import NecklaceTryOn from "./NecklaceTryOn";
-
-import type { NextConfig } from 'next';
+import AdSlot from "./AdSlot";
+import { hughIsLife, whisperingSignature } from "../lib/fonts";
 
 import ImageTracer from "imagetracerjs";
 import { removeBackground, preload } from '@imgly/background-removal';
 import { SubmissionModal } from './SubmissionModal';
 import BodySilhouetteView from "./BodySilhouetteView";
 
-const nextConfig: NextConfig = {
-  devIndicators: {},
-};
-
-export default nextConfig;
-
 const MOBILE_BREAKPOINT = 1024;
 
-const toolbarControlClass = "relative flex h-10 min-w-0 items-center justify-center overflow-hidden rounded-full border px-3 text-[11px] font-black uppercase tracking-[0.04em] transition-all sm:px-4 whitespace-nowrap";
-const toolbarSelectClass = "h-10 min-w-0 w-full rounded-full border border-cyan-900/25 bg-gradient-to-b from-cyan-200 via-cyan-300 to-cyan-400 px-3 text-[9px] font-black uppercase text-cyan-950 shadow-[inset_0_2px_0_rgba(255,255,255,0.65),0_8px_18px_rgba(8,145,178,0.18),0_3px_0_rgba(14,116,144,0.45)] transition-all focus:outline-none focus:ring-2 focus:ring-cyan-900 cursor-pointer sm:px-4";
-const toolbarCanvasWrapperClass = `${toolbarControlClass} w-full max-w-[52vw] gap-2 bg-gradient-to-b from-white via-slate-50 to-slate-100 border-slate-300 px-3 shadow-[inset_0_2px_0_rgba(255,255,255,0.95),inset_0_-1px_0_rgba(148,163,184,0.22),0_14px_32px_rgba(15,23,42,0.14),0_4px_10px_rgba(15,23,42,0.08)] backdrop-blur-md sm:max-w-[12.5rem]`;
+const toolbarControlClass = `relative flex h-9 min-w-0 items-center justify-center overflow-hidden rounded-2xl border px-2 text-xs font-medium tracking-[0.01em] transition-all whitespace-nowrap sm:px-3`;
+const toolbarSelectClass = `h-9 min-w-0 w-full rounded-2xl border border-cyan-900/25 bg-gradient-to-b from-cyan-200 via-cyan-300 to-cyan-400 px-2 text-[11px] font-medium text-cyan-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_5px_12px_rgba(8,145,178,0.16),0_2px_0_rgba(14,116,144,0.4)] transition-all focus:outline-none focus:ring-2 focus:ring-cyan-900 cursor-pointer sm:px-3`;
+const toolbarCanvasWrapperClass = `${toolbarControlClass} w-[9rem] gap-1.5 bg-gradient-to-b from-white via-slate-50 to-slate-100 border-slate-300 px-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),inset_0_-1px_0_rgba(148,163,184,0.22),0_10px_22px_rgba(15,23,42,0.1),0_3px_8px_rgba(15,23,42,0.06)] backdrop-blur-md`;
 const toolbarButtonBaseClass = `${toolbarControlClass} bg-white border-slate-300 text-black [text-shadow:0_1px_0_rgba(255,255,255,0.55),0_0_1px_rgba(0,0,0,0.9)] shadow-[inset_0_2px_0_rgba(255,255,255,0.82),inset_0_-1px_0_rgba(148,163,184,0.18),0_10px_22px_rgba(15,23,42,0.14),0_3px_0_rgba(71,85,105,0.24)]`;
 const toolbarButtonInteractiveClass = `${toolbarButtonBaseClass} active:scale-95 active:translate-y-[1px] active:shadow-[inset_0_1px_0_rgba(255,255,255,0.5),0_4px_10px_rgba(15,23,42,0.12),0_1px_0_rgba(51,65,85,0.18)]`;
-const leftToolButtonBaseClass = "group relative flex h-10 items-center justify-center rounded-xl border px-3 text-black transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.78),0_8px_18px_rgba(15,23,42,0.14),0_2px_0_rgba(51,65,85,0.18)] hover:-translate-y-0.5 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_12px_24px_rgba(15,23,42,0.18),0_3px_0_rgba(51,65,85,0.22)] active:translate-y-[1px] active:shadow-[inset_0_2px_4px_rgba(15,23,42,0.14),0_4px_8px_rgba(15,23,42,0.12)]";
+const leftToolButtonBaseClass = `group relative flex h-9 items-center justify-center rounded-lg border px-2 text-sm font-medium text-black transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.78),0_6px_14px_rgba(15,23,42,0.12),0_2px_0_rgba(51,65,85,0.16)] hover:-translate-y-0.5 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_10px_18px_rgba(15,23,42,0.16),0_3px_0_rgba(51,65,85,0.2)] active:translate-y-[1px] active:shadow-[inset_0_2px_4px_rgba(15,23,42,0.14),0_4px_8px_rgba(15,23,42,0.12)]`;
+const ghostCursorHotspot = { x: 16, y: 16 };
 const leftToolColorMap = {
   source: {
     idle: { backgroundColor: '#fef08a', borderColor: '#eab308', color: '#000000' },
@@ -63,31 +58,21 @@ const leftToolColorMap = {
   },
 } as const;
 
-/* const AdBanner = () => {
-  useEffect(() => {
-    try {
-      // @ts-ignore
-      const adsbygoogle = window.adsbygoogle || [];
-      // Only push if the ad hasn't been initialized yet
-      if (adsbygoogle.length === 0) {
-        adsbygoogle.push({});
-      }
-    } catch (err) {
-      console.error('AdSense error:', err);
-    }
-  }, []);
+const AdBanner = () => {
+  if (!process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_CLIENT) {
+    return null;
+  }
 
   return (
     <div className="w-full bg-slate-100 border-t border-slate-200 flex justify-center items-center py-2 shrink-0 min-h-[60px] md:min-h-[100px] overflow-hidden z-50 relative">
-      <ins className="adsbygoogle"
-           style={{ display: 'block', width: '100%', maxWidth: '728px', height: '90px' }}
-           data-ad-client="ca-pub-7392693183875834"
-           data-ad-slot="auto"
-           data-ad-format="auto"
-           data-full-width-responsive="true"></ins>
+      <AdSlot
+        slot="auto"
+        format="auto"
+        style={{ width: "100%", maxWidth: "728px", height: "90px" }}
+      />
     </div>
   );
-}; */
+};
 
 interface Dot { id: string; x: number; y: number; }
 interface DotClusterMember {
@@ -103,11 +88,40 @@ interface ClipboardShape extends DistortableShape {
   clipboardSource?: 'vector' | 'selection-crop';
 }
 interface RecordedTutorialStep {
-  type: 'click' | 'contextmenu' | 'tool-select';
+  type: 'click' | 'contextmenu' | 'tool-select' | 'drag_dot' | 'draw' | 'erase_action' | 'drag_shape' | 'drag_stroke' | 'resize_item';
   targetId: string;
   label: string;
   timestamp: number;
   text?: string;
+  clientX?: number;
+  clientY?: number;
+  canvasX?: number;
+  canvasY?: number;
+  endClientX?: number;
+  endClientY?: number;
+  endCanvasX?: number;
+  endCanvasY?: number;
+  targetDotId?: string;
+  targetDotIndex?: number;
+  targetShapePositionX?: number;
+  targetShapePositionY?: number;
+  targetShapeScale?: number;
+  targetShapeDots?: Dot[];
+  targetShapeImg?: string;
+  targetShapeDims?: { width: number; height: number };
+  targetShapeRotation?: number;
+  targetShapeIsMannequin?: boolean;
+  finalShapePositionX?: number;
+  finalShapePositionY?: number;
+  startDotX?: number;
+  startDotY?: number;
+  endDotX?: number;
+  endDotY?: number;
+  dragOffsetX?: number;
+  dragOffsetY?: number;
+  fillTargetKind?: 'shape' | 'stroke';
+  finalShapeScale?: number;
+  finalStrokeScaleFactor?: number;
 }
 interface FabricLayer {
   src: string;
@@ -171,6 +185,27 @@ interface Stroke {
 }
 type HistoryItem = { shapes: DistortableShape[]; strokes: Stroke[] };
 type Candidate = { id: string; d: string; area: number; selected: boolean; };
+type DetectedSourceArticle = {
+  id: string;
+  label: string;
+  classId: number;
+  imageDataUrl: string;
+  bounds: { x: number; y: number; width: number; height: number };
+  pixelCount: number;
+  rawLabel?: string;
+  color?: { r: number; g: number; b: number; a: number };
+};
+
+
+
+const toArticlePreviewColor = (color?: { r: number; g: number; b: number; a: number }) => {
+  if (!color) return 'rgba(241, 245, 249, 1)';
+  const red = Math.round(color.r * 255);
+  const green = Math.round(color.g * 255);
+  const blue = Math.round(color.b * 255);
+  const alpha = Math.max(0.18, Math.min(color.a, 0.35));
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+};
 
 interface MannequinMeasurements {
   bust: number;
@@ -190,8 +225,10 @@ const DEFAULT_MESH_PATTERN = {
 export function Studio({ onBack }: { onBack: () => void }) {
       const [refineError, setRefineError] = useState<string | null>(null);
     const [showSourceWindow, setShowSourceWindow] = useState(false);
+    const [showHeaderMenu, setShowHeaderMenu] = useState(false);
     const [showTopPanelMenu, setShowTopPanelMenu] = useState(false);
-      // Refine image state
+    const isProcessingRef = useRef(false); 
+    // Refine image state
     const [refinePrompt, setRefinePrompt] = useState("");
     const [isRefiningImage, setIsRefiningImage] = useState(false);
     // ...existing state hooks...
@@ -208,6 +245,17 @@ export function Studio({ onBack }: { onBack: () => void }) {
       for (let i = 0; i < n; i++) u8arr[i] = bstr.charCodeAt(i);
       return new File([u8arr], filename, { type: mime });
     }
+
+    const closeActiveLoops = useCallback(() => {
+  setStrokes((prevStrokes) =>
+    prevStrokes.map((stroke) => {
+      if (!stroke.closed && stroke.points.length > 2) {
+        return { ...stroke, closed: true };
+      }
+      return stroke;
+    })
+  );
+}, []);
 
 const syncWorkspaceToTryOn = (): Promise<string | null> => {
     return new Promise((resolve) => {
@@ -862,7 +910,11 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   const [recordedTutorialSteps, setRecordedTutorialSteps] = useState<RecordedTutorialStep[]>([]);
   const [tutorialAdminUnlocked, setTutorialAdminUnlocked] = useState(false);
   const [tutorialAdminPassword, setTutorialAdminPassword] = useState('');
+  const [isHelpVideoOpen, setIsHelpVideoOpen] = useState(false);
+  const [activeHelpVideoIndex, setActiveHelpVideoIndex] = useState(0);
   const [ghostCursor, setGhostCursor] = useState({ x: 0, y: 0, active: false, clicking: false });
+  const [isTutorialPlaying, setIsTutorialPlaying] = useState(false);
+  const isTutorialPlayingRef = useRef(false);
   const [showMannequinModal, setShowMannequinModal] = useState(false);
   const [showShapesModal, setShowShapesModal] = useState(false);
   const [showDrapeModal, setShowDrapeModal] = useState(false);
@@ -891,6 +943,9 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   
   const [templates, setTemplates] = useState<string[]>([]);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [originalSourceImage, setOriginalSourceImage] = useState<string | null>(null);
+  const [detectedSourceArticles, setDetectedSourceArticles] = useState<DetectedSourceArticle[]>([]);
+  const [isDetectingSourceArticles, setIsDetectingSourceArticles] = useState(false);
   const [svgContent, setSvgContent] = useState<string | null>(null);
   const [imgDims, setImgDims] = useState({ width: 0, height: 0 });
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -954,8 +1009,76 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   const penRef = useRef<{ pointerId: number; lastX: number; lastY: number; strokeIds: string[]; meshGroupId?: string; pendingMesh?: boolean; color?: string; width?: number } | null>(null);
   const PEN_SPACING = 30; 
   const ERASE_RADIUS = 15;
+  const hasImportedSource = Boolean(selectedImage && !templates.includes(selectedImage));
+
+  const handleDetectSourceArticles = async () => {
+    const detectImage = originalSourceImage ?? selectedImage;
+
+    if (!detectImage) {
+      alert('Article detection currently works on uploaded or captured source images.');
+      return;
+    }
+
+    try {
+      setIsDetectingSourceArticles(true);
+      let imageDataUrl = detectImage;
+
+      if (!imageDataUrl.startsWith('data:image/')) {
+        const response = await fetch(imageDataUrl);
+        if (!response.ok) {
+          throw new Error('Could not load the source image for article detection.');
+        }
+
+        const imageBlob = await response.blob();
+        imageDataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            if (typeof reader.result === 'string') {
+              resolve(reader.result);
+              return;
+            }
+
+            reject(new Error('Could not read the source image for article detection.'));
+          };
+          reader.onerror = () => reject(new Error('Could not read the source image for article detection.'));
+          reader.readAsDataURL(imageBlob);
+        });
+      }
+
+      const response = await fetch('/api/source-detect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageDataUrl }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.details || data?.error || 'Detection failed');
+      }
+
+      setDetectedSourceArticles(Array.isArray(data?.articles) ? data.articles : []);
+    } catch (error) {
+      console.error('Source article detection failed', error);
+      const message = error instanceof Error ? error.message : 'Could not detect articles in this image.';
+      alert(message);
+    } finally {
+      setIsDetectingSourceArticles(false);
+    }
+  };
 
   useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => {
+    if (!mounted || typeof window === 'undefined') return;
+    const pendingSourceImage = window.sessionStorage.getItem('designit-studio-source-image');
+    if (!pendingSourceImage) return;
+
+    setSelectedImage(pendingSourceImage);
+    setOriginalSourceImage(pendingSourceImage);
+    setShowSourceWindow(true);
+    setIsSidebarOpen(true);
+    window.sessionStorage.removeItem('designit-studio-source-image');
+  }, [mounted]);
 
   useEffect(() => {
     workspaceShapesRef.current = workspaceShapes;
@@ -970,22 +1093,161 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
     };
   }, [showTryOn]);
 
-  useEffect(() => {
-    if (!showColorPanel) return;
+  // Distance from point (px, py) to line segment (x1, y1)-(x2, y2)
+// Helper to check line segment intersection: (p0->p1) with (p2->p3)
 
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (!target) return;
-      if (colorPanelRef.current?.contains(target)) return;
-      if (colorSwatchRef.current?.contains(target)) return;
-      setShowColorPanel(false);
-    };
+const getIntersection = (
+  p0: { x: number; y: number },
+  p1: { x: number; y: number },
+  p2: { x: number; y: number },
+  p3: { x: number; y: number }
+) => {
+  const s1_x = p1.x - p0.x;
+  const s1_y = p1.y - p0.y;
+  const s2_x = p3.x - p2.x;
+  const s2_y = p3.y - p2.y;
 
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-    };
-  }, [showColorPanel]);
+  const denom = -s2_x * s1_y + s1_x * s2_y;
+  if (Math.abs(denom) < 1e-6) return null;
+
+  const s = (-s1_y * (p0.x - p2.x) + s1_x * (p0.y - p2.y)) / denom;
+  const t = (s2_x * (p0.y - p2.y) - s2_y * (p0.x - p2.x)) / denom;
+
+  if (s >= 0 && s <= 1 && t >= 0 && t <= 1) {
+    return { x: p0.x + t * s1_x, y: p0.y + t * s1_y };
+  }
+  return null;
+};
+
+const findClosestEdge = (pt: { x: number; y: number }, targetPoints: Stroke['points']) => {
+  let bestIdx = 0;
+  let minDistance = Infinity;
+  let projectedPt = { ...pt };
+
+  for (let i = 0; i < targetPoints.length; i++) {
+    const p1 = targetPoints[i];
+    const p2 = targetPoints[(i + 1) % targetPoints.length];
+
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const lenSq = dx * dx + dy * dy;
+
+    let t = lenSq === 0 ? 0 : ((pt.x - p1.x) * dx + (pt.y - p1.y) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+
+    const projX = p1.x + t * dx;
+    const projY = p1.y + t * dy;
+    const dist = Math.hypot(pt.x - projX, pt.y - projY);
+
+    if (dist < minDistance) {
+      minDistance = dist;
+      bestIdx = i;
+      projectedPt = { id: `proj-${Date.now()}-${Math.random()}`, x: projX, y: projY };
+    }
+  }
+
+  return { edgeIndex: bestIdx, point: projectedPt };
+};
+
+const splitLoopWithLine = (
+  currentStrokes: Stroke[] = [],
+  targetStrokeId: string,
+  dividingStrokeId: string
+): Stroke[] => {
+  alert('This feature is experimental and may not work perfectly. Please save your work before using it.');
+  if (!Array.isArray(currentStrokes)) return currentStrokes;
+
+  const target = currentStrokes.find((s) => s?.id === targetStrokeId);
+  const divider = currentStrokes.find((s) => s?.id === dividingStrokeId);
+
+  if (!target || !divider || target.points.length < 3 || divider.points.length < 2) {
+    return currentStrokes;
+  }
+
+  // 1. Check direct segment intersections
+  type IntersectionHit = { edgeIndex: number; point: { id: string; x: number; y: number } };
+  const hits: IntersectionHit[] = [];
+
+  for (let i = 0; i < target.points.length; i++) {
+    const tp1 = target.points[i];
+    const tp2 = target.points[(i + 1) % target.points.length];
+
+    for (let j = 0; j < divider.points.length - 1; j++) {
+      const dp1 = divider.points[j];
+      const dp2 = divider.points[j + 1];
+
+      const inter = getIntersection(tp1, tp2, dp1, dp2);
+      if (inter) {
+        hits.push({
+          edgeIndex: i,
+          point: { id: `split-pt-${Date.now()}-${hits.length}`, x: inter.x, y: inter.y },
+        });
+      }
+    }
+  }
+
+  let hitA: IntersectionHit;
+  let hitB: IntersectionHit;
+
+  // 2. If true crossings weren't found at both ends, fall back to endpoint projection
+  if (hits.length >= 2) {
+    hitA = hits[0];
+    hitB = hits[hits.length - 1];
+  } else {
+    const startPt = divider.points[0];
+    const endPt = divider.points[divider.points.length - 1];
+
+    hitA = findClosestEdge(startPt, target.points);
+    hitB = findClosestEdge(endPt, target.points);
+  }
+
+  let idx1 = hitA.edgeIndex;
+  let idx2 = hitB.edgeIndex;
+  let pt1 = hitA.point;
+  let pt2 = hitB.point;
+
+  // Prevent invalid identical edge index cut
+  if (idx1 === idx2) {
+    idx2 = (idx2 + 1) % target.points.length;
+  }
+
+  const isAFirst = idx1 < idx2;
+  const startIdx = isAFirst ? idx1 : idx2;
+  const endIdx = isAFirst ? idx2 : idx1;
+  const startPt = isAFirst ? pt1 : pt2;
+  const endPt = isAFirst ? pt2 : pt1;
+
+  // Build new loop boundary segments
+  const segment1 = [startPt, ...target.points.slice(startIdx + 1, endIdx + 1), endPt];
+  const segment2 = [
+    endPt,
+    ...target.points.slice(endIdx + 1),
+    ...target.points.slice(0, startIdx + 1),
+    startPt,
+  ];
+
+  const dividerPts = [...divider.points];
+  const reversedDividerPts = [...dividerPts].reverse();
+
+  const topLoop: Stroke = {
+    ...target,
+    id: `st-top-${Date.now()}`,
+    points: [...segment1, ...reversedDividerPts],
+    closed: true,
+  };
+
+  const bottomLoop: Stroke = {
+    ...target,
+    id: `st-bottom-${Date.now()}`,
+    points: [...segment2, ...dividerPts],
+    closed: true,
+  };
+  alert('Split complete. Two new loops have been created. You may want to delete the dividing stroke.');
+
+  return currentStrokes
+    .filter((s) => s && s.id !== targetStrokeId && s.id !== dividingStrokeId)
+    .concat([topLoop, bottomLoop]);
+};
 
   const saveForUndo = useCallback(() => {
     setHistory(h => [...h, { shapes: JSON.parse(JSON.stringify(workspaceShapes)), strokes: JSON.parse(JSON.stringify(strokes)) }].slice(-50));
@@ -2083,8 +2345,51 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   ];
 
   const recordTutorialStep = useCallback((step: Omit<RecordedTutorialStep, 'timestamp'>) => {
-    setRecordedTutorialSteps(prev => [...prev, { ...step, timestamp: Date.now() }]);
+    const timestamp = Date.now();
+    setRecordedTutorialSteps(prev => [...prev, { ...step, timestamp }]);
+    return timestamp;
   }, []);
+
+  const lastRecordedTutorialStepRef = useRef<{ type: RecordedTutorialStep['type']; targetId: string; timestamp: number } | null>(null);
+  const pendingResizeRecordingRef = useRef<{ targetId: string; timestamp: number } | null>(null);
+  const pendingDotDragRecordingRef = useRef<{ targetId: string; targetDotId: string; timestamp: number } | null>(null);
+  const pendingShapeDragRecordingRef = useRef<{ targetId: string; timestamp: number } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadSharedTutorialHelp = async () => {
+      try {
+        const response = await fetch('/api/tutorial-help', { cache: 'no-store' });
+        if (!response.ok) {
+          return;
+        }
+
+        const data = await response.json();
+        if (!cancelled && Array.isArray(data?.steps) && data.steps.length > 0) {
+          setRecordedTutorialSteps(data.steps);
+        }
+      } catch {
+        // Fall back to built-in tutorial steps when shared help is unavailable.
+      }
+    };
+
+    loadSharedTutorialHelp();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const recordTutorialStepOnce = useCallback((step: Omit<RecordedTutorialStep, 'timestamp'>, minInterval = 250) => {
+    const lastStep = lastRecordedTutorialStepRef.current;
+    const now = Date.now();
+    if (lastStep && lastStep.type === step.type && lastStep.targetId === step.targetId && now - lastStep.timestamp < minInterval) {
+      return;
+    }
+
+    lastRecordedTutorialStepRef.current = { type: step.type, targetId: step.targetId, timestamp: now };
+    recordTutorialStep(step);
+  }, [recordTutorialStep]);
 
   const stopTutorialRecording = useCallback(async () => {
     setTutorialRecording(false);
@@ -2094,16 +2399,61 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
     }
 
     try {
+      const response = await fetch('/api/tutorial-help', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ steps: recordedTutorialSteps }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save tutorial help');
+      }
+
       await navigator.clipboard.writeText(JSON.stringify(recordedTutorialSteps, null, 2));
-      alert('Recorded tutorial steps copied to clipboard as JSON.');
+      alert('Recorded tutorial steps saved for all users and copied to clipboard as JSON.');
     } catch {
-      alert('Recording stopped. Copy the recorded steps from state/debug tools.');
+      alert('Could not save or copy recorded tutorial steps.');
     }
   }, [recordedTutorialSteps]);
 
   const startTutorialRecording = useCallback(() => {
     setRecordedTutorialSteps([]);
+    lastRecordedTutorialStepRef.current = null;
     setTutorialRecording(true);
+  }, []);
+
+  const stopHelpPlayback = useCallback(() => {
+    isTutorialPlayingRef.current = false;
+    setIsTutorialPlaying(false);
+    setTutorialStep(null);
+    setGhostCursor(prev => ({ ...prev, active: false, clicking: false }));
+    setContextMenu(null);
+    setTutorialDisabled(false);
+  }, []);
+
+  const helpVideoSources = ['/demo_video1.mp4', '/demo_video2.mp4'];
+
+  const playNextHelpVideo = useCallback(() => {
+    setActiveHelpVideoIndex((currentIndex) => {
+      if (currentIndex >= helpVideoSources.length - 1) {
+        return currentIndex;
+      }
+
+      return currentIndex + 1;
+    });
+  }, []);
+
+  const openHelpVideos = useCallback(() => {
+    stopHelpPlayback();
+    setActiveHelpVideoIndex(0);
+    setIsHelpVideoOpen(true);
+  }, [stopHelpPlayback]);
+
+  const closeHelpVideos = useCallback(() => {
+    setIsHelpVideoOpen(false);
+    setActiveHelpVideoIndex(0);
   }, []);
 
   const unlockTutorialRecording = useCallback(async () => {
@@ -2131,7 +2481,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   }, []);
 
   const playbackTutorialSteps = recordedTutorialSteps.length > 0
-    ? recordedTutorialSteps.map(step => ({ text: step.text || step.label, target: step.targetId, action: step.type }))
+    ? recordedTutorialSteps.map(step => ({ text: step.text || step.label, target: step.targetId, action: step.type, clientX: step.clientX, clientY: step.clientY, canvasX: step.canvasX, canvasY: step.canvasY, endClientX: step.endClientX, endClientY: step.endClientY, endCanvasX: step.endCanvasX, endCanvasY: step.endCanvasY, targetDotId: step.targetDotId, targetDotIndex: step.targetDotIndex, targetShapePositionX: step.targetShapePositionX, targetShapePositionY: step.targetShapePositionY, targetShapeScale: step.targetShapeScale, targetShapeDots: step.targetShapeDots, targetShapeImg: step.targetShapeImg, targetShapeDims: step.targetShapeDims, targetShapeRotation: step.targetShapeRotation, targetShapeIsMannequin: step.targetShapeIsMannequin, finalShapePositionX: step.finalShapePositionX, finalShapePositionY: step.finalShapePositionY, startDotX: step.startDotX, startDotY: step.startDotY, endDotX: step.endDotX, endDotY: step.endDotY, dragOffsetX: step.dragOffsetX, dragOffsetY: step.dragOffsetY, fillTargetKind: step.fillTargetKind, finalShapeScale: step.finalShapeScale, finalStrokeScaleFactor: step.finalStrokeScaleFactor }))
     : tutorialSteps;
 
   const triggerElementAction = useCallback((element: Element, clientX?: number, clientY?: number) => {
@@ -2156,16 +2506,18 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
       if (!target) return;
       const elementWithId = target.closest('[id]') as HTMLElement | null;
       if (!elementWithId?.id) return;
-      recordTutorialStep({
+      recordTutorialStepOnce({
         type: 'click',
         targetId: elementWithId.id,
         label: elementWithId.getAttribute('aria-label') || elementWithId.getAttribute('title') || elementWithId.id,
+        clientX: event.clientX,
+        clientY: event.clientY,
       });
     };
 
     document.addEventListener('click', handleDocumentClick, true);
     return () => document.removeEventListener('click', handleDocumentClick, true);
-  }, [tutorialRecording, recordTutorialStep]);
+  }, [tutorialRecording, recordTutorialStepOnce]);
 
   const runTutorial = async () => {
     console.log('runTutorial called');
@@ -2204,19 +2556,34 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
     // Disable tutorial button
     console.log('Disabling tutorial button...');
     setTutorialDisabled(true);
+    isTutorialPlayingRef.current = true;
+    setIsTutorialPlaying(true);
     
     console.log('Starting tutorial animation...');
     setGhostCursor({ x: window.innerWidth / 2, y: window.innerHeight / 2, active: true, clicking: false });
 
     for (let i = 0; i < playbackTutorialSteps.length; i++) {
+      if (!isTutorialPlayingRef.current) {
+        break;
+      }
       const step = playbackTutorialSteps[i];
       setTutorialStep(i);
+      const isCanvasPlaybackStep = step.action === "drag_dot" || step.action === "resize_item" || step.action === "draw" || step.action === "erase_action" || step.action === "drag_shape" || step.action === "drag_stroke";
       const el = document.getElementById(step.target);
-      if (!el) continue;
+      if (!el && !isCanvasPlaybackStep) continue;
 
-      const rect = el.getBoundingClientRect();
-      let startX = rect.left + rect.width / 2;
-      let startY = rect.top + rect.height / 2;
+      if (!isCanvasPlaybackStep && !el) {
+        continue;
+      }
+
+      let startX = step.clientX ?? window.innerWidth / 2;
+      let startY = step.clientY ?? window.innerHeight / 2;
+
+      if (el && step.clientX === undefined && step.clientY === undefined) {
+        const rect = el.getBoundingClientRect();
+        startX = rect.left + rect.width / 2;
+        startY = rect.top + rect.height / 2;
+      }
 
       setGhostCursor({ x: startX, y: startY, active: true, clicking: false });
       await new Promise(r => setTimeout(r, 800));
@@ -2240,28 +2607,137 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
       }
       else if (step.action === "drag_dot") {
         saveForUndo();
-        
-        // Use deep clone and direct mutation - simpler approach
-        for (let j = 0; j < 10; j++) {
+        const svgRect = workspaceRef.current?.getBoundingClientRect();
+        if (!svgRect) continue;
+
+        if (step.targetShapeDots && step.targetShapeDots.length > 0 && step.targetShapeDims && step.targetShapeImg) {
+          const restoredShape: DistortableShape = {
+            id: step.target,
+            img: step.targetShapeImg,
+            dots: step.targetShapeDots.map(dot => ({ ...dot })),
+            dims: { ...step.targetShapeDims },
+            position: {
+              x: step.targetShapePositionX ?? 100,
+              y: step.targetShapePositionY ?? 100,
+            },
+            scale: step.targetShapeScale ?? 1,
+            showDots: true,
+            erasedPaths: [],
+            opacity: 1,
+            rotation: step.targetShapeRotation,
+            isMannequin: step.targetShapeIsMannequin,
+            clipUpdate: Date.now(),
+          };
+
           setWorkspaceShapes(prev => {
-            const cloned = JSON.parse(JSON.stringify(prev)) as DistortableShape[];
-            const lastShape = cloned[cloned.length - 1];
-            
-            if (lastShape && lastShape.dots.length >= 4) {
-              // Move dots with large increments
-              lastShape.dots[0].x += 5;
-              lastShape.dots[0].y -= 3;
-              lastShape.dots[1].x += 6;
-              lastShape.dots[1].y += 2;
-              lastShape.dots[2].x -= 4;
-              lastShape.dots[2].y += 5;
-              lastShape.dots[3].x += 3;
-              lastShape.dots[3].y += 6;
+            const existingIndex = prev.findIndex(shape => shape.id === step.target);
+            if (existingIndex < 0) {
+              return prev;
             }
-            
-            return cloned;
+
+            const updated = [...prev];
+            const existingShape = updated[existingIndex];
+            const restoredDots = step.targetShapeDots!.map((dot, dotIndex) => ({
+              ...(existingShape.dots[dotIndex] ?? dot),
+              x: dot.x,
+              y: dot.y,
+            }));
+            updated[existingIndex] = {
+              ...existingShape,
+              ...restoredShape,
+              dots: restoredDots,
+            };
+            return updated;
           });
-          
+        }
+
+        await new Promise(r => setTimeout(r, 16));
+
+        const targetShape = workspaceShapesRef.current.find(shape => {
+          if (shape.id !== step.target) {
+            return false;
+          }
+
+          if (step.startDotX == null || step.startDotY == null) {
+            return true;
+          }
+
+          return shape.dots.some(dot => Math.abs(dot.x - step.startDotX!) < 0.01 && Math.abs(dot.y - step.startDotY!) < 0.01);
+        })
+          || workspaceShapesRef.current.find(shape => {
+            if (step.startDotX == null || step.startDotY == null) {
+              return false;
+            }
+
+            return shape.dots.some(dot => Math.abs(dot.x - step.startDotX!) < 0.01 && Math.abs(dot.y - step.startDotY!) < 0.01)
+              && (step.targetShapePositionX == null || Math.abs(shape.position.x - step.targetShapePositionX) < 0.01)
+              && (step.targetShapePositionY == null || Math.abs(shape.position.y - step.targetShapePositionY) < 0.01)
+              && (step.targetShapeScale == null || Math.abs(shape.scale - step.targetShapeScale) < 0.0001);
+          })
+          || workspaceShapesRef.current.find(shape => shape.id === step.target)
+          || workspaceShapesRef.current[workspaceShapesRef.current.length - 1];
+        if (!targetShape) {
+          continue;
+        }
+
+        const locationMatchedDotIndex = step.startDotX == null || step.startDotY == null
+          ? -1
+          : targetShape.dots.findIndex(dot => Math.abs(dot.x - step.startDotX!) < 0.01 && Math.abs(dot.y - step.startDotY!) < 0.01);
+        const indexedDot = typeof step.targetDotIndex === 'number' && step.targetDotIndex >= 0 && step.targetDotIndex < targetShape.dots.length
+          ? step.targetDotIndex
+          : -1;
+        const idMatchedDotIndex = step.targetDotId
+          ? targetShape.dots.findIndex(dot => dot.id === step.targetDotId)
+          : -1;
+        const resolvedDotIndex = locationMatchedDotIndex >= 0
+          ? locationMatchedDotIndex
+          : indexedDot >= 0
+            ? indexedDot
+            : idMatchedDotIndex;
+        const targetDot = resolvedDotIndex >= 0 ? targetShape.dots[resolvedDotIndex] : undefined;
+        if (!targetDot) {
+          continue;
+        }
+
+        const startCanvasX = step.canvasX ?? (targetShape.position.x + targetDot.x * targetShape.scale);
+        const startCanvasY = step.canvasY ?? (targetShape.position.y + targetDot.y * targetShape.scale);
+        const endCanvasX = step.endCanvasX ?? startCanvasX;
+        const endCanvasY = step.endCanvasY ?? startCanvasY;
+        const startDotX = step.startDotX ?? targetDot.x;
+        const startDotY = step.startDotY ?? targetDot.y;
+        const endDotX = step.endDotX ?? ((endCanvasX - targetShape.position.x) / targetShape.scale);
+        const endDotY = step.endDotY ?? ((endCanvasY - targetShape.position.y) / targetShape.scale);
+
+        for (let j = 0; j < 10; j++) {
+          const progress = (j + 1) / 10;
+          const nextCanvasX = startCanvasX + (endCanvasX - startCanvasX) * progress;
+          const nextCanvasY = startCanvasY + (endCanvasY - startCanvasY) * progress;
+          const nextDotX = startDotX + (endDotX - startDotX) * progress;
+          const nextDotY = startDotY + (endDotY - startDotY) * progress;
+
+          setGhostCursor({
+            x: svgRect.left + nextCanvasX,
+            y: svgRect.top + nextCanvasY,
+            active: true,
+            clicking: true,
+          });
+
+          setWorkspaceShapes(prev => prev.map(shape => {
+            if (shape.id !== targetShape.id) {
+              return shape;
+            }
+
+            return {
+              ...shape,
+              dots: shape.dots.map((dot, dotIndex) => dotIndex !== resolvedDotIndex ? dot : {
+                ...dot,
+                x: nextDotX,
+                y: nextDotY,
+              }),
+              clipUpdate: Date.now(),
+            };
+          }));
+
           await new Promise(r => setTimeout(r, 120));
         }
       }
@@ -2281,9 +2757,176 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
           setStrokes(p => p.map(s => s.id === sid ? { ...s, points: [...s.points, { id: `pt-${j}`, x: newX, y: newY }] } : s));
         }
       }
+      else if (step.action === "drag_shape") {
+        saveForUndo();
+        const svgRect = workspaceRef.current?.getBoundingClientRect();
+        if (!svgRect) continue;
+
+        if (step.targetShapeDots && step.targetShapeDots.length > 0 && step.targetShapeDims && step.targetShapeImg) {
+          const restoredShape: DistortableShape = {
+            id: step.target,
+            img: step.targetShapeImg,
+            dots: step.targetShapeDots.map(dot => ({ ...dot })),
+            dims: { ...step.targetShapeDims },
+            position: {
+              x: step.targetShapePositionX ?? 100,
+              y: step.targetShapePositionY ?? 100,
+            },
+            scale: step.targetShapeScale ?? 1,
+            showDots: true,
+            erasedPaths: [],
+            opacity: 1,
+            rotation: step.targetShapeRotation,
+            isMannequin: step.targetShapeIsMannequin,
+            clipUpdate: Date.now(),
+          };
+
+          setWorkspaceShapes(prev => {
+            const existingIndex = prev.findIndex(shape => shape.id === step.target);
+            if (existingIndex < 0) {
+              return [...prev, restoredShape];
+            }
+
+            const updated = [...prev];
+            const existingShape = updated[existingIndex];
+            const restoredDots = step.targetShapeDots!.map((dot, dotIndex) => ({
+              ...(existingShape.dots[dotIndex] ?? dot),
+              x: dot.x,
+              y: dot.y,
+            }));
+            updated[existingIndex] = {
+              ...existingShape,
+              ...restoredShape,
+              dots: restoredDots,
+            };
+            return updated;
+          });
+
+          await new Promise(r => setTimeout(r, 16));
+        }
+
+        const targetShape = workspaceShapesRef.current.find(shape => shape.id === step.target)
+          || (step.targetShapePositionX != null && step.targetShapePositionY != null && step.targetShapeDims
+            ? workspaceShapesRef.current.find(shape =>
+                shape.img === step.targetShapeImg
+                && Math.abs(shape.position.x - step.targetShapePositionX!) < 0.01
+                && Math.abs(shape.position.y - step.targetShapePositionY!) < 0.01
+                && Math.abs(shape.dims.width - step.targetShapeDims.width) < 0.01
+                && Math.abs(shape.dims.height - step.targetShapeDims.height) < 0.01
+              )
+            : undefined);
+        if (!targetShape) {
+          continue;
+        }
+        const playbackTargetId = targetShape.id;
+
+        const startCanvasX = step.canvasX ?? (targetShape.position.x + (step.dragOffsetX ?? 0));
+        const startCanvasY = step.canvasY ?? (targetShape.position.y + (step.dragOffsetY ?? 0));
+        const endCanvasX = step.endCanvasX ?? startCanvasX;
+        const endCanvasY = step.endCanvasY ?? startCanvasY;
+        const dragOffsetX = step.dragOffsetX ?? ((step.canvasX ?? targetShape.position.x) - targetShape.position.x);
+        const dragOffsetY = step.dragOffsetY ?? ((step.canvasY ?? targetShape.position.y) - targetShape.position.y);
+
+        for (let j = 0; j < 8; j++) {
+          const progress = (j + 1) / 8;
+          const nextCanvasX = startCanvasX + (endCanvasX - startCanvasX) * progress;
+          const nextCanvasY = startCanvasY + (endCanvasY - startCanvasY) * progress;
+          setGhostCursor({ x: svgRect.left + nextCanvasX, y: svgRect.top + nextCanvasY, active: true, clicking: true });
+
+          setWorkspaceShapes(prev => prev.map(shape => {
+            if (shape.id !== playbackTargetId) {
+              return shape;
+            }
+
+            return {
+              ...shape,
+              position: {
+                x: nextCanvasX - dragOffsetX,
+                y: nextCanvasY - dragOffsetY,
+              },
+            };
+          }));
+
+          await new Promise(r => setTimeout(r, 90));
+        }
+        if (step.finalShapePositionX != null && step.finalShapePositionY != null) {
+          setWorkspaceShapes(prev => prev.map(shape => {
+            if (shape.id !== playbackTargetId) {
+              return shape;
+            }
+
+            return {
+              ...shape,
+              position: {
+                x: step.finalShapePositionX,
+                y: step.finalShapePositionY,
+              },
+            };
+          }));
+        }
+      }
+      else if (step.action === "drag_stroke") {
+        saveForUndo();
+        const svgRect = workspaceRef.current?.getBoundingClientRect();
+        if (!svgRect) continue;
+
+        for (let j = 0; j < 8; j++) {
+          setStrokes(prev => prev.map(stroke => {
+            if (stroke.id !== step.target) {
+              return stroke;
+            }
+
+            const ghostX = (step.clientX ?? (svgRect.left + stroke.points[0].x)) + j * 10;
+            const ghostY = (step.clientY ?? (svgRect.top + stroke.points[0].y)) + j * 6;
+            setGhostCursor({ x: ghostX, y: ghostY, active: true, clicking: true });
+
+            return {
+              ...stroke,
+              points: stroke.points.map(point => ({
+                ...point,
+                x: point.x + 10,
+                y: point.y + 6,
+              })),
+              centerPath: stroke.centerPath?.map(point => ({
+                ...point,
+                x: point.x + 10,
+                y: point.y + 6,
+              })),
+            };
+          }));
+
+          await new Promise(r => setTimeout(r, 90));
+        }
+      }
         else if (step.action === "fill_shape") {
         saveForUndo();
-        setStrokes(prev => prev.map(s => s.id === "tuto-stroke" ? { ...s, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : s));
+        const targetShape = (step.fillTargetKind === 'stroke' ? undefined : workspaceShapesRef.current.find(shape => shape.id === step.target))
+          || (selectedShapeId ? workspaceShapesRef.current.find(shape => shape.id === selectedShapeId) : undefined)
+          || [...workspaceShapesRef.current].reverse().find(shape => !shape.isMannequin)
+          || workspaceShapesRef.current[workspaceShapesRef.current.length - 1];
+
+        if (targetShape) {
+          setWorkspaceShapes(prev => prev.map(shape => shape.id === targetShape.id ? {
+            ...shape,
+            fabricFillSrc: undefined,
+            ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }),
+            fillColor: hexToRgba(activeColor, activeFillOpacity),
+            clothType: normalizeFabric(selectedClothType),
+          } : shape));
+          continue;
+        }
+
+        const targetStroke = (step.fillTargetKind === 'shape' ? undefined : strokes.find(stroke => stroke.id === step.target))
+          || strokes[strokes.length - 1];
+        if (targetStroke) {
+          setStrokes(prev => prev.map(stroke => stroke.id === targetStroke.id ? {
+            ...stroke,
+            ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }),
+            fillColor: hexToRgba(activeColor, activeFillOpacity),
+            clothType: normalizeFabric(selectedClothType),
+          } : stroke));
+          continue;
+        }
       }
       else if (step.action === "erase_action") {
         saveForUndo();
@@ -2296,6 +2939,142 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
           setGhostCursor({ x: svgRect.left + ex, y: svgRect.top + ey, active: true, clicking: true });
           await new Promise(r => setTimeout(r, 80));
         }
+      }
+      else if (step.action === "resize_item") {
+        saveForUndo();
+        const svgRect = workspaceRef.current?.getBoundingClientRect();
+        if (!svgRect) continue;
+
+        const targetShape = workspaceShapesRef.current.find(shape => shape.id === step.target)
+          || (selectedShapeId ? workspaceShapesRef.current.find(shape => shape.id === selectedShapeId) : undefined)
+          || workspaceShapesRef.current[workspaceShapesRef.current.length - 1];
+        if (targetShape) {
+          const playbackTargetId = targetShape.id;
+          const initialScale = targetShape.scale;
+          const startCanvasX = step.canvasX ?? (targetShape.position.x + targetShape.dims.width * targetShape.scale + 10);
+          const startCanvasY = step.canvasY ?? (targetShape.position.y + targetShape.dims.height * targetShape.scale + 10);
+          const endCanvasX = step.endCanvasX ?? (startCanvasX + 144);
+          const endCanvasY = step.endCanvasY ?? startCanvasY;
+          const finalScale = Math.max(0.1, step.finalShapeScale ?? (initialScale + ((endCanvasX - startCanvasX) / 400)));
+          setResizingId(playbackTargetId);
+          setDragOffset({ x: startCanvasX, y: startCanvasY });
+          let currentCanvasX = startCanvasX;
+          let currentCanvasY = startCanvasY;
+
+          for (let j = 0; j < 8; j++) {
+            const progress = (j + 1) / 8;
+            const nextCanvasX = startCanvasX + (endCanvasX - startCanvasX) * progress;
+            const nextCanvasY = startCanvasY + (endCanvasY - startCanvasY) * progress;
+            const scaleChange = (nextCanvasX - currentCanvasX) / 400;
+            setGhostCursor({
+              x: svgRect.left + nextCanvasX,
+              y: svgRect.top + nextCanvasY,
+              active: true,
+              clicking: true,
+            });
+
+            setWorkspaceShapes(prev => prev.map(shape => shape.id === playbackTargetId ? { ...shape, scale: Math.max(0.1, shape.scale + scaleChange), clipUpdate: Date.now() } : shape));
+            setDragOffset({ x: nextCanvasX, y: nextCanvasY });
+            currentCanvasX = nextCanvasX;
+            currentCanvasY = nextCanvasY;
+            await new Promise(r => setTimeout(r, 90));
+          }
+          setWorkspaceShapes(prev => prev.map(shape => shape.id === playbackTargetId ? { ...shape, scale: finalScale, clipUpdate: Date.now() } : shape));
+          setResizingId(null);
+          continue;
+        }
+
+        const targetStroke = strokes.find(stroke => stroke.id === step.target);
+        if (targetStroke) {
+          const originalBoundsX = targetStroke.points.map(point => point.x);
+          const originalBoundsY = targetStroke.points.map(point => point.y);
+          const originalCenterX = (Math.min(...originalBoundsX) + Math.max(...originalBoundsX)) / 2;
+          const originalCenterY = (Math.min(...originalBoundsY) + Math.max(...originalBoundsY)) / 2;
+          const originalStartCanvasX = step.canvasX ?? (Math.max(...originalBoundsX) + 10);
+          const originalStartCanvasY = step.canvasY ?? (Math.max(...originalBoundsY) + 10);
+          const startCanvasX = originalStartCanvasX;
+          const startCanvasY = originalStartCanvasY;
+          const endCanvasX = step.endCanvasX ?? (startCanvasX + 144);
+          const endCanvasY = step.endCanvasY ?? (startCanvasY + 144);
+          const finalStrokeScaleFactor = step.finalStrokeScaleFactor ?? (() => {
+            const prevDist = Math.hypot(originalStartCanvasX - originalCenterX, originalStartCanvasY - originalCenterY);
+            const finalDist = Math.hypot(endCanvasX - originalCenterX, endCanvasY - originalCenterY);
+            return prevDist === 0 ? 1 : finalDist / prevDist;
+          })();
+          setResizingId(step.target);
+          setDragOffset({ x: startCanvasX, y: startCanvasY });
+          let currentCanvasX = startCanvasX;
+          let currentCanvasY = startCanvasY;
+
+          for (let j = 0; j < 8; j++) {
+            const progress = (j + 1) / 8;
+            const nextCanvasX = startCanvasX + (endCanvasX - startCanvasX) * progress;
+            const nextCanvasY = startCanvasY + (endCanvasY - startCanvasY) * progress;
+            setGhostCursor({
+              x: svgRect.left + nextCanvasX,
+              y: svgRect.top + nextCanvasY,
+              active: true,
+              clicking: true,
+            });
+
+            setStrokes(prev => prev.map(stroke => {
+              if (stroke.id !== step.target) {
+                return stroke;
+              }
+
+              const centerX = (Math.min(...stroke.points.map(point => point.x)) + Math.max(...stroke.points.map(point => point.x))) / 2;
+              const centerY = (Math.min(...stroke.points.map(point => point.y)) + Math.max(...stroke.points.map(point => point.y))) / 2;
+              const prevDist = Math.hypot(startCanvasX - centerX, startCanvasY - centerY);
+              const currentDist = Math.hypot(nextCanvasX - centerX, nextCanvasY - centerY);
+              const scaleFactor = prevDist === 0 ? 1 : currentDist / prevDist;
+
+              return {
+                ...stroke,
+                points: stroke.points.map(point => ({
+                  ...point,
+                  x: centerX + (point.x - centerX) * scaleFactor,
+                  y: centerY + (point.y - centerY) * scaleFactor,
+                })),
+                centerPath: stroke.centerPath?.map(point => ({
+                  ...point,
+                  x: centerX + (point.x - centerX) * scaleFactor,
+                  y: centerY + (point.y - centerY) * scaleFactor,
+                })),
+              };
+            }));
+            setDragOffset({ x: nextCanvasX, y: nextCanvasY });
+            currentCanvasX = nextCanvasX;
+            currentCanvasY = nextCanvasY;
+            await new Promise(r => setTimeout(r, 90));
+          }
+          setStrokes(prev => prev.map(stroke => {
+            if (stroke.id !== step.target) {
+              return stroke;
+            }
+
+            const currentBoundsX = stroke.points.map(point => point.x);
+            const currentBoundsY = stroke.points.map(point => point.y);
+            const currentCenterX = (Math.min(...currentBoundsX) + Math.max(...currentBoundsX)) / 2;
+            const currentCenterY = (Math.min(...currentBoundsY) + Math.max(...currentBoundsY)) / 2;
+
+            return {
+              ...stroke,
+              points: stroke.points.map(point => ({
+                ...point,
+                x: currentCenterX + (point.x - currentCenterX) * finalStrokeScaleFactor,
+                y: currentCenterY + (point.y - currentCenterY) * finalStrokeScaleFactor,
+              })),
+              centerPath: stroke.centerPath?.map(point => ({
+                ...point,
+                x: currentCenterX + (point.x - currentCenterX) * finalStrokeScaleFactor,
+                y: currentCenterY + (point.y - currentCenterY) * finalStrokeScaleFactor,
+              })),
+            };
+          }));
+          setResizingId(null);
+          continue;
+        }
+
       }
       else if (step.action === "context_menu") {
         // Find the drawn stroke element to right-click on
@@ -2405,6 +3184,8 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
 
     setTutorialStep(null);
     setGhostCursor(p => ({ ...p, active: false }));
+    isTutorialPlayingRef.current = false;
+    setIsTutorialPlaying(false);
     setTutorialDisabled(false);
     
     // Prompt user to reset after tutorial
@@ -3181,7 +3962,6 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
       if (isAreaPaste && !fabricPasteArea) {
         return st;
       }
-
       const existingAreas = st.fabricPasteAreas && st.fabricPasteAreas.length > 0
         ? st.fabricPasteAreas
         : (st.fabricPasteArea ? [st.fabricPasteArea] : []);
@@ -3438,24 +4218,49 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       try {
         const res = await fetch("/api/templates");
         const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) { setTemplates(data); setSelectedImage(data[0]); }
-      } catch (e) { setTemplates(["/template1.png"]); setSelectedImage("/template1.png"); }
+        if (Array.isArray(data) && data.length > 0) {
+          setTemplates(data);
+          setSelectedImage((prev) => prev ?? data[0]);
+          return;
+        }
+
+        setTemplates(["/template1.png"]);
+        setSelectedImage((prev) => prev ?? "/template1.png");
+      } catch (e) {
+        setTemplates(["/template1.png"]);
+        setSelectedImage((prev) => prev ?? "/template1.png");
+      }
     }
     load();
   }, []);
 
   const runTrace = useCallback(() => {
     if (!selectedImage) return;
+
+    const isRemoteSource = /^https?:\/\//i.test(selectedImage) || selectedImage.startsWith('/api/source-image');
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
       setImgDims({ width: img.width, height: img.height });
+
+      if (isRemoteSource) {
+        setSvgContent(null);
+        setCandidates([]);
+        setSourceDots([]);
+        return;
+      }
+
       ImageTracer.imageToSVG(selectedImage, (svgString: string) => {
         const inner = svgString.replace(/<svg[^>]*>/, "").replace(/<\/svg>/, "").replace(/<rect[^>]*\/>/g, "");
         setSvgContent(inner);
         setCandidates([]);
         setSourceDots([]);
       }, { numberofcolors: 2, ltres: 1, qtres: 1, scale: 1 });
+    };
+    img.onerror = () => {
+      setSvgContent(null);
+      setCandidates([]);
+      setSourceDots([]);
     };
     img.src = selectedImage;
   }, [selectedImage]);
@@ -3523,6 +4328,8 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       const reader = new FileReader();
       reader.onload = (event) => {
         const url = event.target?.result as string;
+        setDetectedSourceArticles([]);
+        setOriginalSourceImage(url);
         setSelectedImage(url);
       };
       reader.readAsDataURL(file);
@@ -3583,6 +4390,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       reader.onloadend = () => {
         const base64data = reader.result as string;
         setSelectedImage(base64data);
+        setDetectedSourceArticles([]);
         setIsRemovingBg(false);
         console.log("Background removal complete!");
       };
@@ -4384,7 +5192,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
   if (!mounted) return null;
 
   return (
-    <div className="flex flex-col h-[100dvh] w-full overflow-hidden bg-gradient-to-br from-slate-50 via-white to-stone-50 text-slate-900 select-none" onClick={() => setContextMenu(null)}>
+    <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-[#fffdfa] text-slate-900 select-none" onClick={() => { setContextMenu(null); setShowTopPanelMenu(false); setShowHeaderMenu(false); }}>
       {aiDraping.active && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-md">
            <div className="bg-white p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4">
@@ -4485,91 +5293,81 @@ const extractSelection = useCallback(async (asJpeg = false) => {
           </div>
         </div>
       )}
-      <header className="z-[100] flex min-h-16 flex-wrap items-center justify-between gap-2 border-b border-slate-300/80 bg-[radial-gradient(circle_at_top,rgba(255,244,200,0.9),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(237,242,247,0.97)_44%,rgba(203,213,225,0.98)_100%)] px-2 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.98),inset_0_-1px_0_rgba(148,163,184,0.22),0_14px_32px_rgba(15,23,42,0.14)] lg:px-8 shrink-0">
-  <div className="flex items-center gap-2 sm:gap-4">
-    <div onClick={onBack} className="flex flex-col cursor-pointer active:scale-95 px-2">
-      <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-[0.2em] text-yellow-600 drop-shadow-sm">
-        DesignIt <span className="text-yellow-400">♦</span>
-      </span>
-      <span className="hidden xs:block text-[7px] font-medium uppercase text-yellow-500">Studio</span>
+      <header className="relative z-[100] shrink-0 border-b border-[#6f5168] bg-[#8f6a88] px-3 py-3 text-white shadow-[0_14px_30px_rgba(79,38,79,0.22)] transition-all duration-300 lg:px-6">
+  <div className="flex items-center gap-3 overflow-x-auto whitespace-nowrap">
+    <div className="flex shrink-0 items-center gap-3 sm:gap-5">
+      <div onClick={onBack} className="flex cursor-pointer flex-col px-1 active:scale-95">
+          <span className={`${hughIsLife.className} text-2xl leading-none tracking-tight text-black sm:text-3xl`}>
+            Design<span className="text-black">It</span>
+        </span>
+        <span className="hidden text-[10px] uppercase tracking-[0.18em] text-[#f6e3e8] xs:block">Browser Design Studio</span>
+      </div>
+      <div className="relative hidden md:block">
+        <button
+          type="button"
+          onClick={() => setShowHeaderMenu((prev) => !prev)}
+          className="flex h-7 items-center justify-center rounded-sm border border-white/30 bg-[#7c5b77] px-3 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] transition-colors hover:bg-[#6f5168]"
+          aria-expanded={showHeaderMenu}
+          aria-controls="studio-header-page-menu"
+        >
+          Menu
+        </button>
+        {showHeaderMenu && (
+          <div
+            id="studio-header-page-menu"
+            className="absolute left-0 top-[calc(100%+0.5rem)] z-[260] flex w-[11rem] flex-col rounded-xl border border-[#6f5168] bg-[#8f6a88] p-2 shadow-2xl"
+          >
+            <Link href="/" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-[#f6e3e8] transition-colors hover:bg-[#7c5b77] hover:text-white">Home</Link>
+            <Link href="/blog" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-[#f6e3e8] transition-colors hover:bg-[#7c5b77] hover:text-white">Blog</Link>
+            <Link href="/community" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-[#f6e3e8] transition-colors hover:bg-[#7c5b77] hover:text-white">Community</Link>
+            <Link href="/about" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-[#f6e3e8] transition-colors hover:bg-[#7c5b77] hover:text-white">About</Link>
+            <Link href="/contact" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-[#f6e3e8] transition-colors hover:bg-[#7c5b77] hover:text-white">Contact</Link>
+            <Link href="/privacy-policy" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-[#f6e3e8] transition-colors hover:bg-[#7c5b77] hover:text-white">Privacy</Link>
+            <Link href="/terms-of-service" onClick={() => setShowHeaderMenu(false)} className="rounded-lg px-3 py-2 text-[11px] font-medium text-[#f6e3e8] transition-colors hover:bg-[#7c5b77] hover:text-white">Terms</Link>
+          </div>
+        )}
+      </div>
     </div>
-    <div className="hidden md:flex items-center gap-4">
-      <Link href="/" className="text-black font-bold hover:text-amber-700 text-[9px] uppercase transition-colors">
-        Home
-      </Link>
-      <Link href="/about" className="text-black font-bold hover:text-amber-700 text-[9px] uppercase transition-colors">
-        About
-      </Link>
-      <Link href="/contact" className="text-black font-bold hover:text-amber-700 text-[9px] uppercase transition-colors">
-        Contact
-      </Link>
-    </div>
-  </div>
-
-  <div className="flex max-w-full flex-1 items-center justify-end gap-2 sm:flex-none">
-    <button
+    <a
+      href="/extension-download"
+      className="hidden h-7 items-center justify-center rounded-sm border border-sky-400 bg-sky-50 px-3 text-[11px] font-semibold text-sky-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] transition-colors hover:bg-sky-100 md:flex"
+    >
+      Add Extension
+    </a>
+    <div className="flex shrink-0 items-center gap-1 transition-all duration-300">
+      <button
       id="tutorial-btn-header"
       type="button"
-      onClick={runTutorial}
-      disabled={tutorialDisabled || tutorialRecording}
-      aria-label="Run interactive tutorial"
-      title="Run interactive tutorial"
-      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-sky-700 bg-sky-300 font-bold text-sky-950 transition-colors hover:bg-sky-400 active:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+      onClick={openHelpVideos}
+      aria-label="Open studio demo videos"
+      title="Open studio demo videos"
+      className="flex h-8 w-8 shrink-0 items-center justify-center border border-slate-300 bg-white text-xs font-black text-slate-700 transition-colors hover:bg-slate-50 active:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
     >
       ?
     </button>
-    {!tutorialAdminUnlocked ? (
-      <button
-        id="tutorial-admin-unlock-btn"
-        type="button"
-        onClick={unlockTutorialRecording}
-        className="inline-flex h-8 max-w-[30vw] min-w-0 items-center justify-center overflow-hidden rounded-full border border-amber-700 bg-amber-300 px-2 text-[8px] font-black uppercase text-amber-950 transition-colors hover:bg-amber-400 active:bg-amber-500 sm:max-w-none sm:px-3 sm:text-[9px]"
-      >
-        Unlock Help Record
-      </button>
-    ) : !tutorialRecording ? (
-      <button
-        id="tutorial-record-btn"
-        type="button"
-        onClick={startTutorialRecording}
-        className="inline-flex h-8 max-w-[30vw] min-w-0 items-center justify-center overflow-hidden rounded-full border border-emerald-700 bg-emerald-300 px-2 text-[8px] font-black uppercase text-emerald-950 transition-colors hover:bg-emerald-400 active:bg-emerald-500 sm:max-w-none sm:px-3 sm:text-[9px]"
-      >
-        Record Help
-      </button>
-    ) : (
-      <button
-        id="tutorial-stop-record-btn"
-        type="button"
-        onClick={stopTutorialRecording}
-        className="inline-flex h-8 max-w-[30vw] min-w-0 items-center justify-center overflow-hidden rounded-full border border-rose-700 bg-rose-300 px-2 text-[8px] font-black uppercase text-rose-950 transition-colors hover:bg-rose-400 active:bg-rose-500 sm:max-w-none sm:px-3 sm:text-[9px]"
-      >
-        Stop Recording
-      </button>
-    )}
-  </div>
 
-  <div className={`${toolbarCanvasWrapperClass} order-3 md:order-none`}>
-    <span className="text-[9px] font-black uppercase text-black">Canvas BG:</span>
-    <select
-      value={workspaceBgColor}
-      onChange={(e) => setWorkspaceBgColor(e.target.value)}
-      className={toolbarSelectClass}
-      style={{ color: '#083344', fontWeight: 'bold', backgroundColor: '#67e8f9', minWidth: '0', width: '100%' }}
-    >
-      <option value="white" className="font-bold text-cyan-950 bg-cyan-200">White</option>
-      <option value="amber" className="font-bold text-cyan-950 bg-cyan-200">Amber</option>
-      <option value="slate" className="font-bold text-cyan-950 bg-cyan-200">Slate</option>
-      <option value="gray" className="font-bold text-cyan-950 bg-cyan-200">Gray</option>
-      <option value="blue" className="font-bold text-cyan-950 bg-cyan-200">Blue</option>
-    </select>
-  </div>
+      <div className={`${toolbarCanvasWrapperClass} hidden shrink-0 md:flex`}>
+      <span className="text-[9px] font-black uppercase text-black">Canvas BG:</span>
+      <select
+        value={workspaceBgColor}
+        onChange={(e) => setWorkspaceBgColor(e.target.value)}
+        className={toolbarSelectClass}
+        style={{ color: '#083344', fontWeight: 'bold', backgroundColor: '#67e8f9', minWidth: '0', width: '100%' }}
+      >
+        <option value="white" className="font-bold text-cyan-950 bg-cyan-200">White</option>
+        <option value="amber" className="font-bold text-cyan-950 bg-cyan-200">Amber</option>
+        <option value="slate" className="font-bold text-cyan-950 bg-cyan-200">Slate</option>
+        <option value="gray" className="font-bold text-cyan-950 bg-cyan-200">Gray</option>
+        <option value="blue" className="font-bold text-cyan-950 bg-cyan-200">Blue</option>
+      </select>
+      </div>
 
-  <div className="relative flex max-w-full flex-wrap items-center justify-end gap-1 sm:gap-2">
-    <div className="flex items-center overflow-hidden rounded-xl border-2 border-slate-300 bg-white shadow-sm">
+      <div className="relative flex shrink-0 items-center justify-end gap-1">
+    <div className="flex items-center overflow-hidden rounded-xl border-2 border-slate-300 bg-white shadow-sm md:flex">
       <select
         value={tryOnMode}
         onChange={(e) => setTryOnMode(e.target.value as "garment" | "necklace" | "earrings")}
-        className="rounded-xl bg-white px-2 py-2 text-[8px] font-black uppercase text-slate-700 outline-none sm:px-3 sm:text-[9px]"
+        className="rounded-xl bg-white px-1.5 py-1 text-[7px] font-black uppercase text-slate-700 outline-none sm:px-2 sm:py-1.5 sm:text-[9px]"
       >
         <option value="garment">Garment</option>
         <option value="necklace">Necklace</option>
@@ -4601,30 +5399,38 @@ const extractSelection = useCallback(async (asJpeg = false) => {
           setRenderedWorkspaceImg(null);
         }
       }}
-      className={`${toolbarButtonInteractiveClass} inline-flex min-w-0 max-w-[42vw] gap-1 px-2 text-[10px] sm:max-w-none sm:gap-2 sm:px-3 sm:text-[11px]`}
+      className={`${toolbarButtonInteractiveClass} inline-flex min-w-0 max-w-[7.25rem] gap-1 px-1.5 text-[8px] sm:max-w-none sm:gap-1.5 sm:px-2.5 sm:text-[10px]`}
       style={showTryOn
         ? { backgroundColor: '#fde68a', borderColor: '#f59e0b', color: '#000000' }
         : { backgroundColor: '#fef08a', borderColor: '#eab308', color: '#000000' }}
     >
-      {showTryOn ? "✕ Close Try-On View" : "✨ Test Live on Webcam"}
+      <span className="truncate sm:hidden">{showTryOn ? "Close" : "Live"}</span>
+      <span className="hidden sm:inline">{showTryOn ? "✕ Close Try-On View" : "✨ Test Live on Webcam"}</span>
     </button>
 
-    <div className="relative md:hidden">
+    <div className="relative z-[270] md:hidden" onClick={(e) => e.stopPropagation()}>
       <button
         type="button"
-        onClick={() => setShowTopPanelMenu((prev) => !prev)}
-        className={`${toolbarButtonBaseClass} min-w-0 px-3 text-[10px] sm:text-[11px]`}
-        style={{ backgroundColor: '#fce7f3', borderColor: '#ec4899', color: '#000000' }}
+        onClick={(e) => {
+          e.stopPropagation();
+          setShowTopPanelMenu((prev) => !prev);
+        }}
+        className="flex h-8 min-w-[4.75rem] items-center justify-center rounded-md border border-[#c46a92] bg-[#ffe4ef] px-2 text-[10px] font-semibold text-[#6f2d4f] shadow-[inset_0_1px_0_rgba(255,255,255,0.88),0_4px_10px_rgba(236,72,153,0.18)] transition-colors hover:bg-[#ffd8e8] active:bg-[#ffcddd]"
         aria-expanded={showTopPanelMenu}
         aria-controls="studio-top-panel-menu"
+        aria-label="Open more actions"
       >
         More
       </button>
       {showTopPanelMenu && (
         <div
           id="studio-top-panel-menu"
-          className="absolute right-0 top-[calc(100%+0.5rem)] z-[250] w-[12rem] rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl"
+          className="fixed right-3 top-[4.6rem] z-[500] w-[12.5rem] rounded-2xl border border-slate-300 bg-[#fffdfa] p-2.5 shadow-[0_20px_40px_rgba(15,23,42,0.22)]"
+          onClick={(e) => e.stopPropagation()}
         >
+          <div className="mb-2 border-b border-slate-200 px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            More Actions
+          </div>
           <div className="flex flex-col gap-2">
             <button
               type="button"
@@ -4743,7 +5549,38 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     >
       Lock
     </button>
+    </div>
+    </div>
   </div>
+
+  {isHelpVideoOpen && (
+    <div className="fixed inset-0 z-[160] flex items-center justify-center bg-slate-950/80 p-6 backdrop-blur-sm">
+      <div className="relative w-full max-w-5xl rounded-[2rem] border border-slate-200 bg-white p-4 shadow-[0_30px_80px_rgba(15,23,42,0.35)]">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <p className="text-sm font-black uppercase tracking-[0.2em] text-yellow-600">Studio Demo</p>
+          <button
+            type="button"
+            onClick={closeHelpVideos}
+            className="rounded-full border border-slate-300 bg-slate-100 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:bg-slate-200"
+          >
+            Close
+          </button>
+        </div>
+        <video
+          className="w-full rounded-[1.25rem]"
+          controls
+          autoPlay
+          muted
+          playsInline
+          preload="metadata"
+          onEnded={playNextHelpVideo}
+          key={`studio-help-${helpVideoSources[activeHelpVideoIndex]}`}
+        >
+          <source src={helpVideoSources[activeHelpVideoIndex]} type="video/mp4" />
+        </video>
+      </div>
+    </div>
+  )}
 </header>
       <div className="flex-1 flex overflow-hidden relative">
         <main className="flex-1 bg-[#F9F9FB] relative overflow-visible">
@@ -4754,14 +5591,30 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                 <p className="mt-3 text-base font-semibold leading-8 text-slate-600 sm:text-lg">
                   Click <span className="font-black text-slate-900">S</span> on the left to choose a source image, then build your design with the <span className="font-black text-slate-900">Pen</span> and <span className="font-black text-slate-900">Shapes</span> tools. Turn on the dots to reshape the image by dragging its points, use <span className="font-black text-slate-900">Help</span> for a guided walkthrough, or press <span className="font-black text-slate-900">Get Started</span> to jump straight into the canvas.
                 </p>
+                <div className="mt-4 rounded-[1.5rem] border border-sky-200 bg-white/80 p-4 text-left shadow-sm backdrop-blur-sm">
+                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-sky-700">Browser Extension CTA</p>
+                  <p className="mt-2 text-sm font-semibold leading-6 text-slate-700 sm:text-[15px]">
+                    Turn Studio into a browser workflow: click the extension icon on blocked pages to start Capture Area mode, or right-click directly on standard images to open them in Studio Source.
+                  </p>
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    Extension target: <span className="font-black text-slate-700">https://idesignits.com/studio?source=image-url</span>
+                  </p>
+                </div>
                 <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
-                  <button
-                    type="button"
-                    onClick={runTutorial}
-                    className="rounded-full border border-sky-300 bg-white/85 px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] text-sky-800 shadow-sm backdrop-blur-sm transition-colors hover:bg-sky-50"
+                  <a
+                    href="/extension-download"
+                    className="rounded-full border border-sky-400 bg-sky-600 px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] text-white shadow-sm transition-colors hover:bg-sky-500"
                   >
-                    Help
-                  </button>
+                    Add Browser Extension
+                  </a>
+                  <a
+                    href="/designit-extension/manifest.json"
+                    className="rounded-full border border-slate-300 bg-white px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    View Extension Files
+                  </a>
                   <button
                     type="button"
                     onClick={() => setShowWelcomePrompt(false)}
@@ -4769,14 +5622,32 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                   >
                     Get Started
                   </button>
+                  <button
+                    type="button"
+                    onClick={runTutorial}
+                    className="rounded-full border border-sky-300 bg-white/85 px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] text-sky-800 shadow-sm backdrop-blur-sm transition-colors hover:bg-sky-50"
+                  >
+                    Help
+                  </button>
+                  <Link
+                    href="/studio?source=https%3A%2F%2Fimages.unsplash.com%2Fphoto-1521572267360-ee0c2909d518%3Fauto%3Dformat%26fit%3Dcrop%26w%3D900%26q%3D80"
+                    className="rounded-full border border-slate-300 bg-slate-900/90 px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] text-white shadow-sm transition-colors hover:bg-slate-800"
+                  >
+                    Test Source Link
+                  </Link>
                 </div>
               </div>
             </div>
           )}
           {ghostCursor.active && (
-            <div className="fixed pointer-events-none z-[1000] transition-all duration-700 ease-in-out flex flex-col items-center" style={{ left: ghostCursor.x, top: ghostCursor.y, transform: 'translate(-50%, -50%)' }}>
+            <div className="fixed z-[1000] transition-all duration-700 ease-in-out flex flex-col items-center" style={{ left: ghostCursor.x - ghostCursorHotspot.x, top: ghostCursor.y - ghostCursorHotspot.y }}>
               <div className={`w-8 h-8 rounded-full border-4 border-yellow-400 bg-yellow-400/30 transition-transform ${ghostCursor.clicking ? 'scale-75' : 'scale-100'}`} />
               {tutorialStep !== null && <div className="mt-2 bg-slate-900 text-white text-[10px] font-bold px-3 py-1 rounded-lg shadow-xl">{playbackTutorialSteps[tutorialStep]?.text}</div>}
+              {isTutorialPlaying && (
+                <button type="button" onClick={stopHelpPlayback} className="mt-2 pointer-events-auto rounded-full border border-red-300 bg-red-100 px-3 py-1 text-[10px] font-black uppercase text-red-800 shadow-lg hover:bg-red-200">
+                  Stop Help
+                </button>
+              )}
             </div>
           )}
           {contextMenu && (
@@ -4925,7 +5796,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
         } else {
           setActiveTool(t as any);
           if (tutorialRecording) {
-            recordTutorialStep({
+            recordTutorialStepOnce({
               type: 'tool-select',
               targetId: `${t}-tool`,
               label: `Select ${t} tool`,
@@ -5186,13 +6057,15 @@ const extractSelection = useCallback(async (asJpeg = false) => {
   </div>
 </div>
 {showSourceWindow && (
-  <aside className={`fixed lg:static inset-0 lg:ml-20 lg:w-[320px] bg-slate-50 lg:border-r-2 border-slate-200 flex flex-col z-[200] lg:z-0 transition-transform shadow-lg ${isSidebarOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}`}>
-    <div className="p-6 shrink-0 bg-white border-b-2 border-slate-200">
-      <div className="flex justify-between items-center mb-6">
-        <h3 className="text-xs font-black uppercase text-slate-800">Source <span className="text-yellow-500">✨</span></h3>
-        <button onClick={() => { setShowSourceWindow(false); setIsSidebarOpen(false); }} className="lg:hidden text-slate-500 hover:text-slate-800 text-xs font-bold transition-colors">CLOSE ✕</button>
+  <aside className={`border-slate-200 bg-white shadow-[0_18px_36px_rgba(15,23,42,0.12)] transition-all duration-300 fixed inset-x-0 top-0 bottom-0 z-[200] flex min-h-0 max-h-screen flex-col overflow-y-auto lg:static lg:z-0 lg:ml-20 lg:h-[100dvh] lg:max-h-[100dvh] lg:w-[320px] lg:border-r lg:shadow-none ${isSidebarOpen ? 'translate-x-0 translate-y-0 opacity-100' : 'translate-y-full opacity-0 lg:translate-y-0 lg:opacity-100'}`}>
+    <div className="p-3 shrink-0 bg-white border-b border-slate-200">
+      <div className="flex justify-between items-center mb-3">
+        <h3 className={`${whisperingSignature.className} text-xl text-slate-800`}>Source <span className="text-yellow-500">✨</span></h3>
+        <div className="flex items-center gap-2">
+          <button onClick={() => { setShowSourceWindow(false); setIsSidebarOpen(false); }} className="text-slate-500 hover:text-slate-800 text-xs font-bold transition-colors">CLOSE ✕</button>
+        </div>
       </div>
-      <div className="grid grid-cols-2 gap-2 mb-3">
+      <div className="grid grid-cols-2 gap-2 mb-2">
         <button 
           onClick={() => {
             saveForUndo();
@@ -5208,11 +6081,11 @@ const extractSelection = useCallback(async (asJpeg = false) => {
             setShowSourceWindow(false);
             setIsSidebarOpen(false);
           }}
-          className="col-span-2 bg-gradient-to-r from-yellow-500 to-amber-600 text-white py-2 rounded-md text-[9px] font-bold uppercase shadow-sm hover:shadow-md transition-all"
+          className={`${whisperingSignature.className} col-span-2 bg-gradient-to-r from-yellow-500 to-amber-600 py-1.5 text-sm text-white shadow-sm transition-all hover:shadow-md`}
         >
           Add Original Image As-Is
         </button>
-        <button onClick={() => fileInputRef.current?.click()} className="bg-gradient-to-br from-slate-500 to-slate-600 text-white py-1.5 px-2 rounded-md text-[8px] font-bold uppercase shadow-sm hover:shadow-md transition-all">Upload<input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="image/*" className="hidden" /></button>
+        <button onClick={() => fileInputRef.current?.click()} className={`${whisperingSignature.className} bg-gradient-to-br from-slate-500 to-slate-600 px-2 py-1 text-sm text-white shadow-sm transition-all hover:shadow-md`}>Upload<input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="image/*" className="hidden" /></button>
         <button id="add-btn" onClick={() => { 
           const ns = "http://www.w3.org/2000/svg"; 
           let pts: Dot[] = []; 
@@ -5235,14 +6108,26 @@ const extractSelection = useCallback(async (asJpeg = false) => {
             setShowSourceWindow(false);
             setIsSidebarOpen(false);
           }
-        }} disabled={candidates.filter(c => c.selected).length === 0} className="bg-gradient-to-br from-slate-800 to-slate-900 text-yellow-300 py-1.5 px-2 rounded-md text-[8px] font-bold uppercase shadow-sm hover:shadow-md transition-all disabled:opacity-30">Add to Canvas</button>
+        }} disabled={candidates.filter(c => c.selected).length === 0} className={`${whisperingSignature.className} bg-gradient-to-br from-slate-800 to-slate-900 px-2 py-1 text-sm text-yellow-300 shadow-sm transition-all hover:shadow-md disabled:opacity-30`}>Add to Canvas</button>
       </div>
       {selectedImage && (
-        <div className="mb-3">
+        <div className="mb-2">
+          {hasImportedSource && templates.length > 0 && (
+            <div className="mb-3 rounded-2xl border border-sky-200 bg-sky-50/80 px-3 py-2 text-xs font-semibold text-sky-900">
+              Imported image is active in Source.
+              <button
+                type="button"
+                onClick={() => setSelectedImage(templates[0])}
+                className="ml-2 rounded-full border border-sky-300 bg-white px-2 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-sky-800 transition-colors hover:bg-sky-100"
+              >
+                Back To Templates
+              </button>
+            </div>
+          )}
           <button 
             onClick={handleRemoveBackground} 
             disabled={isRemovingBg}
-            className="w-full bg-gradient-to-r from-yellow-500 to-amber-600 text-white py-2 rounded-md text-[8px] font-black uppercase shadow-md hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+            className={`${whisperingSignature.className} flex w-full items-center justify-center gap-2 bg-gradient-to-r from-yellow-500 to-amber-600 py-1.5 text-sm text-white shadow-md transition-all hover:shadow-lg disabled:opacity-50`}
           >
             {isRemovingBg ? (
               <>
@@ -5252,11 +6137,19 @@ const extractSelection = useCallback(async (asJpeg = false) => {
               <>✨ AI Remove BG</>
             )}
           </button>
+          <button
+            type="button"
+            onClick={handleDetectSourceArticles}
+            disabled={isDetectingSourceArticles || !selectedImage}
+            className={`${whisperingSignature.className} mt-2 flex w-full items-center justify-center gap-2 bg-gradient-to-r from-sky-500 to-cyan-600 py-1.5 text-sm text-white shadow-md transition-all hover:shadow-lg disabled:opacity-50`}
+          >
+            {isDetectingSourceArticles ? 'Detecting Articles...' : 'Detect Articles'}
+          </button>
         </div>
       )}
     </div>
-    <div className="flex-1 p-4 overflow-hidden flex flex-col gap-4">
-      <div className="flex-1 bg-slate-100 rounded-3xl overflow-hidden flex items-center justify-center relative border-2 border-slate-200 shadow-inner">
+    <div className="flex-1 min-h-0 p-3 flex flex-col gap-3 overflow-y-auto">
+      <div className="shrink-0 bg-slate-100 rounded-3xl overflow-hidden flex items-center justify-center relative border-2 border-slate-200 shadow-inner min-h-[11rem]">
         <svg 
           id="trace-svg-container" 
           viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} 
@@ -5269,6 +6162,30 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       </div>
       
       <div className="shrink-0">
+        {detectedSourceArticles.length > 0 && (
+          <div className="mb-4">
+            <h4 className="mb-2 text-[10px] font-black uppercase text-slate-500">Detected Articles</h4>
+            <div className="flex items-center gap-2 overflow-x-auto pb-2">
+              {detectedSourceArticles.map((article) => (
+                <button
+                  key={article.id}
+                  type="button"
+                  onClick={() => setSelectedImage(article.imageDataUrl)}
+                  className="flex min-w-[7rem] shrink-0 flex-col items-center gap-2 rounded-2xl border border-slate-200 bg-white p-2 text-left shadow-sm transition hover:border-sky-300 hover:shadow-md"
+                >
+                  <div
+                    className="flex h-20 w-full items-center justify-center rounded-xl border border-white/70"
+                    style={{ backgroundColor: toArticlePreviewColor(article.color) }}
+                  >
+                    <img src={article.imageDataUrl} alt={article.label} className="h-full w-full rounded-xl object-contain" />
+                  </div>
+                  <span className="text-[11px] font-black uppercase text-slate-700">{article.label}</span>
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] text-slate-500">Click a detected article to load it as the active Source image.</p>
+          </div>
+        )}
         <h4 className="text-[10px] font-black uppercase text-slate-500 mb-2">Templates</h4>
         <div className="flex items-center gap-2 overflow-x-auto pb-2">
           {templates.map((u, i) => (
@@ -5277,10 +6194,15 @@ const extractSelection = useCallback(async (asJpeg = false) => {
               id={`template-${i}`}
               src={u}
               onClick={() => setSelectedImage(u)}
-              className={`h-12 w-12 shrink-0 rounded-xl object-contain cursor-pointer border-2 transition-all ${selectedImage === u ? 'border-yellow-500 scale-105 bg-white' : 'border-transparent opacity-70 hover:opacity-100 bg-white/50'}`}
+              className={`h-10 w-10 shrink-0 rounded-lg object-contain cursor-pointer border-2 transition-all ${selectedImage === u ? 'border-yellow-500 scale-105 bg-white' : 'border-transparent opacity-70 hover:opacity-100 bg-white/50'}`}
             />
           ))}
         </div>
+        {hasImportedSource && (
+          <p className="mt-2 text-[11px] text-slate-500">
+            Templates are still available below. Click any template thumbnail to replace the imported image.
+          </p>
+        )}
       </div>
     </div>
   </aside>
@@ -5292,6 +6214,11 @@ const extractSelection = useCallback(async (asJpeg = false) => {
             const c = getCoords(e); 
             const pointerButton = (e.nativeEvent as PointerEvent).button;
             const isPrimaryPointer = pointerButton === 0;
+
+            if (pointerButton === 2) {
+              e.preventDefault();
+              e.stopPropagation();
+            }
             
             if (activeTool === "cursor" && isPrimaryPointer) {
               setSelectionRect({ x1: c.x, y1: c.y, x2: c.x, y2: c.y });
@@ -5330,8 +6257,8 @@ const extractSelection = useCallback(async (asJpeg = false) => {
               return;
             }
 
-            if (activeTool === "erase") { e.preventDefault(); saveForUndo(); sweepErase(c.x, c.y); } 
-            if (activeTool === "pen" || activeTool === "ghost") { e.preventDefault(); saveForUndo(); 
+            if (activeTool === "erase") { e.preventDefault(); saveForUndo(); if (tutorialRecording) { recordTutorialStepOnce({ type: 'erase_action', targetId: 'workspace-svg', label: 'Erase on canvas' }); } sweepErase(c.x, c.y); }
+            if (activeTool === "pen" || activeTool === "ghost") { e.preventDefault(); saveForUndo(); if (tutorialRecording) { recordTutorialStepOnce({ type: 'draw', targetId: 'workspace-svg', label: activeTool === 'ghost' ? 'Draw ghost stroke' : 'Draw pen stroke' }); } 
               const maxZ = Math.max(
                 ...workspaceShapes.map(s => s.zIndex || 0),
                 ...strokes.map(s => s.zIndex || 0),
@@ -5654,6 +6581,142 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                 }
               } }} onPointerUp={(e) => { 
 
+                // Place this inside your existing mouse/pointer release handler:
+// Inside your mouseUp / pointerUp handler:
+// Prevent duplicate execution if already processing
+if (isProcessingRef.current) return;
+
+const activePen = penRef.current;
+
+// Find an unclosed stroke that is strictly NOT part of an already closed loop
+const strokeToProcess = activePen?.strokeIds?.length
+  ? strokes.find((s) => s.id === activePen.strokeIds[activePen.strokeIds.length - 1] && !s.closed)
+  : strokes.find((s) => !s.closed && s.points.length >= 2);
+
+if (strokeToProcess && !strokeToProcess.closed && ['cursor', 'ghost', 'pen'].includes(activeTool)) {
+  const rawPoints = strokeToProcess.points;
+  const shape = workspaceShapes.find((s) => s.showDots) || workspaceShapes[0];
+
+  if (rawPoints && rawPoints.length >= 2 && shape) {
+    const startPoint = rawPoints[0];
+    const endPoint = rawPoints[rawPoints.length - 1];
+    const SNAP_THRESHOLD = 30;
+    const totalDots = shape.dots.length;
+
+    const shapeDots = shape.dots.map((dot, index) => ({
+      index,
+      id: dot.id,
+      x: shape.position.x + dot.x * shape.scale,
+      y: shape.position.y + dot.y * shape.scale,
+    }));
+
+    let nearestStartDot = null;
+    let minStartDist = Infinity;
+    let nearestEndDot = null;
+    let minEndDist = Infinity;
+
+    shapeDots.forEach((dot) => {
+      const dStart = Math.hypot(startPoint.x - dot.x, startPoint.y - dot.y);
+      if (dStart < minStartDist) {
+        minStartDist = dStart;
+        nearestStartDot = dot;
+      }
+
+      const dEnd = Math.hypot(endPoint.x - dot.x, endPoint.y - dot.y);
+      if (dEnd < minEndDist) {
+        minEndDist = dEnd;
+        nearestEndDot = dot;
+      }
+    });
+
+    if (
+      nearestStartDot &&
+      nearestEndDot &&
+      minStartDist <= SNAP_THRESHOLD &&
+      minEndDist <= SNAP_THRESHOLD
+    ) {
+      // Lock execution immediately
+      isProcessingRef.current = true;
+
+      const startIndex = (nearestStartDot as any).index;
+      const endIndex = (nearestEndDot as any).index;
+
+      const snappedStart = { ...startPoint, x: (nearestStartDot as any).x, y: (nearestStartDot as any).y };
+      const snappedEnd = { ...endPoint, x: (nearestEndDot as any).x, y: (nearestEndDot as any).y };
+      const cleanPenPath = [snappedStart, ...rawPoints.slice(1, -1), snappedEnd];
+
+      const buildInclusiveBoundary = (fromIdx: number, toIdx: number, step: number) => {
+        const path: { x: number; y: number }[] = [];
+        let curr = fromIdx;
+        while (curr !== toIdx) {
+          const dot = shape.dots[curr];
+          path.push({
+            x: shape.position.x + dot.x * shape.scale,
+            y: shape.position.y + dot.y * shape.scale,
+          });
+          curr = (curr + step + totalDots) % totalDots;
+        }
+        const finalDot = shape.dots[toIdx];
+        path.push({
+          x: shape.position.x + finalDot.x * shape.scale,
+          y: shape.position.y + finalDot.y * shape.scale,
+        });
+        return path;
+      };
+
+      const pathClockwise = buildInclusiveBoundary(endIndex, startIndex, 1);
+      const pathCounterClockwise = buildInclusiveBoundary(endIndex, startIndex, -1);
+
+      const avgYClockwise = pathClockwise.reduce((s, p) => s + p.y, 0) / (pathClockwise.length || 1);
+      const avgYCounter = pathCounterClockwise.reduce((s, p) => s + p.y, 0) / (pathCounterClockwise.length || 1);
+
+      const upperPerimeter = avgYClockwise < avgYCounter ? pathClockwise : pathCounterClockwise;
+      const lowerPerimeter = avgYClockwise < avgYCounter ? pathCounterClockwise : pathClockwise;
+
+   // Ensure absolute uniqueness by mapping every single point through a generator with unique prefixes
+const formatPoints = (pts: { x: number; y: number }[], prefix: string) =>
+  pts.map((p, idx) => ({
+    id: `${prefix}-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 7)}`,
+    x: p.x,
+    y: p.y,
+  }));
+
+// Clean the raw pen path points while stripping old conflicting IDs
+const cleanPoints = rawPoints.map(p => ({ x: p.x, y: p.y }));
+const formattedCleanPath = formatPoints(cleanPoints, 'shared');
+const upperPerim = formatPoints(upperPerimeter, 'upper');
+const lowerPerim = formatPoints(lowerPerimeter, 'lower');
+
+setStrokes((prev) => [
+  ...prev.filter((s) => s.id !== strokeToProcess.id),
+  {
+    ...strokeToProcess,
+    id: `upper-${Date.now()}`,
+    points: [...formattedCleanPath, ...upperPerim],
+    closed: true,
+  },
+  {
+    ...strokeToProcess,
+    id: `lower-${Date.now()}`,
+    points: [...formattedCleanPath, ...lowerPerim],
+    closed: true,
+  },
+]);
+
+      // Successfully processed, clean up references
+      penRef.current = null;
+      isProcessingRef.current = false;
+      return;
+    } else if (activePen) {
+      // Only alert if it was an active pen/ghost stroke attempt that failed to snap
+      }
+  }
+}
+
+// Always guarantee references are reset at the end of pointerUp
+penRef.current = null;
+isProcessingRef.current = false;
+
                 if (activeTool === "scissor") {
                    const currTarget = scissorTargetRef.current;
                    if (currTarget && scissorDots.length >= 3) {
@@ -5683,11 +6746,99 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                 }
 
               if (selectionRect && Math.abs(selectionRect.x2 - selectionRect.x1) > 10 && Math.abs(selectionRect.y2 - selectionRect.y1) > 10) {
-                if (((e.nativeEvent) as PointerEvent).button === 2 || e.pointerType === 'touch') {
+                if (e.pointerType === 'touch') {
                   openContextMenu({ x: e.clientX, y: e.clientY, id: 'selection', type: 'selection' });
                 }
               } else {
                 setSelectionRect(null);
+              }
+              if (tutorialRecording && draggingDot && pendingDotDragRecordingRef.current) {
+                const c = getCoords(e);
+                const draggedShape = workspaceShapes.find(shape => shape.id === draggingDot.shapeId);
+                const draggedDot = draggedShape?.dots.find(dot => dot.id === draggingDot.dotId);
+                const pendingDotDrag = pendingDotDragRecordingRef.current;
+                setRecordedTutorialSteps(prev => {
+                  for (let idx = prev.length - 1; idx >= 0; idx--) {
+                    const step = prev[idx];
+                    if (step.type === 'drag_dot' && step.targetId === pendingDotDrag.targetId && step.targetDotId === pendingDotDrag.targetDotId && step.timestamp === pendingDotDrag.timestamp) {
+                      const updated = [...prev];
+                      updated[idx] = {
+                        ...step,
+                        endClientX: c.rx,
+                        endClientY: c.ry,
+                        endCanvasX: c.x,
+                        endCanvasY: c.y,
+                        endDotX: draggedDot?.x,
+                        endDotY: draggedDot?.y,
+                      };
+                      return updated;
+                    }
+                  }
+                  return prev;
+                });
+                pendingDotDragRecordingRef.current = null;
+              }
+              if (tutorialRecording && draggingShapeId && pendingShapeDragRecordingRef.current) {
+                const c = getCoords(e);
+                const pendingShapeDrag = pendingShapeDragRecordingRef.current;
+                const draggedShape = workspaceShapes.find(shape => shape.id === draggingShapeId);
+                setRecordedTutorialSteps(prev => {
+                  for (let idx = prev.length - 1; idx >= 0; idx--) {
+                    const step = prev[idx];
+                    if (step.type === 'drag_shape' && step.targetId === pendingShapeDrag.targetId && step.timestamp === pendingShapeDrag.timestamp) {
+                      const updated = [...prev];
+                      updated[idx] = {
+                        ...step,
+                        endClientX: c.rx,
+                        endClientY: c.ry,
+                        endCanvasX: c.x,
+                        endCanvasY: c.y,
+                        finalShapePositionX: draggedShape?.position.x,
+                        finalShapePositionY: draggedShape?.position.y,
+                      };
+                      return updated;
+                    }
+                  }
+                  return prev;
+                });
+                pendingShapeDragRecordingRef.current = null;
+              }
+              if (tutorialRecording && pendingResizeRecordingRef.current && resizingId) {
+                const c = getCoords(e);
+                const pendingResize = pendingResizeRecordingRef.current;
+                const resizedShape = workspaceShapes.find(shape => shape.id === resizingId);
+                const resizedStroke = strokes.find(stroke => stroke.id === resizingId);
+                const finalStrokeScaleFactor = resizedStroke ? (() => {
+                  const startCanvasX = pendingResize ? (recordedTutorialSteps.findLast?.(step => step.type === 'resize_item' && step.targetId === pendingResize.targetId && step.timestamp >= pendingResize.timestamp)?.canvasX) : undefined;
+                  const startCanvasY = pendingResize ? (recordedTutorialSteps.findLast?.(step => step.type === 'resize_item' && step.targetId === pendingResize.targetId && step.timestamp >= pendingResize.timestamp)?.canvasY) : undefined;
+                  const allX = resizedStroke.points.map(point => point.x);
+                  const allY = resizedStroke.points.map(point => point.y);
+                  const centerX = (Math.min(...allX) + Math.max(...allX)) / 2;
+                  const centerY = (Math.min(...allY) + Math.max(...allY)) / 2;
+                  const prevDist = startCanvasX == null || startCanvasY == null ? 0 : Math.hypot(startCanvasX - centerX, startCanvasY - centerY);
+                  const currentDist = Math.hypot(c.x - centerX, c.y - centerY);
+                  return prevDist === 0 ? undefined : currentDist / prevDist;
+                })() : undefined;
+                setRecordedTutorialSteps(prev => {
+                  for (let idx = prev.length - 1; idx >= 0; idx--) {
+                    const step = prev[idx];
+                    if (step.type === 'resize_item' && step.targetId === pendingResize.targetId && step.timestamp >= pendingResize.timestamp) {
+                      const updated = [...prev];
+                      updated[idx] = {
+                        ...step,
+                        endClientX: c.rx,
+                        endClientY: c.ry,
+                        endCanvasX: c.x,
+                        endCanvasY: c.y,
+                        finalShapeScale: resizedShape?.scale,
+                        finalStrokeScaleFactor,
+                      };
+                      return updated;
+                    }
+                  }
+                  return prev;
+                });
+                pendingResizeRecordingRef.current = null;
               }
               isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingStrokeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setDraggingDotClusterId(null); setResizingId(null); setRotatingId(null); }}>
               
@@ -5698,13 +6849,16 @@ const extractSelection = useCallback(async (asJpeg = false) => {
               onContextMenu={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                if (selectionRect) {
-                  const rect = { x: Math.min(selectionRect.x1, selectionRect.x2), y: Math.min(selectionRect.y1, selectionRect.y2), width: Math.abs(selectionRect.x2 - selectionRect.x1), height: Math.abs(selectionRect.y2 - selectionRect.y1) };
-                  const c = getCoords(e);
-                  if (c.x >= rect.x && c.x <= rect.x + rect.width && c.y >= rect.y && c.y <= rect.y + rect.height) {
-                    openContextMenu({ x: e.clientX, y: e.clientY, id: 'selection', type: 'selection' });
-                    return;
-                  }
+                if (!selectionRect) {
+                  setContextMenu(null);
+                  return;
+                }
+                const rect = { x: Math.min(selectionRect.x1, selectionRect.x2), y: Math.min(selectionRect.y1, selectionRect.y2), width: Math.abs(selectionRect.x2 - selectionRect.x1), height: Math.abs(selectionRect.y2 - selectionRect.y1) };
+                const c = getCoords(e);
+                const isInsideSelection = c.x >= rect.x && c.x <= rect.x + rect.width && c.y >= rect.y && c.y <= rect.y + rect.height;
+                if (!isInsideSelection || rect.width <= 10 || rect.height <= 10) {
+                  setContextMenu(null);
+                  return;
                 }
                 openContextMenu({ x: e.clientX, y: e.clientY, id: 'selection', type: 'selection' });
               }}
@@ -5736,13 +6890,13 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                               if (pickColorMode) { e.stopPropagation();
                               const c = getCoords(e); handlePickRemove(shape, c.x, c.y); return; }
                               if (activeTool === "cursor" && !isLocked) { e.stopPropagation();
-                              const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y });
+                              const c = getCoords(e); if (tutorialRecording) { const timestamp = recordTutorialStep({ type: 'drag_shape', targetId: shape.id, label: 'Drag shape', clientX: c.rx, clientY: c.ry, canvasX: c.x, canvasY: c.y, dragOffsetX: c.x - shape.position.x, dragOffsetY: c.y - shape.position.y, targetShapePositionX: shape.position.x, targetShapePositionY: shape.position.y, targetShapeScale: shape.scale, targetShapeDots: shape.dots.map(shapeDot => ({ ...shapeDot })), targetShapeImg: shape.img, targetShapeDims: { ...shape.dims }, targetShapeRotation: shape.rotation, targetShapeIsMannequin: shape.isMannequin }); pendingShapeDragRecordingRef.current = { targetId: shape.id, timestamp }; } setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y });
                               }
                             }} onContextMenu={(e) => { e.preventDefault();
                               e.stopPropagation(); const c = getCoords(e); openContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y });
                             }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
-                            {globalShowDots && shape.dots.map((dot) => (<circle key={dot.id} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#8b5cf6" stroke="#ffffff" strokeWidth={2 / shape.scale} opacity={0.8} onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}
-                            {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id);
+                            {globalShowDots && shape.dots.map((dot, dotIndex) => (<circle key={dot.id} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#8b5cf6" stroke="#ffffff" strokeWidth={2 / shape.scale} opacity={0.8} onPointerDown={(e) => { e.stopPropagation(); if (tutorialRecording) { const c = getCoords(e); const timestamp = recordTutorialStep({ type: 'drag_dot', targetId: shape.id, targetDotId: dot.id, targetDotIndex: dotIndex, targetShapePositionX: shape.position.x, targetShapePositionY: shape.position.y, targetShapeScale: shape.scale, targetShapeDots: shape.dots.map(shapeDot => ({ ...shapeDot })), targetShapeImg: shape.img, targetShapeDims: { ...shape.dims }, targetShapeRotation: shape.rotation, targetShapeIsMannequin: shape.isMannequin, label: 'Drag shape dot', clientX: c.rx, clientY: c.ry, canvasX: c.x, canvasY: c.y, startDotX: dot.x, startDotY: dot.y }); pendingDotDragRecordingRef.current = { targetId: shape.id, targetDotId: dot.id, timestamp }; } setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}
+                            {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); if (tutorialRecording) { recordTutorialStep({ type: 'resize_item', targetId: shape.id, label: 'Resize shape', clientX: c.rx, clientY: c.ry, canvasX: c.x, canvasY: c.y }); pendingResizeRecordingRef.current = { targetId: shape.id, timestamp: Date.now() }; } setResizingId(shape.id);
                             setDragOffset({ x: c.x, y: c.y }); }} />}
                             {globalShowDots && <circle cx={shape.dims.width / 2} cy={-30} r={20/shape.scale} fill="#10b981" onPointerDown={(e) => { e.stopPropagation();
                               const c = getCoords(e); setRotatingId(shape.id); setDragOffset({ x: c.x, y: c.y });
@@ -5785,10 +6939,11 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                               if (pickColorMode) { e.stopPropagation();
                               const c = getCoords(e); handlePickRemove(shape, c.x, c.y); return; }
                               if (activeTool === "fill") { e.stopPropagation();
+                              if (tutorialRecording) { recordTutorialStep({ type: 'fill_shape', targetId: shape.id, label: 'Fill shape', fillTargetKind: 'shape', clientX: e.clientX, clientY: e.clientY }); }
                               saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? { ...s, fabricFillSrc: undefined, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : s));
                               return; }
                               if (activeTool === "cursor" && !isLocked) { e.stopPropagation();
-                              const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y });
+                              const c = getCoords(e); if (tutorialRecording) { const timestamp = recordTutorialStep({ type: 'drag_shape', targetId: shape.id, label: 'Drag shape', clientX: c.rx, clientY: c.ry, canvasX: c.x, canvasY: c.y, dragOffsetX: c.x - shape.position.x, dragOffsetY: c.y - shape.position.y, targetShapePositionX: shape.position.x, targetShapePositionY: shape.position.y, targetShapeScale: shape.scale, targetShapeDots: shape.dots.map(shapeDot => ({ ...shapeDot })), targetShapeImg: shape.img, targetShapeDims: { ...shape.dims }, targetShapeRotation: shape.rotation, targetShapeIsMannequin: shape.isMannequin }); pendingShapeDragRecordingRef.current = { targetId: shape.id, timestamp }; } setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y });
                               }
                             }} onContextMenu={(e) => { e.preventDefault();
                               e.stopPropagation(); const c = getCoords(e); openContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y });
@@ -5868,10 +7023,10 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                             ) : (
                               shape.fillColor && <path d={generatePathData(shape.dots, true)} fill={shape.fillColor} pointerEvents="none" />
                             )}
-                            {globalShowDots && shape.dots.map((dot, dotIdx) => (<circle key={dot.id} id={idx === 0 && dotIdx === 0 ? "workspace-dot-0" : undefined} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#3b82f6" onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id });
+                            {globalShowDots && shape.dots.map((dot, dotIdx) => (<circle key={dot.id} id={idx === 0 && dotIdx === 0 ? "workspace-dot-0" : undefined} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#3b82f6" onPointerDown={(e) => { e.stopPropagation(); if (tutorialRecording) { const c = getCoords(e); const timestamp = recordTutorialStep({ type: 'drag_dot', targetId: shape.id, targetDotId: dot.id, targetDotIndex: dotIdx, targetShapePositionX: shape.position.x, targetShapePositionY: shape.position.y, targetShapeScale: shape.scale, targetShapeDots: shape.dots.map(shapeDot => ({ ...shapeDot })), targetShapeImg: shape.img, targetShapeDims: { ...shape.dims }, targetShapeRotation: shape.rotation, targetShapeIsMannequin: shape.isMannequin, label: 'Drag shape dot', clientX: c.rx, clientY: c.ry, canvasX: c.x, canvasY: c.y, startDotX: dot.x, startDotY: dot.y }); pendingDotDragRecordingRef.current = { targetId: shape.id, targetDotId: dot.id, timestamp }; } setDraggingDot({ shapeId: shape.id, dotId: dot.id });
                             }} />))}
-                            {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation();
-                              const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.x, y: c.y });
+                            {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); if (tutorialRecording) { recordTutorialStep({ type: 'resize_item', targetId: shape.id, label: 'Resize shape', clientX: c.rx, clientY: c.ry, canvasX: c.x, canvasY: c.y }); pendingResizeRecordingRef.current = { targetId: shape.id, timestamp: Date.now() }; }
+                              setResizingId(shape.id); setDragOffset({ x: c.x, y: c.y });
                             }} />}
                             {globalShowDots && <circle cx={shape.dims.width / 2} cy={-30} r={20/shape.scale} fill="#10b981" onPointerDown={(e) => { e.stopPropagation();
                               const c = getCoords(e); setRotatingId(shape.id); setDragOffset({ x: c.x, y: c.y });
@@ -6079,10 +7234,14 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                                   onPointerDown={(e) => {
                                     if (activeTool === "fill") {
                                       e.stopPropagation();
+                                      if (tutorialRecording) { recordTutorialStep({ type: 'fill_shape', targetId: s.id, label: 'Fill stroke', fillTargetKind: 'stroke', clientX: e.clientX, clientY: e.clientY }); }
                                       saveForUndo();
                                       setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st));
                                     } else if (activeTool === "cursor" && !isLocked) {
                                       e.stopPropagation();
+                                      if (tutorialRecording) {
+                                        recordTutorialStepOnce({ type: 'drag_stroke', targetId: s.id, label: 'Drag stroke' });
+                                      }
                                       const c = getCoords(e);
                                       setDraggingStrokeId(s.id);
                                       setDragOffset({ x: c.x, y: c.y });
@@ -6105,6 +7264,9 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                                   if (activeTool === "fill") {
                                   } else if (activeTool === "cursor" && !isLocked) {
                                     e.stopPropagation();
+                                    if (tutorialRecording) {
+                                      recordTutorialStepOnce({ type: 'drag_stroke', targetId: s.id, label: 'Drag stroke' });
+                                    }
                                     const c = getCoords(e);
                                     setDraggingStrokeId(s.id);
                                     setDragOffset({ x: c.x, y: c.y });
@@ -6125,10 +7287,14 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                               onPointerDown={(e) => {
                                   if (activeTool === "fill") {
                                     e.stopPropagation();
+                                    if (tutorialRecording) { recordTutorialStep({ type: 'fill_shape', targetId: s.id, label: 'Fill stroke', fillTargetKind: 'stroke', clientX: e.clientX, clientY: e.clientY }); }
                                     saveForUndo();
                                     setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st));
                                   } else if (activeTool === "cursor" && !isLocked) {
                                     e.stopPropagation();
+                                    if (tutorialRecording) {
+                                      recordTutorialStepOnce({ type: 'drag_stroke', targetId: s.id, label: 'Drag stroke' });
+                                    }
                                     const c = getCoords(e);
                                     setDraggingStrokeId(s.id);
                                     setDragOffset({ x: c.x, y: c.y });
@@ -6175,6 +7341,9 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                                         setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st));
                                       } else if (activeTool === "cursor" && !isLocked) {
                                         e.stopPropagation();
+                                        if (tutorialRecording) {
+                                          recordTutorialStepOnce({ type: 'drag_stroke', targetId: s.id, label: 'Drag stroke' });
+                                        }
                                         const c = getCoords(e);
                                         setDraggingStrokeId(s.id);
                                         setDragOffset({ x: c.x, y: c.y });
@@ -6190,10 +7359,14 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                             <g onPointerDown={(e) => {
                               if (activeTool === "fill") {
                                 e.stopPropagation();
+                                if (tutorialRecording) { recordTutorialStep({ type: 'fill_shape', targetId: s.id, label: 'Fill stroke', fillTargetKind: 'stroke', clientX: e.clientX, clientY: e.clientY }); }
                                 saveForUndo();
                                 setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st));
                               } else if (activeTool === "cursor" && !isLocked) {
                                   e.stopPropagation();
+                                  if (tutorialRecording) {
+                                    recordTutorialStepOnce({ type: 'drag_stroke', targetId: s.id, label: 'Drag stroke' });
+                                  }
                                   const c = getCoords(e);
                                   setDraggingStrokeId(s.id);
                                   setDragOffset({ x: c.x, y: c.y });
@@ -6249,7 +7422,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                             </defs>
                           )}
                           {meshStroke ? (
-                            <g onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType), strokeStyle: normalizeFabric(selectedClothType) === 'mesh' ? 'mesh' : st.strokeStyle, meshPattern: normalizeFabric(selectedClothType) === 'mesh' ? { horizontalLines: meshHorizontalLines, verticalLines: meshVerticalLines } : st.meshPattern } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); openContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
+                            <g onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); if (tutorialRecording) { recordTutorialStep({ type: 'fill_shape', targetId: s.id, label: 'Fill stroke', fillTargetKind: 'stroke', clientX: e.clientX, clientY: e.clientY }); } saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType), strokeStyle: normalizeFabric(selectedClothType) === 'mesh' ? 'mesh' : st.strokeStyle, meshPattern: normalizeFabric(selectedClothType) === 'mesh' ? { horizontalLines: meshHorizontalLines, verticalLines: meshVerticalLines } : st.meshPattern } : st)); setShowColorPanel(false); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); openContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
                               <g clipPath={`url(#mesh-stroke-clip-${s.id})`} opacity={s.visible === false ? 0.3 : 1}>
                                 <rect x={meshMinX} y={meshMinY} width={meshPatternWidth} height={meshPatternHeight} fill="transparent" />
                                 {Array.from({ length: meshPattern.horizontalLines }, (_, idx) => {
@@ -6263,7 +7436,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                               </g>
                             </g>
                               ) : (
-                            <path d={generatePathData(s.points, s.closed ?? false)} stroke={s.visible === false ? (globalShowDots ? s.color : "transparent") : s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={s.visible === false ? "5,5" : undefined} opacity={s.visible === false ? 0.3 : 1} onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType), strokeStyle: normalizeFabric(selectedClothType) === 'mesh' ? 'mesh' : st.strokeStyle, meshPattern: normalizeFabric(selectedClothType) === 'mesh' ? { horizontalLines: meshHorizontalLines, verticalLines: meshVerticalLines } : st.meshPattern } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); openContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }} />
+                            <path d={generatePathData(s.points, s.closed ?? false)} stroke={s.visible === false ? (globalShowDots ? s.color : "transparent") : s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={s.visible === false ? "5,5" : undefined} opacity={s.visible === false ? 0.3 : 1} onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); if (tutorialRecording) { recordTutorialStep({ type: 'fill_shape', targetId: s.id, label: 'Fill stroke', fillTargetKind: 'stroke', clientX: e.clientX, clientY: e.clientY }); } saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType), strokeStyle: normalizeFabric(selectedClothType) === 'mesh' ? 'mesh' : st.strokeStyle, meshPattern: normalizeFabric(selectedClothType) === 'mesh' ? { horizontalLines: meshHorizontalLines, verticalLines: meshVerticalLines } : st.meshPattern } : st)); setShowColorPanel(false); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); openContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }} />
                           )}
                         </>
                       )}
@@ -6280,7 +7453,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                         const centerX = (minX + maxX) / 2;
                         return (
                           <>
-                            <rect x={maxX + 10} y={maxY + 10} width={45} height={45} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(s.id); setDragOffset({ x: c.x, y: c.y }); }} />
+                            <rect x={maxX + 10} y={maxY + 10} width={45} height={45} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); if (tutorialRecording) { recordTutorialStep({ type: 'resize_item', targetId: s.id, label: 'Resize stroke', clientX: c.rx, clientY: c.ry, canvasX: c.x, canvasY: c.y }); pendingResizeRecordingRef.current = { targetId: s.id, timestamp: Date.now() }; } setResizingId(s.id); setDragOffset({ x: c.x, y: c.y }); }} />
                             <circle cx={centerX} cy={minY - 30} r={20} fill="#10b981" onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setRotatingId(s.id); setDragOffset({ x: c.x, y: c.y }); }} />
                           </>
                         );

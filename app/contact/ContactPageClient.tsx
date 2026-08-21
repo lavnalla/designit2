@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import Footer from "../../src/components/Footer";
+import { hughIsLife, whisperingSignature } from "../../src/lib/fonts";
 
 export default function ContactPageClient() {
   const [formData, setFormData] = useState({
@@ -55,55 +55,39 @@ export default function ContactPageClient() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-gradient-to-br from-slate-50 via-white to-stone-100 text-slate-900">
-      <nav className="flex items-center justify-between px-6 py-5 border-b-4 border-[#B87333] bg-gradient-to-r from-yellow-600 via-yellow-500 to-yellow-600 shadow-md">
-        <div className="flex items-center gap-2">
-          <img src="/logo.png" alt="DesignIt" className="h-8 w-auto brightness-0 invert" />
-          <span className="font-black text-2xl tracking-tight text-white drop-shadow-md">DesignIt</span>
-        </div>
-        <div className="flex items-center gap-6">
-          <Link href="/" className="text-white hover:text-yellow-100 font-semibold text-sm uppercase transition-colors drop-shadow-sm">
-            Home
-          </Link>
-          <Link href="/about" className="text-white hover:text-yellow-100 font-semibold text-sm uppercase transition-colors drop-shadow-sm">
-            About
-          </Link>
-          <Link href="/contact" className="text-white font-bold text-sm uppercase drop-shadow-sm border-b-2 border-white">
-            Contact
-          </Link>
-          <Link href="/" className="bg-white text-yellow-700 border border-yellow-200 px-8 py-3 rounded-full font-bold text-sm uppercase transition-all hover:scale-105 shadow-md hover:shadow-lg hover:bg-yellow-50">
-            Launch Studio
-          </Link>
-        </div>
-      </nav>
+    <div className="min-h-screen bg-[#f9e8ee] px-4 py-6 text-slate-900 md:px-8 lg:px-10">
+      <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-[1120px] flex-col overflow-hidden bg-[#dff6e8] shadow-[0_28px_80px_rgba(15,23,42,0.12)]">
+        <main className="flex-1 px-5 py-12 md:px-8 md:py-14">
+          <div className="mx-auto max-w-5xl">
+            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#8a644a]">Contact DesignIt</p>
+            <h1 className={`${hughIsLife.className} mt-3 text-5xl leading-tight tracking-tight text-[#4f264f] md:text-6xl`}>
+              Get In Touch
+            </h1>
+            <p className="mt-5 max-w-3xl text-base leading-8 text-slate-600">
+              Questions about the studio, AR tools, blog content, or creative workflows can all be sent here.
+            </p>
 
-      <main className="flex-1 px-6 py-16">
-        <div className="max-w-4xl mx-auto">
-          <h1 className="text-5xl md:text-7xl font-black mb-8 leading-tight text-slate-800">
-            Get in <span className="bg-gradient-to-r from-amber-500 to-orange-500 bg-clip-text text-transparent">Touch</span>
-          </h1>
-
-          <div className="grid md:grid-cols-2 gap-12">
+          <div className="mt-12 grid gap-12 md:grid-cols-2">
             <div>
-              <h2 className="text-2xl font-black mb-6 text-slate-900">Contact Information</h2>
+              <h2 className={`${whisperingSignature.className} mb-6 text-4xl text-slate-900`}>Contact Information</h2>
 
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-lg font-black mb-2 bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">Email</h3>
-                  <a href="mailto:info@idesignits.com" className="text-slate-600 hover:text-amber-600 transition-colors font-medium">
+                  <h3 className="mb-2 text-lg font-black text-slate-900">Email</h3>
+                  <a href="mailto:info@idesignits.com" className="font-medium text-slate-600 transition-colors hover:text-[#8f6a88]">
                     info@idesignits.com
                   </a>
                 </div>
 
                 <div>
-                  <h3 className="text-lg font-black mb-2 bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">Support</h3>
-                  <a href="mailto:support@idesignits.com" className="text-slate-600 hover:text-amber-600 transition-colors font-medium">
+                  <h3 className="mb-2 text-lg font-black text-slate-900">Support</h3>
+                  <a href="mailto:support@idesignits.com" className="font-medium text-slate-600 transition-colors hover:text-[#8f6a88]">
                     support@idesignits.com
                   </a>
                 </div>
 
                 <div>
-                  <h3 className="text-lg font-black mb-2 bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">Company</h3>
+                  <h3 className="mb-2 text-lg font-black text-slate-900">Company</h3>
                   <p className="text-slate-600">
                     Learncapes Inc.<br />
                     Digital Design Solutions
@@ -111,23 +95,23 @@ export default function ContactPageClient() {
                 </div>
 
                 <div>
-                  <h3 className="text-lg font-black mb-2 bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">Social Media</h3>
+                  <h3 className="mb-2 text-lg font-black text-slate-900">Social Media</h3>
                   <div className="flex gap-4">
-                    <a href="#" className="text-slate-600 hover:text-amber-600 transition-colors font-medium">
+                    <a href="#" className="font-medium text-slate-600 transition-colors hover:text-[#8f6a88]">
                       Twitter
                     </a>
-                    <a href="#" className="text-slate-600 hover:text-amber-600 transition-colors font-medium">
+                    <a href="#" className="font-medium text-slate-600 transition-colors hover:text-[#8f6a88]">
                       Instagram
                     </a>
-                    <a href="#" className="text-slate-600 hover:text-amber-600 transition-colors font-medium">
+                    <a href="#" className="font-medium text-slate-600 transition-colors hover:text-[#8f6a88]">
                       LinkedIn
                     </a>
                   </div>
                 </div>
               </div>
 
-              <div className="mt-12 p-6 bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl border-2 border-amber-200 shadow-md">
-                <h3 className="text-lg font-black mb-3 text-slate-900">Office Hours</h3>
+              <div className="mt-12 border border-[#ead8dc] bg-[#fffaf8] p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+                <h3 className="mb-3 text-lg font-black text-slate-900">Office Hours</h3>
                 <p className="text-slate-600 mb-2">Monday - Friday: 9:00 AM - 6:00 PM EST</p>
                 <p className="text-slate-600">Saturday - Sunday: Closed</p>
                 <p className="text-slate-500 text-sm mt-4 italic">
@@ -137,23 +121,23 @@ export default function ContactPageClient() {
             </div>
 
             <div>
-              <h2 className="text-2xl font-black mb-6 text-slate-900">Send Us a Message</h2>
+              <h2 className={`${whisperingSignature.className} mb-6 text-4xl text-slate-900`}>Send Us A Message</h2>
 
               {submitted ? (
-                <div className="bg-green-50 border-2 border-green-200 rounded-2xl p-8 text-center">
+                <div className="border border-green-200 bg-green-50 p-8 text-center">
                   <div className="text-5xl mb-4">✓</div>
                   <h3 className="text-xl font-black text-green-800 mb-2">Message Sent!</h3>
                   <p className="text-green-700">Thank you for reaching out. We&apos;ll get back to you soon.</p>
                 </div>
               ) : error ? (
                 <div className="space-y-6">
-                  <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-6 text-center">
+                  <div className="border border-red-200 bg-red-50 p-6 text-center">
                     <div className="text-3xl mb-2">⚠️</div>
                     <p className="text-red-700 font-bold">{error}</p>
                   </div>
                   <button
                     onClick={() => setError("")}
-                    className="w-full bg-slate-200 text-slate-700 px-8 py-3 rounded-xl font-black uppercase text-sm hover:bg-slate-300 transition-colors"
+                    className="w-full bg-slate-200 px-8 py-3 text-sm font-black uppercase text-slate-700 transition-colors hover:bg-slate-300"
                   >
                     Try Again
                   </button>
@@ -171,7 +155,7 @@ export default function ContactPageClient() {
                       value={formData.name}
                       onChange={handleChange}
                       required
-                      className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-amber-500 focus:outline-none transition-colors"
+                      className="w-full border border-[#ead8dc] bg-white px-4 py-3 focus:border-[#8f6a88] focus:outline-none"
                       placeholder="Your name"
                     />
                   </div>
@@ -187,7 +171,7 @@ export default function ContactPageClient() {
                       value={formData.email}
                       onChange={handleChange}
                       required
-                      className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-amber-500 focus:outline-none transition-colors"
+                      className="w-full border border-[#ead8dc] bg-white px-4 py-3 focus:border-[#8f6a88] focus:outline-none"
                       placeholder="your@email.com"
                     />
                   </div>
@@ -203,7 +187,7 @@ export default function ContactPageClient() {
                       value={formData.subject}
                       onChange={handleChange}
                       required
-                      className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-amber-500 focus:outline-none transition-colors"
+                      className="w-full border border-[#ead8dc] bg-white px-4 py-3 focus:border-[#8f6a88] focus:outline-none"
                       placeholder="What&apos;s this about?"
                     />
                   </div>
@@ -219,7 +203,7 @@ export default function ContactPageClient() {
                       onChange={handleChange}
                       required
                       rows={6}
-                      className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-amber-500 focus:outline-none transition-colors resize-none"
+                      className="w-full resize-none border border-[#ead8dc] bg-white px-4 py-3 focus:border-[#8f6a88] focus:outline-none"
                       placeholder="Tell us more..."
                     />
                   </div>
@@ -227,7 +211,7 @@ export default function ContactPageClient() {
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-white px-8 py-4 rounded-full font-black uppercase text-sm shadow-lg hover:shadow-xl hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full bg-black px-8 py-4 text-sm font-black uppercase text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {isSubmitting ? "Sending..." : "Send Message →"}
                   </button>
@@ -240,20 +224,19 @@ export default function ContactPageClient() {
             </div>
           </div>
 
-          <div className="mt-16 bg-gradient-to-br from-amber-500 via-orange-500 to-amber-600 rounded-3xl p-8 md:p-12 text-center text-white shadow-2xl">
-            <h2 className="text-3xl font-black mb-4">Need Help Getting Started?</h2>
+          <div className="mt-16 bg-[#8f6a88] p-8 text-center text-white shadow-[0_18px_36px_rgba(15,23,42,0.12)] md:p-12">
+            <h2 className="mb-4 text-3xl font-black">Need Help Getting Started?</h2>
             <p className="text-white mb-6 max-w-2xl mx-auto font-medium">
               Check out our interactive tutorial that guides you through all the features of DesignIt.
               Click the yellow "?" button in the studio to start learning!
             </p>
-            <Link href="/" className="inline-block bg-white text-amber-600 px-10 py-4 rounded-full font-black uppercase text-sm shadow-xl hover:scale-105 transition-transform">
-              Launch Studio →
+            <Link href="/studio" className="inline-block bg-[#fffaf2] px-10 py-4 text-sm font-black uppercase text-[#4f264f] transition-transform hover:scale-105">
+              Launch Design Studio
             </Link>
           </div>
         </div>
       </main>
-
-      <Footer />
+      </div>
     </div>
   );
 }

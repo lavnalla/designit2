@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 declare global {
   interface Window {
@@ -17,6 +17,7 @@ type AdSlotProps = {
 
 export default function AdSlot({ slot, format = "auto", className, style }: AdSlotProps) {
   const adRef = useRef<HTMLElement | null>(null);
+  const [isReady, setIsReady] = useState(false);
 
   if (!process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_CLIENT || !slot) {
     return null;
@@ -25,7 +26,31 @@ export default function AdSlot({ slot, format = "auto", className, style }: AdSl
   useEffect(() => {
     const adElement = adRef.current;
 
-    if (!adElement || adElement.getAttribute("data-adsbygoogle-status")) {
+    if (!adElement) {
+      return;
+    }
+
+    const updateReadiness = () => {
+      setIsReady(adElement.offsetWidth > 0);
+    };
+
+    updateReadiness();
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateReadiness();
+    });
+
+    resizeObserver.observe(adElement);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    const adElement = adRef.current;
+
+    if (!isReady || !adElement || adElement.getAttribute("data-adsbygoogle-status")) {
       return;
     }
 
@@ -34,7 +59,7 @@ export default function AdSlot({ slot, format = "auto", className, style }: AdSl
     } catch {
       // Ignore repeated init failures during hydration or local development.
     }
-  }, []);
+  }, [isReady]);
 
   return (
     <ins
