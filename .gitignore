@@ -28,6 +28,7 @@
 
 # personal editor settings
 .vscode
+.claude
 
 # debug
 npm-debug.log*
