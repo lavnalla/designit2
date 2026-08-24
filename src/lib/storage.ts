@@ -9,6 +9,27 @@ export interface Submission {
   createdAt: string;
 }
 
+function formatStorageError(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+
+  if (error && typeof error === 'object') {
+    const record = error as Record<string, unknown>;
+    return {
+      message: record.message ?? 'Unknown storage error',
+      details: record.details ?? null,
+      hint: record.hint ?? null,
+      code: record.code ?? null,
+    };
+  }
+
+  return { message: String(error) };
+}
+
 export async function getSubmissions(admin: boolean = false): Promise<Submission[]> {
   try {
     let query = supabase
@@ -23,7 +44,7 @@ export async function getSubmissions(admin: boolean = false): Promise<Submission
     const { data, error } = await query;
     
     if (error) {
-      console.error('[Storage] Error fetching submissions:', error);
+      console.warn('[Storage] Unable to fetch submissions. Falling back to empty list.', formatStorageError(error));
       return [];
     }
 
@@ -43,7 +64,7 @@ export async function getSubmissions(admin: boolean = false): Promise<Submission
       createdAt: row.created_at,
     }));
   } catch (error) {
-    console.error('Unexpected error fetching submissions:', error);
+    console.warn('[Storage] Unexpected failure fetching submissions. Falling back to empty list.', formatStorageError(error));
     return [];
   }
 }

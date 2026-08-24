@@ -13,7 +13,7 @@ interface MetricData {
 
 interface NecklaceTryOnProps {
   selectedImageSrc: string;
-  mode?: "garment" | "necklace";
+  mode?: "garment" | "necklace" | "earrings";
   onClose?: () => void;
 }
 
@@ -32,6 +32,20 @@ interface NecklaceAnchorPoints {
   neckY: number;
   centerX: number;
 }
+
+interface EarringAssetSet {
+  left: HTMLCanvasElement;
+  right: HTMLCanvasElement;
+}
+
+const FACE_LANDMARKS = {
+  leftTemple: 234,
+  rightTemple: 454,
+  leftEyeOuter: 33,
+  rightEyeOuter: 263,
+  mouthLeft: 61,
+  mouthRight: 291,
+} as const;
 
 function getNecklacePlacement(
   landmarks: Array<{ x: number; y: number }>,
@@ -75,6 +89,37 @@ function getNecklacePlacement(
   };
 }
 
+function getNecklaceFallbackAnchors(bounds: OverlayBounds) {
+  const upperBandHeight = Math.max(6, Math.floor(bounds.height * 0.22));
+  const neckY = bounds.minY + upperBandHeight;
+  const inset = bounds.width * 0.18;
+
+  return {
+    leftNeckX: bounds.minX + inset,
+    rightNeckX: bounds.maxX - inset,
+    neckY,
+    centerX: (bounds.minX + bounds.maxX) / 2,
+  };
+}
+
+function hasVisiblePixels(canvas: HTMLCanvasElement, minOpaquePixels: number) {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return false;
+  const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+  let opaquePixels = 0;
+
+  for (let index = 3; index < data.length; index += 4) {
+    if (data[index] > 20) {
+      opaquePixels += 1;
+      if (opaquePixels >= minOpaquePixels) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 declare global {
   interface Window {
     Camera: any;
@@ -94,6 +139,7 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
   const garmentImageRef = useRef<HTMLImageElement | null>(null);
   const overlayBoundsRef = useRef<OverlayBounds | null>(null);
   const necklaceAnchorsRef = useRef<NecklaceAnchorPoints | null>(null);
+  const earringAssetsRef = useRef<EarringAssetSet | null>(null);
 
   // Engines stored as refs so they can be explicitly destroyed on close
   const activeCameraRef = useRef<any>(null);
@@ -127,13 +173,71 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
   const BODY_MASK_THRESHOLD = 50;
   const NECKLACE_STARTUP_SCALE = 0.8;
   const NECKLACE_STARTUP_Y_OFFSET = -targetHeight * 0.02;
+  const EARRING_STARTUP_SCALE = 0.72;
   const isLoaded = scriptsLoaded.camera && scriptsLoaded.selfie && scriptsLoaded.holistic;
   const isMobile = viewportWidth <= 768;
 
   useEffect(() => {
-    manualScaleRef.current = mode === "necklace" ? NECKLACE_STARTUP_SCALE : 1;
-    manualOffsetYRef.current = mode === "necklace" ? NECKLACE_STARTUP_Y_OFFSET : 0;
-  }, [mode, NECKLACE_STARTUP_SCALE, NECKLACE_STARTUP_Y_OFFSET]);
+    if (mode === "necklace") {
+      manualScaleRef.current = NECKLACE_STARTUP_SCALE;
+      manualOffsetYRef.current = NECKLACE_STARTUP_Y_OFFSET;
+    } else if (mode === "earrings") {
+      manualScaleRef.current = EARRING_STARTUP_SCALE;
+      manualOffsetYRef.current = 0;
+    } else {
+      manualScaleRef.current = 1;
+      manualOffsetYRef.current = 0;
+    }
+    manualOffsetXRef.current = 0;
+    setScaleVersion((prev) => prev + 1);
+  }, [mode, EARRING_STARTUP_SCALE, NECKLACE_STARTUP_SCALE, NECKLACE_STARTUP_Y_OFFSET]);
+
+  useEffect(() => {
+    earringAssetsRef.current = null;
+    if (mode !== "earrings" || !selectedImageSrc) return;
+
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const full = document.createElement("canvas");
+      full.width = img.width;
+      full.height = img.height;
+      const fullCtx = full.getContext("2d");
+      if (!fullCtx) return;
+      fullCtx.drawImage(img, 0, 0);
+
+      const splitX = Math.max(1, Math.round(full.width / 2));
+      const left = document.createElement("canvas");
+      left.width = splitX;
+      left.height = full.height;
+      left.getContext("2d")?.drawImage(full, 0, 0, splitX, full.height, 0, 0, splitX, full.height);
+
+      const rightWidth = Math.max(1, full.width - splitX);
+      const right = document.createElement("canvas");
+      right.width = rightWidth;
+      right.height = full.height;
+      right.getContext("2d")?.drawImage(full, splitX, 0, rightWidth, full.height, 0, 0, rightWidth, full.height);
+
+      const mirroredLeft = document.createElement("canvas");
+      mirroredLeft.width = left.width;
+      mirroredLeft.height = left.height;
+      const mirroredCtx = mirroredLeft.getContext("2d");
+      if (mirroredCtx) {
+        mirroredCtx.translate(mirroredLeft.width, 0);
+        mirroredCtx.scale(-1, 1);
+        mirroredCtx.drawImage(left, 0, 0);
+      }
+
+      const minOpaquePixels = Math.max(40, Math.round((full.width * full.height) * 0.0025));
+      const hasDistinctRightEarring = rightWidth > 4 && hasVisiblePixels(right, minOpaquePixels);
+
+      earringAssetsRef.current = {
+        left,
+        right: hasDistinctRightEarring ? right : mirroredLeft,
+      };
+    };
+    img.src = selectedImageSrc;
+  }, [mode, selectedImageSrc]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -168,10 +272,11 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
       const localCropCtx = localCropC.getContext("2d");
 
       if (localCropCtx) {
-        const topCutoffY = img.height * 0.2;
+        const isNecklaceMode = mode === "necklace";
+        const topCutoffY = img.height * (isNecklaceMode ? 0.04 : 0.2);
         const sourceHeightToKeep = img.height - topCutoffY;
-        const sideCutoffX = img.width * 0.1;
-        const sourceWidthToKeep = img.width * 0.8;
+        const sideCutoffX = img.width * (isNecklaceMode ? 0.03 : 0.1);
+        const sourceWidthToKeep = img.width - sideCutoffX * 2;
 
         localCropCtx.drawImage(
           img,
@@ -246,12 +351,14 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
               }
             }
 
-            necklaceAnchorsRef.current = {
-              leftNeckX: bestLeft,
-              rightNeckX: bestRight,
-              neckY: bestRow === -1 ? bounds.minY : bestRow,
-              centerX: (bestLeft + bestRight) / 2,
-            };
+            necklaceAnchorsRef.current = bestRow === -1
+              ? getNecklaceFallbackAnchors(bounds)
+              : {
+                  leftNeckX: bestLeft,
+                  rightNeckX: bestRight,
+                  neckY: bestRow,
+                  centerX: (bestLeft + bestRight) / 2,
+                };
           } else {
             overlayBoundsRef.current = null;
             necklaceAnchorsRef.current = null;
@@ -261,7 +368,7 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
       }
     };
     img.src = selectedImageSrc;
-  }, [selectedImageSrc]);
+  }, [mode, selectedImageSrc]);
 
   useEffect(() => {
     if (isClosed || isMinimized) return;
@@ -337,7 +444,51 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
             const torsoWidth = maxX - minX;
             const torsoHeight = maxY - minY;
 
-            if (mode === "necklace" && necklaceAnchorsRef.current) {
+            if (mode === "earrings") {
+              const faceLm = latestFaceLandmarksRef.current;
+              const earringAssets = earringAssetsRef.current;
+
+              if (faceLm) {
+                const leftTemple = faceLm[FACE_LANDMARKS.leftTemple];
+                const rightTemple = faceLm[FACE_LANDMARKS.rightTemple];
+                const leftEye = faceLm[FACE_LANDMARKS.leftEyeOuter];
+                const rightEye = faceLm[FACE_LANDMARKS.rightEyeOuter];
+                const leftMouth = faceLm[FACE_LANDMARKS.mouthLeft];
+                const rightMouth = faceLm[FACE_LANDMARKS.mouthRight];
+
+                if (leftTemple && rightTemple && leftEye && rightEye && leftMouth && rightMouth) {
+                  const leftTempleX = leftTemple.x * w;
+                  const rightTempleX = rightTemple.x * w;
+                  const leftTempleY = leftTemple.y * h;
+                  const rightTempleY = rightTemple.y * h;
+                  const faceWidth = Math.max(1, Math.hypot(rightTempleX - leftTempleX, rightTempleY - leftTempleY));
+                  const leftEarY = (leftEye.y * h) + ((leftMouth.y - leftEye.y) * h * 0.62) - faceWidth * 0.035 + manualOffsetYRef.current;
+                  const rightEarY = (rightEye.y * h) + ((rightMouth.y - rightEye.y) * h * 0.62) - faceWidth * 0.035 + manualOffsetYRef.current;
+                    const leftEarX = leftTempleX - faceWidth * 0.05 + manualOffsetXRef.current;
+                    const rightEarX = rightTempleX + faceWidth * 0.06 + manualOffsetXRef.current;
+                  const earringWidth = faceWidth * 0.22 * manualScaleRef.current;
+                  const tilt = Math.atan2((rightEye.y - leftEye.y) * h, (rightEye.x - leftEye.x) * w);
+
+                  const drawSingleEarring = (assetCanvas: HTMLCanvasElement, x: number, y: number) => {
+                    const drawW = earringWidth;
+                    const drawH = drawW * (assetCanvas.height / Math.max(1, assetCanvas.width));
+                    canvasCtx.save();
+                    canvasCtx.translate(x, y);
+                    canvasCtx.rotate(tilt);
+                    canvasCtx.shadowColor = "rgba(0,0,0,0.4)";
+                    canvasCtx.shadowBlur = drawW * 0.15;
+                    canvasCtx.shadowOffsetY = drawW * 0.06;
+                    canvasCtx.drawImage(assetCanvas, -drawW / 2, -drawH * 0.08, drawW, drawH);
+                    canvasCtx.restore();
+                  };
+
+                  if (earringAssets) {
+                    drawSingleEarring(earringAssets.left, leftEarX, leftEarY);
+                    drawSingleEarring(earringAssets.right, rightEarX, rightEarY);
+                  }
+                }
+              }
+            } else if (mode === "necklace" && necklaceAnchorsRef.current) {
               const chin = faceLandmarks?.[152];
               const placement = getNecklacePlacement(lm, w, h, chin);
 
@@ -346,11 +497,13 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
                 const liveNeckWidth = Math.max(1, Math.abs(chainEndX - chainStartX));
                 const sourceAnchors = necklaceAnchorsRef.current;
                 const sourceNeckWidth = Math.max(1, sourceAnchors.rightNeckX - sourceAnchors.leftNeckX);
-                const scale = (liveNeckWidth / sourceNeckWidth) * manualScaleRef.current;
+                const androidScaleBoost = /Android/i.test(typeof navigator !== "undefined" ? navigator.userAgent : "") ? 1.12 : 1;
+                const scale = (liveNeckWidth / sourceNeckWidth) * manualScaleRef.current * androidScaleBoost;
                 const drawW = croppedImageElement.width * scale;
                 const drawH = croppedImageElement.height * scale;
                 const drawX = controlX - sourceAnchors.centerX * scale + manualOffsetXRef.current;
-                const drawY = Math.min(chainStartY, chainEndY) - sourceAnchors.neckY * scale + manualOffsetYRef.current;
+                const shoulderLineY = Math.min(chainStartY, chainEndY);
+                const drawY = shoulderLineY - sourceAnchors.neckY * scale + manualOffsetYRef.current - h * 0.015;
 
                 canvasCtx.drawImage(croppedImageElement, drawX, drawY, drawW, drawH);
               }

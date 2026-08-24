@@ -23,9 +23,18 @@ import { Analytics } from "@vercel/analytics/next";
 import React from "react";
 import Script from "next/script";
 import CookieConsent from "../src/components/CookieConsent";
+import Footer from "../src/components/Footer";
+import SiteHeader from "../src/components/SiteHeader";
+
+const siteUrl = "https://idesignits.com";
+const siteName = "DesignIt";
 
 export const metadata: Metadata = {
-  title: "DesignIt - Free Online Design Tool for Clothes, Jewelry & More | Canva Alternative",
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: "DesignIt - Free Online Design Tool for Clothes, Jewelry & More | Canva Alternative",
+    template: `%s | ${siteName}`,
+  },
   description:
     "Create stunning designs for clothes, jewelry, fashion, and more - 100% free! Easy-to-use online design studio with image tracing, vector editing, and dress form tools. The best free Canva alternative for creative designers.",
   keywords: [
@@ -103,8 +112,8 @@ export const metadata: Metadata = {
     title: "DesignIt - Free Design Tool for Clothes, Jewelry & More | Canva Alternative",
     description:
       "Design anything you imagine - clothes, jewelry, graphics, and more! 100% free, easy-to-use online design studio. No experience needed. The best free alternative to Canva.",
-    url: "https://idesignits.com/",
-    siteName: "DesignIt - Free Design Studio",
+    url: siteUrl,
+    siteName,
     images: [
       {
         url: "/og-image.png",
@@ -126,25 +135,37 @@ export const metadata: Metadata = {
   robots: {
     index: true,
     follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
   },
-  metadataBase: new URL("https://idesignits.com/"),
+  alternates: {
+    canonical: "/",
+  },
   icons: {
     icon: "/favicon.ico",
     apple: "/apple-touch-icon.png",
   },
+  category: "design",
 };
 
 export const viewport = {
-  themeColor: "#800000",
+  themeColor: "#fffaf2",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const adsenseClient = process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_CLIENT;
+
   // Structured data JSON-LD for SEO
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "WebApplication",
     name: "DesignIt - Free Design Studio",
-    url: "https://idesignits.com/",
+    url: siteUrl,
     applicationCategory: "DesignApplication",
     operatingSystem: "Any (Web Browser)",
     offers: {
@@ -154,7 +175,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     },
     description:
       "Free online design tool for everyone! Create beautiful designs for clothes, jewelry, fashion, graphics, and more. Easy-to-use design studio with image tracing, vector editing, and professional tools. No downloads, no experience needed. The perfect free alternative to Canva.",
-    screenshot: "https://idesignits.com/og-image.png",
+    screenshot: `${siteUrl}/og-image.png`,
     featureList: [
       "100% Free - No subscriptions or hidden fees",
       "Easy to use - No design experience needed",
@@ -172,7 +193,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       name: "Learncapes Inc.",
       logo: {
         "@type": "ImageObject",
-        url: "https://idesignits.com/logo.png",
+        url: `${siteUrl}/logo.png`,
       },
     },
     aggregateRating: {
@@ -190,17 +211,22 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <head>
-        {/* The Next.js metadata API injects the metadata above. Add structured data and canonical link */}
+        {/* The Next.js metadata API injects the metadata above. Add structured data for rich search results. */}
         <script
           type="application/ld+json"
-          // eslint-disable-next-line react/no-danger
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
-        <link rel="canonical" href="https://idesignits.com/" />
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} ${quicksand.variable} antialiased`}>
         {/* Google AdSense */}
-        <Script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7392693183875834" crossOrigin="anonymous" strategy="afterInteractive" />
+        {adsenseClient && (
+          <Script
+            async
+            src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adsenseClient}`}
+            crossOrigin="anonymous"
+            strategy="afterInteractive"
+          />
+        )}
         
         {/* Google Ads (AdWords) Conversion Tracking */}
         {process.env.NEXT_PUBLIC_GOOGLE_ADS_ID && (
@@ -224,7 +250,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js" strategy="beforeInteractive" />
         <Script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix@2.2.0/dist/body-pix.min.js" strategy="beforeInteractive" />
         
+        <SiteHeader />
         {children}
+        <Footer />
         <CookieConsent />
         <Analytics />
       </body>

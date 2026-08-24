@@ -18,7 +18,58 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
+## Browser Extension
+
+The repo includes an unpacked browser extension at `public/designit-extension`.
+
+To install it in Chrome or Edge:
+
+```text
+1. Open the browser extensions page.
+2. Turn on Developer mode.
+3. Choose Load unpacked.
+4. Select the public/designit-extension folder.
+```
+
+After installation, right-click any image and choose `Open in DesignIt`. The extension opens Studio with the image preloaded into Source through `/studio?source=...`.
+
+## Python Dependencies
+
+Some Studio features use local Python helpers, including source article detection.
+
+Install the Python dependencies with:
+
+```bash
+pip install -r requirements.txt
+```
+
+Required packages currently include:
+
+- `numpy`
+- `Pillow`
+- `torch`
+- `torchvision`
+- `transformers`
+
+If article detection fails with `ModuleNotFoundError: No module named 'torch'` or a `SegformerImageProcessor requires the Torchvision library` import error, your Python environment is missing these dependencies.
+
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+
+## Environment Variables
+
+Create a `.env.local` file in the project root with your Google advertising IDs:
+
+```bash
+NEXT_PUBLIC_GOOGLE_ADSENSE_CLIENT=ca-pub-your-client-id
+NEXT_PUBLIC_GOOGLE_ADSENSE_HOME_SLOT=your-homepage-ad-slot
+NEXT_PUBLIC_GOOGLE_ADS_ID=AW-your-google-ads-id
+```
+
+Notes:
+
+- `NEXT_PUBLIC_GOOGLE_ADSENSE_CLIENT` is your AdSense publisher ID.
+- `NEXT_PUBLIC_GOOGLE_ADSENSE_HOME_SLOT` is the ad unit slot used on the homepage.
+- `NEXT_PUBLIC_GOOGLE_ADS_ID` is optional and only needed if you want Google Ads conversion tracking.
 
 ## Learn More
 

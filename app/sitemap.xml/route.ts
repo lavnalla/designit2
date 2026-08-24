@@ -2,13 +2,15 @@
 import { NextResponse } from "next/server";
 
 export async function GET() {
-  const baseUrl = "https://idesignits.com"; // <- change to your domain
+  const baseUrl = "https://idesignits.com";
 
-  // Add any routes/pages you want included in the sitemap
   const pages = [
     { url: `${baseUrl}/`, priority: "1.0", changefreq: "daily" },
     { url: `${baseUrl}/about`, priority: "0.8", changefreq: "monthly" },
     { url: `${baseUrl}/contact`, priority: "0.8", changefreq: "monthly" },
+    { url: `${baseUrl}/community`, priority: "0.7", changefreq: "weekly" },
+    { url: `${baseUrl}/privacy-policy`, priority: "0.4", changefreq: "yearly" },
+    { url: `${baseUrl}/terms-of-service`, priority: "0.4", changefreq: "yearly" },
   ];
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
