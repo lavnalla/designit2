@@ -302,12 +302,29 @@ export function Studio({ onBack }: { onBack: () => void }) {
         return;
       }
 
-      setWorkspaceShapes((prev) => prev.map((shape) => (
-        shape.id === selectedShapeId ? { ...shape, img: refineResultImage } : shape
-      )));
+      const baseShape = workspaceShapes.find((shape) => shape.id === selectedShapeId);
+      if (!baseShape) {
+        return;
+      }
+
+      const newShape: DistortableShape = {
+        ...baseShape,
+        id: `refined-${Date.now()}`,
+        img: refineResultImage,
+        dots: baseShape.dots.map((dot) => ({ ...dot })),
+        dims: { ...baseShape.dims },
+        position: {
+          x: baseShape.position.x + 24,
+          y: baseShape.position.y + 24,
+        },
+        showDots: true,
+      };
+
+      setWorkspaceShapes((prev) => [...prev, newShape]);
+      setSelectedShapeId(newShape.id);
       setRenderedWorkspaceImg(refineResultImage);
       setShowRefineControls(false);
-    }, [refineResultImage, selectedShapeId]);
+    }, [refineResultImage, selectedShapeId, workspaceShapes]);
 
     // Helper: convert dataURL to File
     function dataURLtoFile(dataurl: string, filename: string) {

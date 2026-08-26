@@ -24,15 +24,15 @@ export async function POST(req: NextRequest) {
     const fabricText = typeof fabric === 'string' ? fabric.trim() : '';
     const controlModeText = typeof controlMode === 'string' ? controlMode.trim() : 'My prompt is more important';
     const promptParts = [
+      positivePromptText,
+      fabricText ? `${fabricText} fabric` : '',
+      'realistic studio product photo',
       'preserve the original garment sketch structure exactly, keep the neckline, collar, silhouette, seam placement, proportions, and garment shape unchanged',
       controlModeText === 'ControlNet is more important'
         ? 'controlnet guidance takes priority over prompt stylization'
         : controlModeText === 'Balanced'
           ? 'keep prompt styling and controlnet guidance balanced'
           : 'prompt stylization takes priority over controlnet guidance',
-      'realistic studio product photo of this garment design',
-      fabricText ? `${fabricText} fabric` : '',
-      positivePromptText,
     ].filter(Boolean);
 
     const imageBuffer = Buffer.from(await image.arrayBuffer());
