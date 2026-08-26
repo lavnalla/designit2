@@ -2,6 +2,8 @@
 
 # dependencies
 /node_modules
+/tools/venv
+/tools/__pycache__
 /.pnp
 .pnp.*
 .yarn/*
@@ -23,6 +25,10 @@
 # misc
 .DS_Store
 *.pem
+
+# personal editor settings
+.vscode
+.claude
 
 # debug
 npm-debug.log*

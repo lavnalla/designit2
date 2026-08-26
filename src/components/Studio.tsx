@@ -6,8 +6,11 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import NecklaceTryOn from "./NecklaceTryOn";
+import GarmentPartPainter from "./GarmentPartPainter";
 import AdSlot from "./AdSlot";
 import { hughIsLife, whisperingSignature } from "../lib/fonts";
+
+import type { NextConfig } from 'next';
 
 import ImageTracer from "imagetracerjs";
 import { removeBackground, preload } from '@imgly/background-removal';
@@ -222,14 +225,31 @@ const DEFAULT_MESH_PATTERN = {
   verticalLines: 4,
 } as const;
 
+const REFINE_POSITIVE_PROMPTS: Record<string, string> = {
+  silk: 'high quality, professional fashion design render, macro shot of liquid silk fabric, soft glossy sheen, realistic draping and folds, subtle reflections, studio lighting, photorealistic, 8k resolution',
+  satin: 'high quality, professional fashion design render, macro shot of liquid silk fabric, soft glossy sheen, realistic draping and folds, subtle reflections, studio lighting, photorealistic, 8k resolution',
+  wool: 'high quality, professional fashion design render, macro shot of heavy tweed wool fabric, intricate woven texture, visible yarn details, realistic garment structure, studio lighting, photorealistic',
+  tweed: 'high quality, professional fashion design render, macro shot of heavy tweed wool fabric, intricate woven texture, visible yarn details, realistic garment structure, studio lighting, photorealistic',
+  denim: 'high quality, professional fashion design render, macro shot of raw denim fabric, distinct twill weave, contrast stitching texture, realistic stiffness and folds, studio lighting, photorealistic',
+  organza: 'high quality, professional fashion design render, macro shot of sheer lightweight chiffon fabric, translucent layers, soft airy drape, delicate texture, studio lighting, photorealistic',
+  orgaza: 'high quality, professional fashion design render, macro shot of sheer lightweight chiffon fabric, translucent layers, soft airy drape, delicate texture, studio lighting, photorealistic',
+  chiffon: 'high quality, professional fashion design render, macro shot of sheer lightweight chiffon fabric, translucent layers, soft airy drape, delicate texture, studio lighting, photorealistic',
+};
+
+const REFINE_NEGATIVE_PROMPT = 'deformed, distorted, disfigured, poorly drawn, bad anatomy, wrong anatomy, extra limbs, missing limbs, floating limbs, disconnected limbs, mutation, mutated, ugly, disgusting, blurry, amputation, watercolour, painting, illustration, cartoon, 3d render, low quality, sketch, lines, outlines, changing shape, altering silhouette, altering neckline, changing collar shape, reshaping garment, distorted collar, asymmetric neckline, expanding neckline';
+
 export function Studio({ onBack }: { onBack: () => void }) {
-      const [refineError, setRefineError] = useState<string | null>(null);
+  const [refineError, setRefineError] = useState<string | null>(null);
     const [showSourceWindow, setShowSourceWindow] = useState(false);
     const [showHeaderMenu, setShowHeaderMenu] = useState(false);
     const [showTopPanelMenu, setShowTopPanelMenu] = useState(false);
     const isProcessingRef = useRef(false); 
     // Refine image state
-    const [refinePrompt, setRefinePrompt] = useState("");
+  const [showRefineControls, setShowRefineControls] = useState(false);
+  const [positivePrompt, setPositivePrompt] = useState('');
+  const [negativePrompt, setNegativePrompt] = useState('');
+  const [selectedRefineFabric, setSelectedRefineFabric] = useState('silk');
+  const [refineResultImage, setRefineResultImage] = useState<string | null>(null);
     const [isRefiningImage, setIsRefiningImage] = useState(false);
     // ...existing state hooks...
     // All shape state hooks...
@@ -238,6 +258,53 @@ export function Studio({ onBack }: { onBack: () => void }) {
     // Place after workspaceShapes is defined:
     const [selectedShapeId, setSelectedShapeId] = useState<string|null>(null);
     const selectedShape = selectedShapeId ? workspaceShapes?.find(s => s.id === selectedShapeId) : null;
+
+    const openRefineControls = useCallback(async () => {
+      const normalizedFabric = selectedRefineFabric.toLowerCase();
+      setPositivePrompt(REFINE_POSITIVE_PROMPTS[normalizedFabric] || REFINE_POSITIVE_PROMPTS.silk);
+      setNegativePrompt(REFINE_NEGATIVE_PROMPT);
+      setRefineError(null);
+      setRefineResultImage(null);
+
+      let latestWorkspaceImage: string | null = null;
+      for (let attempt = 0; attempt < 3 && !latestWorkspaceImage; attempt++) {
+        latestWorkspaceImage = await syncWorkspaceToTryOn();
+        if (!latestWorkspaceImage) {
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        }
+      }
+
+      if (latestWorkspaceImage) {
+        setRenderedWorkspaceImg(latestWorkspaceImage);
+      }
+
+      setShowRefineControls(true);
+    }, [selectedRefineFabric]);
+
+    const downloadRefineResult = useCallback(() => {
+      if (!refineResultImage) {
+        return;
+      }
+
+      const link = document.createElement('a');
+      link.href = refineResultImage;
+      link.download = `refined-design-${Date.now()}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }, [refineResultImage]);
+
+    const applyRefineResultToWorkspace = useCallback(() => {
+      if (!refineResultImage || !selectedShapeId) {
+        return;
+      }
+
+      setWorkspaceShapes((prev) => prev.map((shape) => (
+        shape.id === selectedShapeId ? { ...shape, img: refineResultImage } : shape
+      )));
+      setRenderedWorkspaceImg(refineResultImage);
+      setShowRefineControls(false);
+    }, [refineResultImage, selectedShapeId]);
 
     // Helper: convert dataURL to File
     function dataURLtoFile(dataurl: string, filename: string) {
@@ -529,26 +596,30 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
     // Refine handler
     const handleRefineImage = async () => {
       setRefineError(null);
-      if (!selectedShape || !selectedShape.img) {
+      setRefineResultImage(null);
+      const refineSourceImage = renderedWorkspaceImg || selectedShape?.img || null;
+      if (!refineSourceImage) {
         setRefineError('No shape or image selected.');
-        console.warn('Refine: No selected shape or image.', { selectedShape });
+        console.warn('Refine: No selected shape or image.', { selectedShape, renderedWorkspaceImg });
         return;
       }
       setIsRefiningImage(true);
       try {
         // Convert base64 or dataURL to File
         let file: File;
-        if (selectedShape.img.startsWith('data:')) {
-          file = dataURLtoFile(selectedShape.img, 'selected.png');
+        if (refineSourceImage.startsWith('data:')) {
+          file = dataURLtoFile(refineSourceImage, 'selected.png');
         } else {
           // fallback: fetch as blob
-          const res = await fetch(selectedShape.img);
+          const res = await fetch(refineSourceImage);
           const blob = await res.blob();
           file = new File([blob], 'selected.png', { type: blob.type });
         }
         const formData = new FormData();
         formData.append('image', file);
-        formData.append('prompt', refinePrompt);
+        formData.append('positivePrompt', positivePrompt);
+        formData.append('negativePrompt', negativePrompt);
+        formData.append('fabric', selectedRefineFabric);
         formData.append('image_strength', '0.7');
         formData.append('cfg_scale', '7');
         formData.append('steps', '30');
@@ -563,9 +634,9 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
         }
         console.log('Refine: API response', data);
         if (data.resultImage) {
-          setWorkspaceShapes(prev => prev.map(s => s.id === selectedShapeId ? { ...s, img: data.resultImage } : s));
+          setRefineResultImage(data.resultImage);
         } else if (data.error) {
-          setRefineError('API error: ' + data.error);
+          setRefineError(data.details ? `${data.error}: ${data.details}` : `API error: ${data.error}`);
         } else {
           setRefineError('No image returned from API.');
         }
@@ -895,7 +966,8 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   ];
 
   const [showTryOn, setShowTryOn] = useState(false);
-  const [showSourcePanel, setShowSourcePanel] = useState(false); 
+  const [showPartPainter, setShowPartPainter] = useState(false);
+  const [showSourcePanel, setShowSourcePanel] = useState(false);
   const [renderedWorkspaceImg, setRenderedWorkspaceImg] = useState<string | null>(null);
   const [tryOnMode, setTryOnMode] = useState<"garment" | "necklace" | "earrings">("garment");
   const [showWelcomePrompt, setShowWelcomePrompt] = useState(true);
@@ -5377,7 +5449,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
 
     <button
       onClick={async () => {
-        if (!showTryOn) {
+        if (!showTryOn && !showPartPainter) {
           let readyAsset: string | null = null;
           for (let attempt = 0; attempt < 3 && !readyAsset; attempt++) {
             readyAsset = await syncWorkspaceToTryOn();
@@ -5393,19 +5465,20 @@ const extractSelection = useCallback(async (asJpeg = false) => {
             return;
           }
           setRenderedWorkspaceImg(readyAsset);
-          setShowTryOn(true);
+          setShowPartPainter(true);
         } else {
           setShowTryOn(false);
+          setShowPartPainter(false);
           setRenderedWorkspaceImg(null);
         }
       }}
       className={`${toolbarButtonInteractiveClass} inline-flex min-w-0 max-w-[7.25rem] gap-1 px-1.5 text-[8px] sm:max-w-none sm:gap-1.5 sm:px-2.5 sm:text-[10px]`}
-      style={showTryOn
+      style={showTryOn || showPartPainter
         ? { backgroundColor: '#fde68a', borderColor: '#f59e0b', color: '#000000' }
         : { backgroundColor: '#fef08a', borderColor: '#eab308', color: '#000000' }}
     >
-      <span className="truncate sm:hidden">{showTryOn ? "Close" : "Live"}</span>
-      <span className="hidden sm:inline">{showTryOn ? "✕ Close Try-On View" : "✨ Test Live on Webcam"}</span>
+      <span className="truncate sm:hidden">{showTryOn || showPartPainter ? "Close" : "Live"}</span>
+      <span className="hidden sm:inline">{showTryOn || showPartPainter ? "✕ Close Try-On View" : "✨ Test Live on Webcam"}</span>
     </button>
 
     <div className="relative z-[270] md:hidden" onClick={(e) => e.stopPropagation()}>
@@ -5466,6 +5539,17 @@ const extractSelection = useCallback(async (asJpeg = false) => {
             </button>
             <button
               type="button"
+              onClick={() => {
+                openRefineControls();
+                setShowTopPanelMenu(false);
+              } } 
+              className={`${toolbarButtonBaseClass} min-w-0 w-full`}
+              style={{ backgroundColor: '#fcd34d', borderColor: '#fbbf24', color: '#000000' }}
+            >
+              Refine Image
+            </button>
+            <button
+              type="button"
               onClick={() => { setGlobalShowDots(!globalShowDots); setShowTopPanelMenu(false); }}
               className={`${toolbarButtonInteractiveClass} min-w-0 w-full`}
               style={globalShowDots
@@ -5518,6 +5602,135 @@ const extractSelection = useCallback(async (asJpeg = false) => {
     >
       Reset
     </button>
+
+    <button
+      type="button"
+      onClick={openRefineControls}
+      className={`${toolbarButtonBaseClass} hidden md:flex`}
+      style={{ backgroundColor: '#fcd34d', borderColor: '#fbbf24', color: '#000000' }}
+    >
+      Refine Image
+    </button>
+
+    {showRefineControls && (
+      <div
+        className="fixed inset-0 z-[700] flex items-center justify-center bg-slate-950/40 px-4 py-6 backdrop-blur-[2px]"
+        onClick={() => setShowRefineControls(false)}
+      >
+        <div
+          className="flex h-[min(88vh,56rem)] w-full max-w-[56rem] flex-col overflow-hidden rounded-3xl border border-slate-300 bg-[#fffdfa] shadow-[0_24px_60px_rgba(15,23,42,0.28)]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200 bg-[#fffdfa] px-5 py-4 sm:px-6">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                Refine Image
+              </div>
+              <p className="mt-1 text-xs text-slate-600">
+                Adjust the prompts, then run refine on the selected workspace image.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowRefineControls(false)}
+              className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50"
+            >
+              Close
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto px-5 py-4 sm:px-6">
+            <div className="flex flex-col gap-3">
+            <label className="flex flex-col gap-1 text-[11px] font-medium text-slate-700">
+              Positive prompt
+              <textarea
+                value={positivePrompt}
+                onChange={(e) => setPositivePrompt(e.target.value)}
+                rows={5}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200"
+                placeholder="Describe the refined result you want"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-[11px] font-medium text-slate-700">
+              Negative prompt
+              <textarea
+                value={negativePrompt}
+                onChange={(e) => setNegativePrompt(e.target.value)}
+                rows={6}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200"
+                placeholder="Describe what to avoid"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-[11px] font-medium text-slate-700">
+              Fabric
+              <select
+                value={selectedRefineFabric}
+                onChange={(e) => {
+                  const nextFabric = e.target.value;
+                  setSelectedRefineFabric(nextFabric);
+                  const normalizedFabric = nextFabric.toLowerCase();
+                  setPositivePrompt(REFINE_POSITIVE_PROMPTS[normalizedFabric] || REFINE_POSITIVE_PROMPTS.silk);
+                }}
+                className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-xs text-slate-900 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200"
+              >
+                <option value="silk">Silk</option>
+                <option value="orgaza">Chiffon / Organza</option>
+                <option value="wool">Wool</option>
+                <option value="denim">Denim</option>
+              </select>
+            </label>
+            {refineError && (
+              <p className="text-xs text-red-600">{refineError}</p>
+            )}
+            {refineResultImage && (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Refined Output
+                </div>
+                <img
+                  src={refineResultImage}
+                  alt="Refined output preview"
+                  className="max-h-[20rem] w-full rounded-xl border border-slate-200 object-contain bg-white"
+                />
+                <div className="mt-3 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={downloadRefineResult}
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                  >
+                    Download
+                  </button>
+                  <button
+                    type="button"
+                    onClick={applyRefineResultToWorkspace}
+                    className="rounded-xl border border-emerald-400 bg-emerald-300 px-3 py-2 text-xs font-semibold text-slate-900 transition-colors hover:bg-emerald-200"
+                  >
+                    Use In Workspace
+                  </button>
+                </div>
+              </div>
+            )}
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-200 bg-[#fffdfa] px-5 py-4 sm:px-6">
+              <button
+                type="button"
+                onClick={() => setShowRefineControls(false)}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleRefineImage}
+                disabled={isRefiningImage}
+                className="rounded-xl border border-amber-400 bg-amber-300 px-4 py-2 text-xs font-semibold text-slate-900 transition-colors hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isRefiningImage ? 'Refining...' : 'Run Refine'}
+              </button>
+          </div>
+        </div>
+      </div>
+    )}
 
     <button 
       id="download-btn" 
@@ -7560,6 +7773,23 @@ isProcessingRef.current = false;
           onClose={() => setShowSubmissionModal(false)}
           getDesignImage={getDesignImage}
         />
+
+        {showPartPainter && renderedWorkspaceImg && (
+          <GarmentPartPainter
+            imageSrc={renderedWorkspaceImg}
+            onSave={(maskDataUrl) => {
+              console.log("[GARMENT PART PAINTER] Saved outline", maskDataUrl.slice(0, 64));
+            }}
+            onContinue={() => {
+              setShowPartPainter(false);
+              setShowTryOn(true);
+            }}
+            onClose={() => {
+              setShowPartPainter(false);
+              setRenderedWorkspaceImg(null);
+            }}
+          />
+        )}
 
         {showTryOn && (
           <div className="fixed inset-0 z-[1200] bg-slate-900/70 backdrop-blur-sm">
