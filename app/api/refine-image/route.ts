@@ -4,7 +4,9 @@ export async function POST(req: NextRequest) {
   try {
     const form = await req.formData();
     const image = form.get('image');
-    const prompt = form.get('prompt');
+    const positivePrompt = form.get('positivePrompt');
+    const negativePrompt = form.get('negativePrompt');
+    const fabric = form.get('fabric');
     const image_strength = form.get('image_strength') || '0.65';
     const steps = form.get('steps') || '30';
     const cfg_scale = form.get('cfg_scale') || '6';
@@ -13,30 +15,67 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No image provided" }, { status: 400 });
     }
 
-    const apiUrl = process.env.STABLE_DIFFUSION_API_URL || "http://127.0.0.1:7860";
+    const apiUrl = process.env.STABLE_DIFFUSION_API_URL || "https://composite-suction-earthy.ngrok-free.dev";
+    const controlNetModel = process.env.CONTROLNET_MODEL;
 
-    const sdFormData = new FormData();
-    sdFormData.append("image", image, "upload.png");
-    sdFormData.append("prompt", prompt || "realistic studio product photo of this garment design");
-    sdFormData.append("source_type", "sketch");
-    sdFormData.append("image_strength", image_strength);
-    sdFormData.append("steps", steps);
-    sdFormData.append("cfg_scale", cfg_scale);
+    const positivePromptText = typeof positivePrompt === 'string' ? positivePrompt.trim() : '';
+    const negativePromptText = typeof negativePrompt === 'string' ? negativePrompt.trim() : '';
+    const fabricText = typeof fabric === 'string' ? fabric.trim() : '';
+    const promptParts = [
+      'preserve the original garment sketch structure exactly, keep the neckline, collar, silhouette, seam placement, proportions, and garment shape unchanged',
+      'controlnet guidance takes priority over prompt stylization',
+      'realistic studio product photo of this garment design',
+      fabricText ? `${fabricText} fabric` : '',
+      positivePromptText,
+    ].filter(Boolean);
 
-    // Call the specific /api/imgtoimg endpoint on your ngrok interface
-    const response = await fetch(`${apiUrl}/api/imgtoimg`, {
+    const imageBuffer = Buffer.from(await image.arrayBuffer());
+    const imageBase64 = imageBuffer.toString("base64");
+    const payload: Record<string, unknown> = {
+      init_images: [`data:${image.type || 'image/png'};base64,${imageBase64}`],
+      prompt: promptParts.join(', '),
+      negative_prompt: negativePromptText,
+      steps: Number(steps),
+      cfg_scale: Number(cfg_scale),
+      denoising_strength: Number(image_strength),
+    };
+
+    if (typeof controlNetModel === 'string' && controlNetModel.trim()) {
+      payload.alwayson_scripts = {
+        controlnet: {
+          args: [
+            {
+              enabled: true,
+              input_image: imageBase64,
+              module: 'none',
+              model: controlNetModel.trim(),
+              weight: 1.3,
+              guidance_start: 0,
+              guidance_end: 0.8,
+              control_mode: 'ControlNet is more important',
+              resize_mode: 'Just Resize',
+              pixel_perfect: true,
+              processor_res: 512,
+            },
+          ],
+        },
+      };
+    }
+
+    const response = await fetch(`${apiUrl}/sdapi/v1/img2img`, {
       method: "POST",
       headers: {
+        "Content-Type": "application/json",
         "ngrok-skip-browser-warning": "true"
       },
-      body: sdFormData,
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => response.statusText);
       console.error("SD API error:", response.status, errorText);
       return NextResponse.json({
-        error: "Gradio Cloud API failed to process the image.",
+        error: `Refine backend error (${response.status})`,
         details: errorText
       }, { status: response.status });
     }
