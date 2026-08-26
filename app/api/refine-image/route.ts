@@ -7,6 +7,7 @@ export async function POST(req: NextRequest) {
     const positivePrompt = form.get('positivePrompt');
     const negativePrompt = form.get('negativePrompt');
     const fabric = form.get('fabric');
+    const controlMode = form.get('controlMode');
     const image_strength = form.get('image_strength') || '0.65';
     const steps = form.get('steps') || '30';
     const cfg_scale = form.get('cfg_scale') || '6';
@@ -21,12 +22,17 @@ export async function POST(req: NextRequest) {
     const positivePromptText = typeof positivePrompt === 'string' ? positivePrompt.trim() : '';
     const negativePromptText = typeof negativePrompt === 'string' ? negativePrompt.trim() : '';
     const fabricText = typeof fabric === 'string' ? fabric.trim() : '';
+    const controlModeText = typeof controlMode === 'string' ? controlMode.trim() : 'My prompt is more important';
     const promptParts = [
-      'preserve the original garment sketch structure exactly, keep the neckline, collar, silhouette, seam placement, proportions, and garment shape unchanged',
-      'controlnet guidance takes priority over prompt stylization',
-      'realistic studio product photo of this garment design',
-      fabricText ? `${fabricText} fabric` : '',
       positivePromptText,
+      fabricText ? `${fabricText} fabric` : '',
+      'realistic studio product photo',
+      'preserve the original garment sketch structure exactly, keep the neckline, collar, silhouette, seam placement, proportions, and garment shape unchanged',
+      controlModeText === 'ControlNet is more important'
+        ? 'controlnet guidance takes priority over prompt stylization'
+        : controlModeText === 'Balanced'
+          ? 'keep prompt styling and controlnet guidance balanced'
+          : 'prompt stylization takes priority over controlnet guidance',
     ].filter(Boolean);
 
     const imageBuffer = Buffer.from(await image.arrayBuffer());
@@ -52,7 +58,7 @@ export async function POST(req: NextRequest) {
               weight: 1.3,
               guidance_start: 0,
               guidance_end: 0.8,
-              control_mode: 'ControlNet is more important',
+              control_mode: controlModeText,
               resize_mode: 'Just Resize',
               pixel_perfect: true,
               processor_res: 512,

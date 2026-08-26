@@ -238,6 +238,8 @@ const REFINE_POSITIVE_PROMPTS: Record<string, string> = {
 
 const REFINE_NEGATIVE_PROMPT = 'deformed, distorted, disfigured, poorly drawn, bad anatomy, wrong anatomy, extra limbs, missing limbs, floating limbs, disconnected limbs, mutation, mutated, ugly, disgusting, blurry, amputation, watercolour, painting, illustration, cartoon, 3d render, low quality, sketch, lines, outlines, changing shape, altering silhouette, altering neckline, changing collar shape, reshaping garment, distorted collar, asymmetric neckline, expanding neckline';
 
+type RefineControlMode = 'Balanced' | 'My prompt is more important' | 'ControlNet is more important';
+
 export function Studio({ onBack }: { onBack: () => void }) {
   const [refineError, setRefineError] = useState<string | null>(null);
     const [showSourceWindow, setShowSourceWindow] = useState(false);
@@ -249,6 +251,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [positivePrompt, setPositivePrompt] = useState('');
   const [negativePrompt, setNegativePrompt] = useState('');
   const [selectedRefineFabric, setSelectedRefineFabric] = useState('silk');
+  const [selectedRefineControlMode, setSelectedRefineControlMode] = useState<RefineControlMode>('My prompt is more important');
   const [refineResultImage, setRefineResultImage] = useState<string | null>(null);
     const [isRefiningImage, setIsRefiningImage] = useState(false);
     // ...existing state hooks...
@@ -299,12 +302,29 @@ export function Studio({ onBack }: { onBack: () => void }) {
         return;
       }
 
-      setWorkspaceShapes((prev) => prev.map((shape) => (
-        shape.id === selectedShapeId ? { ...shape, img: refineResultImage } : shape
-      )));
+      const baseShape = workspaceShapes.find((shape) => shape.id === selectedShapeId);
+      if (!baseShape) {
+        return;
+      }
+
+      const newShape: DistortableShape = {
+        ...baseShape,
+        id: `refined-${Date.now()}`,
+        img: refineResultImage,
+        dots: baseShape.dots.map((dot) => ({ ...dot })),
+        dims: { ...baseShape.dims },
+        position: {
+          x: baseShape.position.x + 24,
+          y: baseShape.position.y + 24,
+        },
+        showDots: true,
+      };
+
+      setWorkspaceShapes((prev) => [...prev, newShape]);
+      setSelectedShapeId(newShape.id);
       setRenderedWorkspaceImg(refineResultImage);
       setShowRefineControls(false);
-    }, [refineResultImage, selectedShapeId]);
+    }, [refineResultImage, selectedShapeId, workspaceShapes]);
 
     // Helper: convert dataURL to File
     function dataURLtoFile(dataurl: string, filename: string) {
@@ -620,6 +640,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
         formData.append('positivePrompt', positivePrompt);
         formData.append('negativePrompt', negativePrompt);
         formData.append('fabric', selectedRefineFabric);
+        formData.append('controlMode', selectedRefineControlMode);
         formData.append('image_strength', '0.7');
         formData.append('cfg_scale', '7');
         formData.append('steps', '30');
@@ -5676,6 +5697,18 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                 <option value="orgaza">Chiffon / Organza</option>
                 <option value="wool">Wool</option>
                 <option value="denim">Denim</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-[11px] font-medium text-slate-700">
+              ControlNet priority
+              <select
+                value={selectedRefineControlMode}
+                onChange={(e) => setSelectedRefineControlMode(e.target.value as RefineControlMode)}
+                className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-xs text-slate-900 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200"
+              >
+                <option value="Balanced">Balanced</option>
+                <option value="My prompt is more important">My prompt is more important</option>
+                <option value="ControlNet is more important">ControlNet is more important</option>
               </select>
             </label>
             {refineError && (
