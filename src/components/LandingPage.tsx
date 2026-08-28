@@ -212,6 +212,7 @@ export default function LandingPage() {
           <nav className={`${whisperingSignature.className} flex flex-col gap-3 text-lg text-[#7f8fb0]`}>
             <a href="#how-to" className="transition-colors hover:text-[#4f264f]">How It Works</a>
             <a href="#features" className="transition-colors hover:text-[#4f264f]">Features</a>
+            <Link href="/try-on" className="transition-colors hover:text-[#4f264f]">Try It On</Link>
             <Link href="/blog" className="transition-colors hover:text-[#4f264f]">Blog</Link>
             <Link href="/community" className="transition-colors hover:text-[#4f264f]">Community</Link>
             <Link href="/about" className="transition-colors hover:text-[#4f264f]">About</Link>
