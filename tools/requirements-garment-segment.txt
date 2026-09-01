@@ -1,5 +1,11 @@
+# These are only needed to (re)generate public/models/garment-segformer/model.onnx
+# via export_garment_model.py — NOT needed at runtime. The app runs the exported
+# ONNX model directly in the browser (onnxruntime-web), no Python involved.
 torch
 torchvision
 transformers
+optimum-onnx
+onnx
+onnxruntime
 pillow
 numpy
