@@ -2,6 +2,19 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import Script from "next/script";
+import {
+  extractUpperBodyPoints,
+  smoothUpperBodyPoints,
+  type NormalizedBodyLandmark,
+  type UpperBodyPoints,
+} from "@/src/utils/bodyLandmarks";
+import { drawUpperBodySkeleton } from "@/src/utils/bodyVisualization";
+import {
+  drawBodySilhouetteOutline,
+  rasterizePersonMask,
+  silhouetteSpanAtY,
+  snapUpperBodyToSilhouette,
+} from "@/src/utils/bodyOutline";
 
 interface MetricData {
   shoulderCenterNorm: number;
@@ -120,11 +133,41 @@ function hasVisiblePixels(canvas: HTMLCanvasElement, minOpaquePixels: number) {
   return false;
 }
 
+interface SelfieSegmentationResults {
+  segmentationMask: CanvasImageSource;
+}
+
+interface SelfieSegmentationEngine {
+  setOptions(options: { modelSelection: number }): void;
+  onResults(listener: (results: SelfieSegmentationResults) => void): void;
+  send(input: { image: HTMLVideoElement }): Promise<void>;
+  close(): Promise<void>;
+}
+
+interface HolisticResults {
+  poseLandmarks?: NormalizedBodyLandmark[];
+  faceLandmarks?: NormalizedBodyLandmark[];
+}
+
+interface HolisticEngine {
+  setOptions(options: {
+    modelComplexity: number;
+    smoothLandmarks: boolean;
+    minDetectionConfidence: number;
+    minTrackingConfidence: number;
+  }): void;
+  onResults(listener: (results: HolisticResults) => void): void;
+  send(input: { image: HTMLVideoElement }): Promise<void>;
+  close(): Promise<void>;
+}
+
 declare global {
   interface Window {
-    Camera: any;
-    Holistic: any;
-    SelfieSegmentation: any;
+    Camera: unknown;
+    Holistic: new (config: { locateFile: (file: string) => string }) => HolisticEngine;
+    SelfieSegmentation: new (config: {
+      locateFile: (file: string) => string;
+    }) => SelfieSegmentationEngine;
   }
 }
 
@@ -133,18 +176,19 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // References to hold the tracking metrics and image states across loops
-  const latestSegmentationRef = useRef<any>(null);
-  const latestPoseLandmarksRef = useRef<any>(null);
-  const latestFaceLandmarksRef = useRef<any>(null);
+  const latestSegmentationRef = useRef<CanvasImageSource | null>(null);
+  const latestPoseLandmarksRef = useRef<NormalizedBodyLandmark[] | null>(null);
+  const latestFaceLandmarksRef = useRef<NormalizedBodyLandmark[] | null>(null);
+  const latestUpperBodyPointsRef = useRef<UpperBodyPoints>({});
   const garmentImageRef = useRef<HTMLImageElement | null>(null);
   const overlayBoundsRef = useRef<OverlayBounds | null>(null);
   const necklaceAnchorsRef = useRef<NecklaceAnchorPoints | null>(null);
   const earringAssetsRef = useRef<EarringAssetSet | null>(null);
 
   // Engines stored as refs so they can be explicitly destroyed on close
-  const activeCameraRef = useRef<any>(null);
-  const selfieSegmentationRef = useRef<any>(null);
-  const holisticRef = useRef<any>(null);
+  const activeCameraRef = useRef<{ stop: () => void } | null>(null);
+  const selfieSegmentationRef = useRef<SelfieSegmentationEngine | null>(null);
+  const holisticRef = useRef<HolisticEngine | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const sessionIdRef = useRef(0);
   const frameProcessingRef = useRef(false);
@@ -162,6 +206,7 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
   }));
   const [isMinimized, setIsMinimized] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const [scaleVersion, setScaleVersion] = useState(0);
   const [showMobileControlsMenu, setShowMobileControlsMenu] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(
@@ -389,13 +434,16 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
     camMaskCanvas.width = targetWidth;
     camMaskCanvas.height = targetHeight;
     const camMaskCtx = camMaskCanvas.getContext("2d");
+    const outlineCanvas = document.createElement("canvas");
+    outlineCanvas.width = targetWidth;
+    outlineCanvas.height = targetHeight;
 
     // Initialize your segmentation engine locally out of the public folder mapping
     selfieSegmentationRef.current = new window.SelfieSegmentation({
       locateFile: (file: string) => window.location.origin + `/static-libs/${file}`,
     });
     selfieSegmentationRef.current.setOptions({ modelSelection: 1 });
-    selfieSegmentationRef.current.onResults((results: any) => {
+    selfieSegmentationRef.current.onResults((results) => {
       latestSegmentationRef.current = results.segmentationMask;
     });
 
@@ -409,9 +457,14 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
       minDetectionConfidence: 0.5,
       minTrackingConfidence: 0.5,
     });
-    holisticRef.current.onResults((results: any) => {
-      latestPoseLandmarksRef.current = results.poseLandmarks;
-      latestFaceLandmarksRef.current = results.faceLandmarks;
+    holisticRef.current.onResults((results) => {
+      latestPoseLandmarksRef.current = results.poseLandmarks ?? null;
+      latestFaceLandmarksRef.current = results.faceLandmarks ?? null;
+      const currentPoints = extractUpperBodyPoints(results.poseLandmarks);
+      latestUpperBodyPointsRef.current = smoothUpperBodyPoints(
+        latestUpperBodyPointsRef.current,
+        currentPoints,
+      );
     });
 
     function renderLoop() {
@@ -425,6 +478,10 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
         const currentCamMask = latestSegmentationRef.current;
         const lm = latestPoseLandmarksRef.current;
         const faceLandmarks = latestFaceLandmarksRef.current;
+        const upperBodyPoints = latestUpperBodyPointsRef.current;
+        const maskPixels = currentCamMask
+          ? rasterizePersonMask(outlineCanvas, currentCamMask, targetWidth, targetHeight)
+          : null;
 
         if (currentCamMask && lm) {
           const w = targetWidth;
@@ -436,10 +493,19 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
             const xCoords = [lm[11].x, lm[12].x, lm[13].x, lm[14].x, lm[23].x, lm[24].x].map((x) => x * w);
             const yCoords = [lm[11].y, lm[12].y, lm[13].y, lm[14].y, lm[23].y, lm[24].y].map((y) => y * h);
 
-            const minX = Math.min(...xCoords);
-            const maxX = Math.max(...xCoords);
+            let minX = Math.min(...xCoords);
+            let maxX = Math.max(...xCoords);
             const minY = Math.min(...yCoords);
             const maxY = Math.max(...yCoords);
+
+            if (maskPixels) {
+              const shoulderSpan = silhouetteSpanAtY(maskPixels, minY + (maxY - minY) * 0.08, w, h);
+              const hipSpan = silhouetteSpanAtY(maskPixels, minY + (maxY - minY) * 0.82, w, h);
+              if (shoulderSpan && hipSpan) {
+                minX = Math.min(shoulderSpan.left, hipSpan.left);
+                maxX = Math.max(shoulderSpan.right, hipSpan.right);
+              }
+            }
 
             const torsoWidth = maxX - minX;
             const torsoHeight = maxY - minY;
@@ -521,9 +587,10 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
                 customTopAnchor = minY - torsoHeight * 0.22;
               }
 
-              const drawX = minX - torsoWidth * 0.25 + manualOffsetXRef.current;
+              const bodyFit = Boolean(maskPixels);
+              const drawX = (bodyFit ? minX : minX - torsoWidth * 0.25) + manualOffsetXRef.current;
               const drawY = customTopAnchor - h * 0.05 + manualOffsetYRef.current - (h * 0.05);
-              const drawW = torsoWidth * 1.5 * manualScaleRef.current;
+              const drawW = torsoWidth * (bodyFit ? 1.04 : 1.5) * manualScaleRef.current;
               const drawH = (maxY - customTopAnchor + torsoHeight * 0.4);
 
               camMaskCtx.drawImage(croppedImageElement, drawX, drawY, drawW, drawH);
@@ -580,6 +647,32 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
             canvasCtx.drawImage(camMaskCanvas, 0, 0, w, h);
           }
         }
+
+        const displayPoints = maskPixels
+          ? snapUpperBodyToSilhouette(
+              upperBodyPoints,
+              maskPixels,
+              targetWidth,
+              targetHeight,
+            )
+          : upperBodyPoints;
+
+        if (maskPixels) {
+          drawBodySilhouetteOutline(
+            canvasCtx,
+            maskPixels,
+            targetWidth,
+            targetHeight,
+            displayPoints,
+          );
+        }
+
+        drawUpperBodySkeleton(
+          canvasCtx,
+          displayPoints,
+          targetWidth,
+          targetHeight,
+        );
       }
       requestFrameId = requestAnimationFrame(renderLoop);
     }
@@ -607,11 +700,8 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
           if (holisticRef.current) {
             await holisticRef.current.send({ image: video });
           }
-        } catch {
-          if (sessionIdRef.current === sessionId) {
-            setIsClosed(true);
-            onClose?.();
-          }
+        } catch (error) {
+          console.warn("Try-on frame skipped", error);
         } finally {
           frameProcessingRef.current = false;
         }
@@ -663,10 +753,14 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
 
         renderLoop();
         void tick();
-      } catch {
+      } catch (error) {
         if (!cancelled && sessionIdRef.current === sessionId) {
-          setIsClosed(true);
-          onClose?.();
+          const denied = error instanceof DOMException && error.name === "NotAllowedError";
+          setCameraError(
+            denied
+              ? "Camera permission was blocked. Allow the camera in the address bar, then click Continue to Webcam again."
+              : "Could not start the camera. Open this page in Chrome or Safari (not the editor preview) and allow camera access.",
+          );
         }
       }
     };
@@ -710,6 +804,7 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
       latestSegmentationRef.current = null;
       latestPoseLandmarksRef.current = null;
       latestFaceLandmarksRef.current = null;
+      latestUpperBodyPointsRef.current = {};
       frameProcessingRef.current = false;
     };
   }, [scriptsLoaded, isMinimized, isClosed, mode, onClose]);
@@ -1169,7 +1264,28 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
               alignItems: "center"
             }}
           >
-            <video ref={videoRef} autoPlay playsInline style={{ display: "none" }} />
+            <video ref={videoRef} autoPlay playsInline muted style={{ display: "none" }} />
+            {cameraError && (
+              <p
+                role="alert"
+                style={{
+                  position: "absolute",
+                  zIndex: 2,
+                  maxWidth: "28rem",
+                  margin: 0,
+                  padding: "12px 16px",
+                  borderRadius: "10px",
+                  background: "rgba(127, 29, 29, 0.92)",
+                  color: "#fecaca",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  lineHeight: 1.45,
+                  textAlign: "center",
+                }}
+              >
+                {cameraError}
+              </p>
+            )}
             <canvas
               ref={canvasRef}
               width={targetWidth}
