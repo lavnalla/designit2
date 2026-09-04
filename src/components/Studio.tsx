@@ -16,6 +16,13 @@ import ImageTracer from "imagetracerjs";
 import { removeBackground, preload } from '@imgly/background-removal';
 import { SubmissionModal } from './SubmissionModal';
 import BodySilhouetteView from "./BodySilhouetteView";
+import {
+  runFabricCopy,
+  runFabricPaste,
+  imageToDataUrl,
+  FabricPipelineError,
+  type FabricClipboard,
+} from "../lib/fabricPipeline";
 
 const MOBILE_BREAKPOINT = 1024;
 
@@ -1079,6 +1086,17 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   const [draggingDotClusterId, setDraggingDotClusterId] = useState<string | null>(null);
   const [clipboard, setClipboard] = useState<{ shapes: ClipboardShape[]; strokes: Stroke[] } | null>(null);
   const [fabricClipboardSrc, setFabricClipboardSrc] = useState<string | null>(null);
+  // Flattened swatch plus the scale metadata the tiling stage needs. Held
+  // separately from fabricClipboardSrc so the older paths that only ever want
+  // a plain image source keep working untouched.
+  const [fabricClipboard, setFabricClipboard] = useState<FabricClipboard | null>(null);
+  // Corrects the automatic pixels-per-centimetre estimate. 1.0 means "trust
+  // the segmentation"; the slider exists because the assumed garment widths
+  // behind that estimate are averages, not measurements.
+  const [fabricTileScale, setFabricTileScale] = useState(1);
+  const [fabricShadingStrength, setFabricShadingStrength] = useState(1);
+  const [fabricBusy, setFabricBusy] = useState<null | 'copy' | 'paste'>(null);
+  const [fabricStatus, setFabricStatus] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [customAssets, setCustomAssets] = useState<{name: string, path: string}[]>([]);
@@ -3484,6 +3502,111 @@ const splitLoopWithLine = (
     return clone;
   }, [workspaceShapes, strokes, getBoundingBox, isItemInRect]);
 
+  /**
+   * Work out what to send the pipeline as the *source photo*, and where the
+   * sampled patch sits inside it.
+   *
+   * The crop on its own is not enough. Estimating physical scale means seeing
+   * the whole garment -- a 200px patch tells you nothing about how big the
+   * weave is in centimetres until you know the garment it came from spans, say,
+   * 800px. So prefer the underlying shape's own image and map the selection
+   * into its pixel space; fall back to a render of the whole workspace when the
+   * selection is not over a shape.
+   */
+  const resolveFabricSource = useCallback(async (
+    shape: DistortableShape | null | undefined,
+    rect: { x: number; y: number; width: number; height: number } | null,
+  ): Promise<{ imageDataUrl: string; rect: { x: number; y: number; width: number; height: number } | null } | null> => {
+    if (shape?.img) {
+      const imageDataUrl = await imageToDataUrl(shape.img);
+      if (!rect) return { imageDataUrl, rect: null };
+
+      // Selection is in canvas coordinates; undo the shape's placement and
+      // scale to land in the shape's local space.
+      const invScale = 1 / Math.max(0.1, shape.scale);
+      const localX = (rect.x - shape.position.x) * invScale;
+      const localY = (rect.y - shape.position.y) * invScale;
+      const localW = rect.width * invScale;
+      const localH = rect.height * invScale;
+
+      // The <image> is drawn at shape.dims, which need not match the file's
+      // natural size, so convert local units into real image pixels.
+      const natural = await new Promise<{ width: number; height: number }>((resolve) => {
+        const probe = new window.Image();
+        probe.onload = () => resolve({ width: probe.naturalWidth || probe.width, height: probe.naturalHeight || probe.height });
+        probe.onerror = () => resolve({ width: shape.dims.width, height: shape.dims.height });
+        probe.src = shape.img;
+      });
+      const kx = natural.width / Math.max(1, shape.dims.width);
+      const ky = natural.height / Math.max(1, shape.dims.height);
+
+      return {
+        imageDataUrl,
+        rect: { x: localX * kx, y: localY * ky, width: localW * kx, height: localH * ky },
+      };
+    }
+
+    if (!workspaceRef.current || !rect) return null;
+
+    // No shape under the selection: rasterise the whole canvas instead, so the
+    // segmenter still sees a complete garment somewhere in the frame.
+    const svg = workspaceRef.current;
+    const vb = svg.viewBox?.baseVal;
+    const full = vb && vb.width > 0
+      ? { x: vb.x, y: vb.y, width: vb.width, height: vb.height }
+      : { x: 0, y: 0, width: svg.clientWidth || rect.width, height: svg.clientHeight || rect.height };
+
+    const clone = buildSelectionClone(svg, full);
+    const images = Array.from(clone.querySelectorAll('image')) as SVGImageElement[];
+    for (const imgEl of images) {
+      const href = imgEl.getAttribute('href') || imgEl.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || '';
+      if (!href || href.startsWith('data:')) continue;
+      try {
+        const res = await fetch(href, { mode: 'cors' });
+        const blob = await res.blob();
+        const reader = new FileReader();
+        const dataUrl: string = await new Promise((resolve, reject) => {
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+        imgEl.setAttribute('href', dataUrl);
+      } catch (e) {
+        console.warn('[resolveFabricSource] image inline failed', href, e);
+      }
+    }
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+
+    let source = new XMLSerializer().serializeToString(clone);
+    if (!source.match(/^<\?xml/)) source = '<?xml version="1.0" standalone="no"?>\n' + source;
+    const url = URL.createObjectURL(new Blob([source], { type: 'image/svg+xml;charset=utf-8' }));
+
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const img = new window.Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(full.width));
+          canvas.height = Math.max(1, Math.round(full.height));
+          const ctx = canvas.getContext('2d');
+          if (!ctx) { reject(new Error('Canvas context unavailable')); return; }
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/png'));
+        };
+        img.onerror = reject;
+        img.src = url;
+      });
+      return {
+        imageDataUrl: dataUrl,
+        rect: { x: rect.x - full.x, y: rect.y - full.y, width: rect.width, height: rect.height },
+      };
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }, [buildSelectionClone]);
+
   const copyFabricDebugFromSelection = useCallback(async (target?: { type: 'shape' | 'stroke' | 'selection'; id: string }) => {
   if (!isLocked) {
     alert('Lock to enable fabric copy.');
@@ -3602,6 +3725,63 @@ const splitLoopWithLine = (
 
       setFabricClipboardSrc(fabricSrc);
 
+      // Stages 1-2: estimate the source garment's pixel density and flatten
+      // the sampled patch into a tileable swatch. If the service is not
+      // running this degrades to the previous behaviour rather than failing
+      // the copy outright -- fabricClipboard stays null and paste falls back.
+      setFabricClipboard(null);
+      setFabricBusy('copy');
+      setFabricStatus('Flattening fabric…');
+      try {
+        const selectionArea = selectionRect
+          ? {
+              x: Math.min(selectionRect.x1, selectionRect.x2),
+              y: Math.min(selectionRect.y1, selectionRect.y2),
+              width: Math.abs(selectionRect.x2 - selectionRect.x1),
+              height: Math.abs(selectionRect.y2 - selectionRect.y1),
+            }
+          : null;
+
+        const contextShape = targetShape
+          || (selectionRect
+            ? workspaceShapes.find(shape => isItemInRect(getBoundingBox(shape), selectionRect))
+            : null);
+
+        const resolved = await resolveFabricSource(contextShape, selectionArea);
+        if (!resolved) throw new Error('Could not resolve a source image for the fabric pipeline');
+
+        const copyResult = await runFabricCopy(resolved.imageDataUrl, resolved.rect);
+        setFabricClipboard({
+          swatchDataUrl: copyResult.swatchDataUrl,
+          cropWidth: copyResult.cropWidth,
+          cropHeight: copyResult.cropHeight,
+          srcPxPerCm: copyResult.srcPxPerCm,
+          sourceGarment: copyResult.sourceGarment,
+          sourceGarmentFound: copyResult.sourceGarmentFound,
+          sourceSilhouette: copyResult.sourceSilhouette,
+          sourceScaleConfidence: copyResult.sourceScaleConfidence,
+          sourceScaleNote: copyResult.sourceScaleNote,
+          sourcePersonPresent: copyResult.sourcePersonPresent,
+          rectified: copyResult.rectified,
+          rawCropDataUrl: fabricSrc,
+          patchRelocated: copyResult.patchRelocated,
+          patchReason: copyResult.patchReason,
+        });
+        const worn = copyResult.sourcePersonPresent ? 'worn photo' : 'flat image';
+        const base = copyResult.sourceGarmentFound
+          ? `Flattened from a ${copyResult.sourceSilhouette} garment (${worn}) · ${copyResult.srcPxPerCm.toFixed(1)} px/cm${copyResult.fromCache ? ' · cached' : ` · ${copyResult.rectifySeconds.toFixed(1)}s`}`
+          : 'Flattened, but no garment was detected in the source — scale is a guess';
+        // Say when the sample moved. Silently overriding the selection would
+        // look like the tool ignoring the user.
+        setFabricStatus(copyResult.patchRelocated ? `${base} — ${copyResult.patchReason}` : base);
+      } catch (pipelineError) {
+        const hint = pipelineError instanceof FabricPipelineError ? pipelineError.hint : undefined;
+        console.warn('Fabric pipeline copy unavailable; falling back to plain crop.', pipelineError);
+        setFabricStatus(hint ? `Pipeline offline — using plain crop. ${hint}` : 'Pipeline unavailable — using plain crop.');
+      } finally {
+        setFabricBusy(null);
+      }
+
       try {
         await navigator.clipboard.writeText(fabricSrc);
       } catch (clipboardError) {
@@ -3614,7 +3794,7 @@ const splitLoopWithLine = (
 
     setSelectionRect(null);
     setContextMenu(null);
-  }, [isLocked, selectionRect, workspaceShapes, strokes, selectedShapeId, selectedClothType, activeColor, buildSelectionClone]);
+  }, [isLocked, selectionRect, workspaceShapes, strokes, selectedShapeId, selectedClothType, activeColor, buildSelectionClone, resolveFabricSource, getBoundingBox, isItemInRect]);
 
   const copyFromSelection = useCallback(async () => {
     if (!selectionRect || !workspaceRef.current) return;
@@ -3710,7 +3890,7 @@ const splitLoopWithLine = (
 
   
   const pasteFabricToSelection = useCallback(async (target?: { type: 'shape' | 'stroke'; id: string }) => {
-  if (!fabricClipboardSrc) {
+  if (!fabricClipboardSrc && !fabricClipboard) {
     return;
   }
 
@@ -3735,6 +3915,115 @@ const splitLoopWithLine = (
     : hasSelectionArea
       ? strokes.filter(stroke => isItemInRect(getBoundingBox(stroke), selectionRect))
       : [];
+
+  // ---- Stages 1, 3, 4: segment the destination, tile isotropically, relight.
+  //
+  // The service returns an image sized to exactly the shape's dims, which is
+  // what defuses the renderer: the fabric <image> is drawn at
+  // width=dims.width height=dims.height with preserveAspectRatio="none", so a
+  // 1:1 payload passes through untouched instead of being stretched to fit.
+  if (fabricClipboard && targetShapes.length > 0) {
+    setFabricBusy('paste');
+    setFabricStatus('Tiling fabric…');
+    try {
+      const composites = await Promise.all(targetShapes.map(async (shape) => {
+        if (!shape.img) return null;
+        const width = Math.max(1, Math.round(shape.dims.width));
+        const height = Math.max(1, Math.round(shape.dims.height));
+        const destImageDataUrl = await imageToDataUrl(shape.img, width, height);
+        const result = await runFabricPaste(
+          fabricClipboard,
+          destImageDataUrl,
+          width,
+          height,
+          { multiplier: fabricTileScale, shadingStrength: fabricShadingStrength },
+        );
+        return { id: shape.id, result, width, height };
+      }));
+
+      const applied = composites.filter((entry): entry is NonNullable<typeof entry> => !!entry);
+      if (applied.length === 0) throw new Error('No target shape carried an image to paste onto');
+
+      saveForUndo();
+      const byId = new Map(applied.map(entry => [entry.id, entry]));
+
+      setWorkspaceShapes(prev => prev.map(shape => {
+        const entry = byId.get(shape.id);
+        if (!entry) return shape;
+
+        // Honour an area selection by masking, exactly as the legacy path
+        // does -- the composite itself always covers the whole shape.
+        let fabricPasteArea: { x: number; y: number; width: number; height: number } | undefined;
+        if (selectionBounds) {
+          const renderW = Math.max(1, shape.dims.width * Math.max(0.1, shape.scale));
+          const renderH = Math.max(1, shape.dims.height * Math.max(0.1, shape.scale));
+          const ix = Math.max(shape.position.x, selectionBounds.x);
+          const iy = Math.max(shape.position.y, selectionBounds.y);
+          const ix2 = Math.min(shape.position.x + renderW, selectionBounds.x + selectionBounds.width);
+          const iy2 = Math.min(shape.position.y + renderH, selectionBounds.y + selectionBounds.height);
+          if (ix2 - ix > 1 && iy2 - iy > 1) {
+            const invScale = 1 / Math.max(0.1, shape.scale);
+            fabricPasteArea = {
+              x: Math.max(0, (ix - shape.position.x) * invScale),
+              y: Math.max(0, (iy - shape.position.y) * invScale),
+              width: Math.min(shape.dims.width, (ix2 - ix) * invScale),
+              height: Math.min(shape.dims.height, (iy2 - iy) * invScale),
+            };
+          }
+          if (!fabricPasteArea) return shape;
+        }
+
+        const existingAreas = shape.fabricPasteAreas && shape.fabricPasteAreas.length > 0
+          ? shape.fabricPasteAreas
+          : (shape.fabricPasteArea ? [shape.fabricPasteArea] : []);
+        const existingLayers = shape.fabricLayers && shape.fabricLayers.length > 0 ? shape.fabricLayers : [];
+
+        return {
+          ...shape,
+          fabricFillSrc: entry.result.imageDataUrl,
+          fabricFillWidth: entry.width,
+          fabricFillHeight: entry.height,
+          fabricPasteArea,
+          fabricPasteAreas: fabricPasteArea ? [...existingAreas, fabricPasteArea] : undefined,
+          fabricLayers: fabricPasteArea
+            ? [...existingLayers, { src: entry.result.imageDataUrl, area: fabricPasteArea }]
+            : undefined,
+          baseFill: undefined,
+          fillColor: undefined,
+          clothType: undefined,
+          clipUpdate: Date.now(),
+        };
+      }));
+
+      const first = applied[0].result;
+      const shapeNote = fabricClipboard.sourceSilhouette !== first.destSilhouette
+        ? ` · ${fabricClipboard.sourceSilhouette} → ${first.destSilhouette}`
+        : '';
+      setFabricStatus(
+        `${first.destSilhouette} garment${shapeNote} · tile ${first.tileWidth}×${first.tileHeight}px · ${first.repeatsX.toFixed(1)}×${first.repeatsY.toFixed(1)} repeats · scale ×${first.scaleRatio.toFixed(2)}`,
+      );
+      setSelectionRect(null);
+      setContextMenu(null);
+      return;
+    } catch (pipelineError) {
+      const hint = pipelineError instanceof FabricPipelineError ? pipelineError.hint : undefined;
+      console.warn('Fabric pipeline paste unavailable; falling back to stretch.', pipelineError);
+      setFabricStatus(hint ? `Pipeline offline — stretched instead. ${hint}` : 'Pipeline unavailable — stretched instead.');
+      // Deliberately falls through to the legacy path below.
+    } finally {
+      setFabricBusy(null);
+    }
+  }
+
+  // ---- Legacy stretch path, kept as the fallback for when the pipeline
+  // service is not running, and for strokes, which carry no source image to
+  // segment. It needs a plain image source; without one there is nothing left
+  // to try.
+  if (!fabricClipboardSrc) {
+    setSelectionRect(null);
+    setContextMenu(null);
+    return;
+  }
 
   const loadImage = (src: string) =>
     new Promise<HTMLImageElement>((resolve, reject) => {
@@ -4123,7 +4412,7 @@ const splitLoopWithLine = (
 
   setSelectionRect(null);
   setContextMenu(null);
-}, [fabricClipboardSrc, workspaceShapes, strokes, selectedShapeId, selectionRect, getBoundingBox, isItemInRect, saveForUndo]);
+}, [fabricClipboardSrc, fabricClipboard, fabricTileScale, fabricShadingStrength, workspaceShapes, strokes, selectedShapeId, selectionRect, getBoundingBox, isItemInRect, saveForUndo]);
   
 const extractSelection = useCallback(async (asJpeg = false) => {
     if (!selectionRect) return;
@@ -5978,11 +6267,11 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                         copyFabricDebugFromSelection({ type: "stroke", id: contextMenu.id });
                       }
                     }}
-                    disabled={!isLocked}
+                    disabled={!isLocked || fabricBusy !== null}
                     className="w-full text-left px-4 py-2 hover:bg-indigo-50 text-[9px] font-black uppercase border-b border-slate-100 text-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
                     title={!isLocked ? 'Lock to enable' : 'Copy fabric'}
                   >
-                    🧪 Copy Fabric
+                    {fabricBusy === 'copy' ? '🧪 Flattening…' : '🧪 Copy Fabric'}
                   </button>
                 )}
 
@@ -6008,10 +6297,96 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                         pasteFabricToSelection({ type: targetType, id: contextMenu.id });
                       }
                     }}
-                    className="w-full text-left px-4 py-2 hover:bg-cyan-50 text-[9px] font-black uppercase border-b border-slate-100 text-cyan-700"
+                    disabled={fabricBusy !== null}
+                    className="w-full text-left px-4 py-2 hover:bg-cyan-50 text-[9px] font-black uppercase border-b border-slate-100 text-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    🧵 Paste Fabric
+                    {fabricBusy === 'paste' ? '🧵 Tiling…' : '🧵 Paste Fabric'}
                   </button>
+                )}
+
+                {(contextMenu.type === "selection" || contextMenu.type === "shape" || contextMenu.type === "stroke") && fabricClipboard && (
+                  <div className="px-4 py-2 border-b border-slate-100 bg-cyan-50/50 space-y-2">
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <label htmlFor="fabric-tile-scale" className="text-[9px] font-black uppercase text-cyan-800">
+                          Tile scale
+                        </label>
+                        <span className="text-[9px] font-black tabular-nums text-cyan-700">
+                          ×{fabricTileScale.toFixed(2)}
+                        </span>
+                      </div>
+                      <input
+                        id="fabric-tile-scale"
+                        type="range"
+                        min={0.25}
+                        max={4}
+                        step={0.05}
+                        value={fabricTileScale}
+                        onChange={(e) => setFabricTileScale(Number(e.target.value))}
+                        className="mt-1 w-full accent-cyan-600"
+                      />
+                      <p className="text-[8px] leading-tight text-slate-500">
+                        Corrects the automatic px/cm estimate. ×1 keeps the weave at its measured physical size.
+                      </p>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <label htmlFor="fabric-shading" className="text-[9px] font-black uppercase text-cyan-800">
+                          Drape
+                        </label>
+                        <span className="text-[9px] font-black tabular-nums text-cyan-700">
+                          {Math.round(fabricShadingStrength * 100)}%
+                        </span>
+                      </div>
+                      <input
+                        id="fabric-shading"
+                        type="range"
+                        min={0}
+                        max={1.5}
+                        step={0.05}
+                        value={fabricShadingStrength}
+                        onChange={(e) => setFabricShadingStrength(Number(e.target.value))}
+                        className="mt-1 w-full accent-cyan-600"
+                      />
+                      <p className="text-[8px] leading-tight text-slate-500">
+                        How strongly the target garment&apos;s own folds and shadows shape the pasted fabric.
+                      </p>
+                    </div>
+
+                    {fabricClipboard.sourceScaleConfidence < 0.5 && (
+                      <div className="rounded border border-amber-300 bg-amber-50 px-2 py-1">
+                        <p className="text-[8px] font-black uppercase leading-tight text-amber-800">
+                          Scale uncertain
+                        </p>
+                        <p className="text-[8px] leading-tight text-amber-700">
+                          {fabricClipboard.sourceScaleNote}. Use Tile scale to correct it.
+                        </p>
+                      </div>
+                    )}
+
+                    {fabricClipboard.rawCropDataUrl && (
+                      <div className="flex items-center gap-2 pt-1">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={fabricClipboard.rawCropDataUrl} alt="Sampled crop" className="h-8 w-8 rounded border border-slate-300 object-cover" />
+                        <span className="text-[8px] text-slate-400">→</span>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={fabricClipboard.swatchDataUrl} alt="Flattened swatch" className="h-8 w-8 rounded border border-cyan-400 object-cover" />
+                        <span className="text-[8px] leading-tight text-slate-500">
+                          {fabricClipboard.rectified ? 'flattened' : 'raw'} · {fabricClipboard.sourceGarment.toLowerCase()}
+                          {fabricClipboard.patchRelocated && (
+                            <span className="block text-amber-700">sample moved to clean fabric</span>
+                          )}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {(contextMenu.type === "selection" || contextMenu.type === "shape" || contextMenu.type === "stroke") && fabricStatus && (
+                  <div className="px-4 py-1.5 border-b border-slate-100 bg-slate-50">
+                    <p className="text-[8px] leading-tight text-slate-600">{fabricStatus}</p>
+                  </div>
                 )}
 
                 {(contextMenu.type === "shape" || contextMenu.type === "stroke") && (

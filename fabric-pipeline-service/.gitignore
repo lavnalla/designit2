@@ -1,0 +1,11 @@
+# Local python env and model artefacts -- multi-GB, rebuilt with ./setup.sh
+.venv/
+__pycache__/
+*.pyc
+
+# Test renders and run logs
+outputs/
+*.log
+
+# User-supplied reference photos, not ours to commit
+testdata/
