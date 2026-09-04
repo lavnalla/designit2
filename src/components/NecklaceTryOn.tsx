@@ -10,11 +10,14 @@ import {
 } from "@/src/utils/bodyLandmarks";
 import { drawUpperBodySkeleton } from "@/src/utils/bodyVisualization";
 import {
+  bodyEnvelopeBounds,
   drawBodySilhouetteOutline,
   rasterizePersonMask,
+  refinePersonMask,
   silhouetteSpanAtY,
   snapUpperBodyToSilhouette,
 } from "@/src/utils/bodyOutline";
+import { refineMaskEdges } from "@/src/utils/guidedFilter";
 
 interface MetricData {
   shoulderCenterNorm: number;
@@ -479,9 +482,31 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", onCl
         const lm = latestPoseLandmarksRef.current;
         const faceLandmarks = latestFaceLandmarksRef.current;
         const upperBodyPoints = latestUpperBodyPointsRef.current;
-        const maskPixels = currentCamMask
+        const rawMaskPixels = currentCamMask
           ? rasterizePersonMask(outlineCanvas, currentCamMask, targetWidth, targetHeight)
           : null;
+        // The frame is still clean here — overlays are drawn further down, so this
+        // is the raw camera image the guided filter needs as its edge reference.
+        const guidePixels = rawMaskPixels
+          ? canvasCtx.getImageData(0, 0, targetWidth, targetHeight)
+          : null;
+        // Pull the soft segmentation boundary onto the camera's real edges, then
+        // drop furniture the model swept in. The envelope gate runs last so it
+        // stays the final authority on what counts as body, and its bounds keep
+        // the edge refinement off pixels that are about to be discarded.
+        let maskPixels: ImageData | null = null;
+        if (rawMaskPixels && guidePixels) {
+          refineMaskEdges(rawMaskPixels, guidePixels, targetWidth, targetHeight, {
+            region:
+              bodyEnvelopeBounds(upperBodyPoints, targetWidth, targetHeight) ?? undefined,
+          });
+          maskPixels = refinePersonMask(
+            rawMaskPixels,
+            upperBodyPoints,
+            targetWidth,
+            targetHeight,
+          );
+        }
 
         if (currentCamMask && lm) {
           const w = targetWidth;

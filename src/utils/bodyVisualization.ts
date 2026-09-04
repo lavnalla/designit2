@@ -1,5 +1,6 @@
 import type {
   NormalizedPoint,
+  UpperBodyPoint,
   UpperBodyPointName,
   UpperBodyPoints,
 } from "@/src/utils/bodyLandmarks";
@@ -7,6 +8,7 @@ import type {
 export interface CanvasPoint {
   x: number;
   y: number;
+  estimated?: boolean;
 }
 
 const UPPER_BODY_CONNECTIONS: ReadonlyArray<
@@ -81,6 +83,11 @@ export function toCanvasPoint(
   };
 }
 
+/** Keeps wildly extrapolated joints from drawing lines into the frame corners. */
+function onCanvas(point: CanvasPoint, width: number, height: number): boolean {
+  return point.x >= 0 && point.y >= 0 && point.x <= width && point.y <= height;
+}
+
 export function drawUpperBodySkeleton(
   context: CanvasRenderingContext2D,
   points: UpperBodyPoints,
@@ -88,9 +95,15 @@ export function drawUpperBodySkeleton(
   height: number,
 ) {
   const canvasPoints = Object.fromEntries(
-    (Object.entries(points) as Array<[UpperBodyPointName, NormalizedPoint]>).map(
-      ([name, point]) => [name, toCanvasPoint(point, width, height)],
-    ),
+    (Object.entries(points) as Array<[UpperBodyPointName, UpperBodyPoint]>)
+      .map(
+        ([name, point]) =>
+          [
+            name,
+            { ...toCanvasPoint(point, width, height), estimated: point.estimated },
+          ] as const,
+      )
+      .filter(([, point]) => onCanvas(point, width, height)),
   ) as Partial<Record<UpperBodyPointName, CanvasPoint>>;
 
   context.save();
@@ -104,6 +117,11 @@ export function drawUpperBodySkeleton(
     if (!start || !end) continue;
 
     const key = `${startName}-${endName}`;
+    // Projected joints are drawn dashed and faint, so the overlay never implies
+    // a measurement where there wasn't one.
+    const inferred = Boolean(start.estimated || end.estimated);
+    context.setLineDash(inferred ? [5, 5] : []);
+    context.globalAlpha = inferred ? 0.45 : 1;
     context.beginPath();
     context.moveTo(start.x, start.y);
     context.lineTo(end.x, end.y);
@@ -114,6 +132,8 @@ export function drawUpperBodySkeleton(
         : LINE_COLORS.other;
     context.stroke();
   }
+  context.setLineDash([]);
+  context.globalAlpha = 1;
 
   for (const [name, point] of Object.entries(canvasPoints) as Array<
     [UpperBodyPointName, CanvasPoint]
@@ -121,6 +141,15 @@ export function drawUpperBodySkeleton(
     const radius = MAJOR_POINTS.has(name) ? 7 : 4.5;
     context.beginPath();
     context.arc(point.x, point.y, radius, 0, Math.PI * 2);
+    if (point.estimated) {
+      // Hollow ring: same colour, clearly not a detection.
+      context.lineWidth = 2;
+      context.strokeStyle = POINT_COLORS[name];
+      context.globalAlpha = 0.75;
+      context.stroke();
+      context.globalAlpha = 1;
+      continue;
+    }
     context.fillStyle = POINT_COLORS[name];
     context.fill();
     context.lineWidth = 1.25;

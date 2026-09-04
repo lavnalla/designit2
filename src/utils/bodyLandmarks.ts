@@ -11,6 +11,15 @@ export interface NormalizedPoint {
   y: number;
 }
 
+export interface UpperBodyPoint extends NormalizedPoint {
+  /**
+   * Set when the point is projected geometry rather than something MediaPipe
+   * measured — hips inferred from the shoulder line, for instance. Consumers
+   * should not present these as detections.
+   */
+  estimated?: boolean;
+}
+
 export type UpperBodyPointName =
   | "leftShoulder"
   | "rightShoulder"
@@ -25,7 +34,7 @@ export type UpperBodyPointName =
   | "leftWrist"
   | "rightWrist";
 
-export type UpperBodyPoints = Partial<Record<UpperBodyPointName, NormalizedPoint>>;
+export type UpperBodyPoints = Partial<Record<UpperBodyPointName, UpperBodyPoint>>;
 
 const POSE_INDEX = {
   nose: 0,
@@ -48,6 +57,28 @@ const SHOULDER_OUTER_RATIO = 0.175;
 const HIP_WIDTH_TO_OUTER_SHOULDER = 1.12;
 const DEFAULT_TORSO_LENGTH_TO_SHOULDER = 1.55;
 const RELIABLE_HIP_WIDTH_TO_SHOULDER = 0.62;
+/** Projected points stop here rather than running off past the frame edge. */
+const FRAME_MARGIN = 0.02;
+
+/**
+ * Shortens `depth` along `down` so the projected point stays in frame.
+ *
+ * Without this, a close-up or leaning subject projects hips far below the
+ * bottom edge — the torso length is a guess, and an unbounded guess drags
+ * everything derived from it off screen.
+ */
+function depthWithinFrame(
+  origin: NormalizedPoint,
+  down: NormalizedPoint,
+  depth: number,
+): number {
+  let limited = depth;
+  if (down.y > 1e-6) limited = Math.min(limited, (1 - FRAME_MARGIN - origin.y) / down.y);
+  if (down.y < -1e-6) limited = Math.min(limited, (FRAME_MARGIN - origin.y) / down.y);
+  if (down.x > 1e-6) limited = Math.min(limited, (1 - FRAME_MARGIN - origin.x) / down.x);
+  if (down.x < -1e-6) limited = Math.min(limited, (FRAME_MARGIN - origin.x) / down.x);
+  return Math.max(0, limited);
+}
 
 function isReliable(
   landmark: NormalizedBodyLandmark | undefined,
@@ -154,7 +185,7 @@ export function estimateOuterHips(
   leftHip?: NormalizedPoint,
   rightHip?: NormalizedPoint,
   headHint?: NormalizedPoint,
-): { left: NormalizedPoint; right: NormalizedPoint } {
+): { left: UpperBodyPoint; right: UpperBodyPoint; estimated: boolean } {
   const innerWidth = shoulderSpan(leftShoulder, rightShoulder);
   const outerWidth = shoulderSpan(leftShoulderOuter, rightShoulderOuter);
   const down = downwardUnit(leftShoulder, rightShoulder, headHint);
@@ -162,7 +193,11 @@ export function estimateOuterHips(
   const hipWidth = Math.max(innerWidth, outerWidth) * HIP_WIDTH_TO_OUTER_SHOULDER;
 
   if (!down || innerWidth < 1e-6) {
-    return { left: leftShoulderOuter, right: rightShoulderOuter };
+    return {
+      left: { ...leftShoulderOuter, estimated: true },
+      right: { ...rightShoulderOuter, estimated: true },
+      estimated: true,
+    };
   }
 
   const jointWidth = leftHip && rightHip ? shoulderSpan(leftHip, rightHip) : 0;
@@ -172,7 +207,13 @@ export function estimateOuterHips(
       ? (midpoint(leftHip, rightHip).x - shoulderMid.x) * down.x +
         (midpoint(leftHip, rightHip).y - shoulderMid.y) * down.y
       : innerWidth * DEFAULT_TORSO_LENGTH_TO_SHOULDER;
-  const depth = Math.max(innerWidth * 1.2, measuredDepth);
+  // Only the invented depth gets fenced in; a real measurement is left alone.
+  const depth = hipsLookReal
+    ? Math.max(innerWidth * 1.2, measuredDepth)
+    : Math.min(
+        Math.max(innerWidth * 1.2, measuredDepth),
+        depthWithinFrame(shoulderMid, down, measuredDepth),
+      );
 
   const hipMid = {
     x: shoulderMid.x + down.x * depth,
@@ -186,11 +227,14 @@ export function estimateOuterHips(
     left: {
       x: hipMid.x - axisX * halfWidth,
       y: hipMid.y - axisY * halfWidth,
+      estimated: !hipsLookReal,
     },
     right: {
       x: hipMid.x + axisX * halfWidth,
       y: hipMid.y + axisY * halfWidth,
+      estimated: !hipsLookReal,
     },
+    estimated: !hipsLookReal,
   };
 }
 
@@ -250,12 +294,10 @@ export function extractUpperBodyPoints(
     );
     points.leftHip = outerHips.left;
     points.rightHip = outerHips.right;
-    points.torsoCenter = estimateTorsoCenter(
-      leftShoulder,
-      rightShoulder,
-      outerHips.left,
-      outerHips.right,
-    );
+    points.torsoCenter = {
+      ...estimateTorsoCenter(leftShoulder, rightShoulder, outerHips.left, outerHips.right),
+      estimated: outerHips.estimated,
+    };
   }
 
   return points;
@@ -270,13 +312,14 @@ export function smoothUpperBodyPoints(
   const smoothed: UpperBodyPoints = {};
 
   for (const [name, point] of Object.entries(current) as Array<
-    [UpperBodyPointName, NormalizedPoint]
+    [UpperBodyPointName, UpperBodyPoint]
   >) {
     const priorPoint = previous[name];
     smoothed[name] = priorPoint
       ? {
           x: priorPoint.x + (point.x - priorPoint.x) * alpha,
           y: priorPoint.y + (point.y - priorPoint.y) * alpha,
+          estimated: point.estimated,
         }
       : point;
   }
