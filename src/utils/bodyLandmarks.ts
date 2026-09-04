@@ -51,6 +51,15 @@ const POSE_INDEX = {
 } as const;
 
 export const DEFAULT_VISIBILITY_THRESHOLD = 0.55;
+/**
+ * Joints between this and the display threshold are reported but flagged.
+ *
+ * MediaPipe still returns a roughly correct position for a limb it is unsure
+ * about, and a rough position is far more useful to the mask gate than none:
+ * it can aim a narrow capsule at the arm instead of having to guess at where
+ * the arm went. Below this, the position is not worth trusting at all.
+ */
+export const GATE_VISIBILITY_THRESHOLD = 0.2;
 export const DEFAULT_SMOOTHING_FACTOR = 0.45;
 const NECK_LIFT_RATIO = 0.125;
 const SHOULDER_OUTER_RATIO = 0.175;
@@ -268,6 +277,8 @@ export function extractUpperBodyPoints(
     const landmark = poseLandmarks[POSE_INDEX[name]];
     if (isReliable(landmark, visibilityThreshold)) {
       points[name] = toPoint(landmark);
+    } else if (isReliable(landmark, GATE_VISIBILITY_THRESHOLD)) {
+      points[name] = { ...toPoint(landmark), estimated: true };
     }
   }
 

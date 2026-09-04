@@ -193,6 +193,34 @@ describe("refinePersonMask", () => {
     assert.ok(!isSet(mask, 570, 350), "chair should still be removed");
   });
 
+  it("rejects a bulky object attached where an untraced arm should be", () => {
+    const width = 640;
+    const height = 480;
+    const mask = makeMask(width, height);
+    drawRaisedArmBody(mask);
+    // Cabinet abutting the torso, within reach of the untraced right arm and
+    // connected to the body, so only its bulk rules it out.
+    fillRect(mask, 420, 200, 600, 439);
+
+    refinePersonMask(mask, raisedArmPerson(), width, height);
+
+    assert.ok(isSet(mask, 150, 110), "raised arm should survive");
+    assert.ok(!isSet(mask, 520, 320), "cabinet interior should be cleared");
+  });
+
+  it("does not grow past a fully traced arm onto what it rests on", () => {
+    const mask = makeMask();
+    drawBody(mask);
+    // Thin armrest under the traced forearm: limb-shaped and connected, so the
+    // growth pass would take it if a traced arm still opened one.
+    fillRect(mask, 103, 70, 156, 78);
+
+    refinePersonMask(mask, seatedPerson(), WIDTH, HEIGHT);
+
+    assert.ok(isSet(mask, 80, 60), "torso should survive");
+    assert.ok(!isSet(mask, 150, 74), "armrest beyond the wrist should be cleared");
+  });
+
   it("keeps a thick upper arm, which the untapered capsule clipped", () => {
     const width = 640;
     const height = 480;

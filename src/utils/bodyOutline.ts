@@ -63,11 +63,23 @@ const ARM_RADIUS_AT_SHOULDER = 0.34;
 const ARM_RADIUS_AT_ELBOW = 0.26;
 const ARM_RADIUS_AT_WRIST = 0.2;
 /**
- * With no elbow to aim a capsule at, the gate has no idea where the arm went.
- * A raised arm is exactly when MediaPipe's visibility score drops, so cover the
- * whole reach from the shoulder instead of cutting the arm off at it.
+ * Bounds for growing the mask outward into limbs the landmarks did not describe.
+ *
+ * Sizing a blind disc around the shoulder does not work — one big enough to
+ * hold a raised arm also swallows the wall and furniture behind it. Shape is
+ * the discriminator instead: an arm is thin and attached to the body, while a
+ * chair or cabinet is a bulky blob. So growth is allowed only through mask that
+ * is within arm's reach, connected to the confident body, and no thicker than a
+ * limb.
  */
-const ARM_REACH_TO_SHOULDER = 1.35;
+const ARM_REACH_TO_SHOULDER = 1.45;
+const FOREARM_REACH_TO_SHOULDER = 0.8;
+/**
+ * Half-width of the fattest thing growth will call a limb, against the
+ * inter-shoulder distance. An upper arm in a sleeve runs about 0.18 of it, so
+ * this leaves room for a foreshortened pose shrinking the shoulder span.
+ */
+const LIMB_THICKNESS_TO_SHOULDER = 0.3;
 const TORSO_SIDE_PAD = 0.16;
 const TORSO_TOP_PAD = 0.14;
 const TORSO_BOTTOM_PAD = 0.45;
@@ -120,11 +132,25 @@ interface Capsule {
   radiusB: number;
 }
 
+interface LimbReach {
+  center: Vec;
+  radiusSq: number;
+}
+
 interface BodyEnvelope {
   discs: Disc[];
   torso: Vec[];
   limbs: Capsule[];
   seeds: Vec[];
+  /**
+   * Where limb growth may start, and how far it may run.
+   *
+   * Only limbs the landmarks failed to describe get an anchor. An arm with a
+   * traced elbow and wrist is already covered by capsules, so growing beyond
+   * them would buy nothing and risk absorbing whatever the arm is resting on.
+   */
+  reachAnchors: LimbReach[];
+  limbThickness: number;
   minX: number;
   minY: number;
   maxX: number;
@@ -219,14 +245,20 @@ function buildBodyEnvelope(
     },
   ];
 
+  const reachAnchors: LimbReach[] = [];
+  const anchor = (center: Vec, radius: number) => {
+    reachAnchors.push({ center, radiusSq: radius * radius });
+  };
+
   const chain = (
     shoulder: Vec,
     elbow: { x: number; y: number } | undefined,
     wrist: { x: number; y: number } | undefined,
   ) => {
+    // Where a joint is missing the limb is handed to the growth pass, anchored
+    // at the last joint we do know so the search stays as tight as possible.
     if (!elbow) {
-      // Nothing to trace, so keep the arm's whole reach rather than lose the arm.
-      discs.push(disc(shoulder, shoulderWidth * ARM_REACH_TO_SHOULDER));
+      anchor(shoulder, shoulderWidth * ARM_REACH_TO_SHOULDER);
       return;
     }
     const elbowPx = toCanvas(elbow, width, height);
@@ -237,8 +269,7 @@ function buildBodyEnvelope(
       radiusB: shoulderWidth * ARM_RADIUS_AT_ELBOW,
     });
     if (!wrist) {
-      // Forearm direction is unknown; cover it from the elbow.
-      discs.push(disc(elbowPx, shoulderWidth * ARM_RADIUS_AT_ELBOW * 2.6));
+      anchor(elbowPx, shoulderWidth * FOREARM_REACH_TO_SHOULDER);
       return;
     }
     limbs.push({
@@ -277,12 +308,124 @@ function buildBodyEnvelope(
     discs,
     torso,
     limbs,
+    reachAnchors,
+    limbThickness: shoulderWidth * LIMB_THICKNESS_TO_SHOULDER,
     seeds: [torsoCenter, shoulderMid, neckPx, hipMid, discs[0].center],
     minX: Math.max(1, Math.floor(minX)),
     minY: Math.max(1, Math.floor(minY)),
     maxX: Math.min(width - 2, Math.ceil(maxX)),
     maxY: Math.min(height - 2, Math.ceil(maxY)),
   };
+}
+
+/**
+ * Two-pass chamfer distance transform, in place.
+ *
+ * Seeds must already hold 0 for the source set and a large value elsewhere. The
+ * chamfer metric overestimates Euclidean distance by a few percent, which is
+ * well inside the tolerance of the thickness judgement it feeds.
+ */
+function chamferDistance(
+  distance: Float32Array,
+  gridWidth: number,
+  gridHeight: number,
+): void {
+  const diagonal = Math.SQRT2;
+
+  for (let y = 0; y < gridHeight; y += 1) {
+    const row = y * gridWidth;
+    for (let x = 0; x < gridWidth; x += 1) {
+      const cell = row + x;
+      if (distance[cell] === 0) continue;
+      let best = distance[cell];
+      if (x > 0) best = Math.min(best, distance[cell - 1] + 1);
+      if (y > 0) best = Math.min(best, distance[cell - gridWidth] + 1);
+      if (x > 0 && y > 0) {
+        best = Math.min(best, distance[cell - gridWidth - 1] + diagonal);
+      }
+      if (x < gridWidth - 1 && y > 0) {
+        best = Math.min(best, distance[cell - gridWidth + 1] + diagonal);
+      }
+      distance[cell] = best;
+    }
+  }
+
+  for (let y = gridHeight - 1; y >= 0; y -= 1) {
+    const row = y * gridWidth;
+    for (let x = gridWidth - 1; x >= 0; x -= 1) {
+      const cell = row + x;
+      if (distance[cell] === 0) continue;
+      let best = distance[cell];
+      if (x < gridWidth - 1) best = Math.min(best, distance[cell + 1] + 1);
+      if (y < gridHeight - 1) best = Math.min(best, distance[cell + gridWidth] + 1);
+      if (x < gridWidth - 1 && y < gridHeight - 1) {
+        best = Math.min(best, distance[cell + gridWidth + 1] + diagonal);
+      }
+      if (x > 0 && y < gridHeight - 1) {
+        best = Math.min(best, distance[cell + gridWidth - 1] + diagonal);
+      }
+      distance[cell] = best;
+    }
+  }
+}
+
+/**
+ * The limb-shaped part of the mask: everything a limb-radius disc cannot fit
+ * inside. Formally the mask minus its morphological opening by that disc.
+ *
+ * Thickness alone is not enough to reject furniture, because the outer shell of
+ * a cabinet is locally as thin as an arm. Subtracting the opening rejects the
+ * shell along with the core, so a bulky object is excluded whole while an arm,
+ * which the disc never fits inside, survives intact.
+ */
+function limbCorridor(
+  gridMask: Uint8Array,
+  gridWidth: number,
+  gridHeight: number,
+  limbRadius: number,
+): Uint8Array {
+  const total = gridWidth * gridHeight;
+  const far = gridWidth + gridHeight;
+
+  const thickness = new Float32Array(total);
+  for (let cell = 0; cell < total; cell += 1) {
+    thickness[cell] = gridMask[cell] === 1 ? far : 0;
+  }
+  chamferDistance(thickness, gridWidth, gridHeight);
+
+  // Distance to the nearest point the disc does fit around, which is what the
+  // opening dilates back out.
+  const toBulk = new Float32Array(total);
+  let anyBulk = false;
+  for (let cell = 0; cell < total; cell += 1) {
+    if (thickness[cell] > limbRadius) {
+      toBulk[cell] = 0;
+      anyBulk = true;
+    } else {
+      toBulk[cell] = far;
+    }
+  }
+
+  const corridor = new Uint8Array(total);
+  if (!anyBulk) {
+    corridor.set(gridMask);
+    return corridor;
+  }
+
+  chamferDistance(toBulk, gridWidth, gridHeight);
+  for (let cell = 0; cell < total; cell += 1) {
+    if (gridMask[cell] === 1 && toBulk[cell] > limbRadius) corridor[cell] = 1;
+  }
+  return corridor;
+}
+
+function withinReach(x: number, y: number, envelope: BodyEnvelope): boolean {
+  for (const reach of envelope.reachAnchors) {
+    const dx = x - reach.center.x;
+    const dy = y - reach.center.y;
+    if (dx * dx + dy * dy <= reach.radiusSq) return true;
+  }
+  return false;
 }
 
 export interface MaskRegion {
@@ -305,11 +448,26 @@ export function bodyEnvelopeBounds(
 ): MaskRegion | null {
   const envelope = buildBodyEnvelope(points, width, height);
   if (!envelope) return null;
+
+  // Cover where limb growth can go, not just the traced envelope, so an arm the
+  // landmarks missed still gets its edges refined.
+  let minX = envelope.minX;
+  let minY = envelope.minY;
+  let maxX = envelope.maxX;
+  let maxY = envelope.maxY;
+  for (const reach of envelope.reachAnchors) {
+    const radius = Math.sqrt(reach.radiusSq);
+    minX = Math.min(minX, reach.center.x - radius);
+    minY = Math.min(minY, reach.center.y - radius);
+    maxX = Math.max(maxX, reach.center.x + radius);
+    maxY = Math.max(maxY, reach.center.y + radius);
+  }
+
   return {
-    minX: envelope.minX,
-    minY: envelope.minY,
-    maxX: envelope.maxX,
-    maxY: envelope.maxY,
+    minX: Math.max(1, Math.floor(minX)),
+    minY: Math.max(1, Math.floor(minY)),
+    maxX: Math.min(width - 2, Math.ceil(maxX)),
+    maxY: Math.min(height - 2, Math.ceil(maxY)),
   };
 }
 
@@ -371,14 +529,20 @@ export function refinePersonMask(
   const gridMinY = Math.floor(envelope.minY / step);
   const gridMaxY = Math.min(gridHeight - 1, Math.ceil(envelope.maxY / step));
 
+  // gridMask covers the whole frame because limbs reach outside the envelope;
+  // candidate is the confident subset that sits inside it.
+  const gridMask = new Uint8Array(gridTotal);
   const candidate = new Uint8Array(gridTotal);
-  for (let gridY = gridMinY; gridY <= gridMaxY; gridY += 1) {
+  for (let gridY = 0; gridY < gridHeight; gridY += 1) {
     const y = Math.min(height - 1, gridY * step);
     const row = y * width;
     const gridRow = gridY * gridWidth;
-    for (let gridX = gridMinX; gridX <= gridMaxX; gridX += 1) {
+    const insideRows = gridY >= gridMinY && gridY <= gridMaxY;
+    for (let gridX = 0; gridX < gridWidth; gridX += 1) {
       const x = Math.min(width - 1, gridX * step);
       if (!isPersonPixel(data, (row + x) * 4)) continue;
+      gridMask[gridRow + gridX] = 1;
+      if (!insideRows || gridX < gridMinX || gridX > gridMaxX) continue;
       if (!insideEnvelope(x, y, envelope)) continue;
       candidate[gridRow + gridX] = 1;
     }
@@ -452,12 +616,57 @@ export function refinePersonMask(
   // Nothing survived, so keep the original mask rather than blanking the overlay.
   if (tail === 0) return imageData;
 
-  // Rows above and below the envelope clear wholesale, which is far cheaper
-  // than testing them pixel by pixel.
-  data.fill(0, 0, Math.min(data.length, envelope.minY * width * 4));
-  data.fill(0, Math.min(data.length, (envelope.maxY + 1) * width * 4));
+  // Grow out of the envelope along limbs the landmarks could not describe. The
+  // core found above is the whole starting boundary, so restart from the front
+  // of the queue with the looser test. Skipped when every limb was traced,
+  // which also skips the distance transform.
+  if (envelope.reachAnchors.length > 0) {
+    const corridor = limbCorridor(
+      gridMask,
+      gridWidth,
+      gridHeight,
+      envelope.limbThickness / step,
+    );
+    head = 0;
 
-  for (let y = envelope.minY; y <= envelope.maxY; y += 1) {
+    const grow = (cell: number, gridX: number, gridY: number): void => {
+      if (kept[cell] === 1 || corridor[cell] !== 1) return;
+      if (!withinReach(gridX * step, gridY * step, envelope)) return;
+      kept[cell] = 1;
+      queue[tail] = cell;
+      tail += 1;
+    };
+
+    while (head < tail) {
+      const cell = queue[head];
+      head += 1;
+      const gridX = cell % gridWidth;
+      const gridY = (cell - gridX) / gridWidth;
+
+      if (gridX > 0) grow(cell - 1, gridX - 1, gridY);
+      if (gridX < gridWidth - 1) grow(cell + 1, gridX + 1, gridY);
+      if (gridY > 0) grow(cell - gridWidth, gridX, gridY - 1);
+      if (gridY < gridHeight - 1) grow(cell + gridWidth, gridX, gridY + 1);
+    }
+  }
+
+  // Growth can reach past the envelope, so the clear works off what was kept.
+  let keptMinGridY = gridHeight - 1;
+  let keptMaxGridY = 0;
+  for (let index = 0; index < tail; index += 1) {
+    const gridY = ((queue[index] / gridWidth) | 0);
+    if (gridY < keptMinGridY) keptMinGridY = gridY;
+    if (gridY > keptMaxGridY) keptMaxGridY = gridY;
+  }
+  const minY = Math.max(0, keptMinGridY * step);
+  const maxY = Math.min(height - 1, (keptMaxGridY + 1) * step - 1);
+
+  // Rows above and below clear wholesale, which is far cheaper than testing
+  // them pixel by pixel.
+  data.fill(0, 0, Math.min(data.length, minY * width * 4));
+  data.fill(0, Math.min(data.length, (maxY + 1) * width * 4));
+
+  for (let y = minY; y <= maxY; y += 1) {
     const row = y * width;
     const gridRow = Math.min(gridHeight - 1, (y / step) | 0) * gridWidth;
     for (let x = 0; x < width; x += 1) {

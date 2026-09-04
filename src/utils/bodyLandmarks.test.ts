@@ -108,6 +108,17 @@ describe("extractUpperBodyPoints", () => {
     assert.ok(points.rightElbow, "a visible elbow is kept");
   });
 
+  it("keeps a low-confidence joint, flagged, so the mask gate can aim at it", () => {
+    const points = extractUpperBodyPoints(
+      upperBodyOnly({
+        [POSE.leftElbow]: { x: 0.2, y: 0.2, visibility: 0.35 },
+      }),
+    );
+
+    assert.equal(points.leftElbow?.x, 0.2);
+    assert.equal(points.leftElbow?.estimated, true, "not presented as a detection");
+  });
+
   it("returns nothing without shoulders to build from", () => {
     const points = extractUpperBodyPoints(pose({}));
     assert.deepEqual(points, {});
