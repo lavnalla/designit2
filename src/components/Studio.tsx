@@ -23,6 +23,7 @@ import {
   FabricPipelineError,
   type FabricClipboard,
 } from "../lib/fabricPipeline";
+import { canCopyFabric, shouldStartItemDrag, useReleaseInteractionOnWindow } from "../lib/canvasInteraction";
 
 const MOBILE_BREAKPOINT = 1024;
 
@@ -995,6 +996,23 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
 
   const [showTryOn, setShowTryOn] = useState(false);
   const [showPartPainter, setShowPartPainter] = useState(false);
+  // The "Test Live on Webcam" button opens a small picker first: photo mode
+  // (upload a picture of yourself wearing something, get an output image) or
+  // live webcam (real-time video). Photo mode is UI only for now; live is the
+  // existing try-on flow.
+  const [showTryOnLaunchMenu, setShowTryOnLaunchMenu] = useState(false);
+  const [tryOnCaptureMode, setTryOnCaptureMode] = useState<"photo" | "live">("live");
+  // The toolbar scrolls horizontally (overflow-x: auto), which clips anything
+  // absolutely positioned inside it, so the menu is fixed to the viewport at
+  // the button's position instead.
+  const tryOnLaunchButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [tryOnLaunchMenuPos, setTryOnLaunchMenuPos] = useState({ top: 0, right: 0 });
+  useEffect(() => {
+    if (!showTryOnLaunchMenu) return;
+    const close = () => setShowTryOnLaunchMenu(false);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [showTryOnLaunchMenu]);
   const [showSourcePanel, setShowSourcePanel] = useState(false);
   const [renderedWorkspaceImg, setRenderedWorkspaceImg] = useState<string | null>(null);
   const [tryOnMode, setTryOnMode] = useState<"garment" | "necklace" | "earrings">("garment");
@@ -1118,6 +1136,23 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   const workspaceShapesRef = useRef<DistortableShape[]>([]);
   const isPointerDownRef = useRef(false);
   const penRef = useRef<{ pointerId: number; lastX: number; lastY: number; strokeIds: string[]; meshGroupId?: string; pendingMesh?: boolean; color?: string; width?: number } | null>(null);
+
+  // Single place that ends every pointer interaction. Called from the canvas's
+  // own pointer-up and from the window-level release below, so a mouse button
+  // released over the toolbar (or outside the browser) can no longer leave a
+  // garment glued to the cursor.
+  const releaseCanvasInteraction = useCallback(() => {
+    isPointerDownRef.current = false;
+    penRef.current = null;
+    setDraggingShapeId(null);
+    setDraggingStrokeId(null);
+    setDraggingDot(null);
+    setDraggingStrokeDot(null);
+    setDraggingDotClusterId(null);
+    setResizingId(null);
+    setRotatingId(null);
+  }, []);
+  useReleaseInteractionOnWindow(releaseCanvasInteraction);
   const PEN_SPACING = 30; 
   const ERASE_RADIUS = 15;
   const hasImportedSource = Boolean(selectedImage && !templates.includes(selectedImage));
@@ -3607,11 +3642,14 @@ const splitLoopWithLine = (
     }
   }, [buildSelectionClone]);
 
+  // No lock is required here. The only thing the canvas lock changed for this
+  // path was letting a marquee start on top of a garment (a pointer-down on a
+  // shape normally begins a drag instead); the shape and stroke right-click
+  // paths never use the marquee, and copy only reads state. Requiring the lock
+  // left the canvas locked after copy/paste, which is why newly added garments
+  // "could not be moved".
   const copyFabricDebugFromSelection = useCallback(async (target?: { type: 'shape' | 'stroke' | 'selection'; id: string }) => {
-  if (!isLocked) {
-    alert('Lock to enable fabric copy.');
-    return;
-  }
+    if (!canCopyFabric({ fabricBusy })) return;
 
     try {
       let normalizedFabric = 'selection-crop';
@@ -3794,7 +3832,7 @@ const splitLoopWithLine = (
 
     setSelectionRect(null);
     setContextMenu(null);
-  }, [isLocked, selectionRect, workspaceShapes, strokes, selectedShapeId, selectedClothType, activeColor, buildSelectionClone, resolveFabricSource, getBoundingBox, isItemInRect]);
+  }, [fabricBusy, selectionRect, workspaceShapes, strokes, selectedShapeId, selectedClothType, activeColor, buildSelectionClone, resolveFabricSource, getBoundingBox, isItemInRect]);
 
   const copyFromSelection = useCallback(async () => {
     if (!selectionRect || !workspaceRef.current) return;
@@ -3904,7 +3942,7 @@ const splitLoopWithLine = (
       }
     : null;
 
-  const targetShapes = target
+  let targetShapes = target
     ? (target.type === 'shape' ? workspaceShapes.filter(shape => shape.id === target.id) : [])
     : hasSelectionArea
       ? workspaceShapes.filter(shape => isItemInRect(getBoundingBox(shape), selectionRect))
@@ -4007,18 +4045,33 @@ const splitLoopWithLine = (
       return;
     } catch (pipelineError) {
       const hint = pipelineError instanceof FabricPipelineError ? pipelineError.hint : undefined;
-      console.warn('Fabric pipeline paste unavailable; falling back to stretch.', pipelineError);
-      setFabricStatus(hint ? `Pipeline offline — stretched instead. ${hint}` : 'Pipeline unavailable — stretched instead.');
-      // Deliberately falls through to the legacy path below.
+      console.warn('Fabric pipeline paste unavailable; garments left unchanged.', pipelineError);
+      setFabricStatus(hint ? `Pipeline offline — garments left unchanged. ${hint}` : 'Pipeline unavailable — garments left unchanged.');
+      // Falls through to the legacy path below, which now refuses garments
+      // and only handles strokes.
     } finally {
       setFabricBusy(null);
     }
   }
 
-  // ---- Legacy stretch path, kept as the fallback for when the pipeline
-  // service is not running, and for strokes, which carry no source image to
-  // segment. It needs a plain image source; without one there is nothing left
-  // to try.
+  // ---- Legacy stretch path. Kept only for strokes, which carry no source
+  // image to segment. Garments are refused here on purpose: without the
+  // pipeline the only thing this path can do is stretch the raw source pixels
+  // (source shadows included, target folds ignored) over the shape, which is
+  // exactly the "pasted on" result the pipeline exists to avoid. Better to
+  // leave the garment untouched and say why.
+  if (targetShapes.length > 0) {
+    if (!fabricClipboard) {
+      setFabricStatus('Fabric was copied while the pipeline was offline — start the fabric service and copy it again. Garments left unchanged.');
+    }
+    targetShapes = [];
+    if (targetStrokes.length === 0) {
+      setSelectionRect(null);
+      setContextMenu(null);
+      return;
+    }
+  }
+
   if (!fabricClipboardSrc) {
     setSelectionRect(null);
     setContextMenu(null);
@@ -5574,7 +5627,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
   if (!mounted) return null;
 
   return (
-    <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-[#fffdfa] text-slate-900 select-none" onClick={() => { setContextMenu(null); setShowTopPanelMenu(false); setShowHeaderMenu(false); }}>
+    <div className="studio-ui flex h-[100dvh] w-full flex-col overflow-hidden bg-[#fffdfa] text-slate-900 select-none" onClick={() => { setContextMenu(null); setShowTopPanelMenu(false); setShowHeaderMenu(false); }}>
       {aiDraping.active && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-md">
            <div className="bg-white p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4">
@@ -5757,31 +5810,25 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       </select>
     </div>
 
+    <div className="relative" onClick={(e) => e.stopPropagation()}>
     <button
-      onClick={async () => {
+      ref={tryOnLaunchButtonRef}
+      onClick={() => {
         if (!showTryOn && !showPartPainter) {
-          let readyAsset: string | null = null;
-          for (let attempt = 0; attempt < 3 && !readyAsset; attempt++) {
-            readyAsset = await syncWorkspaceToTryOn();
-            if (!readyAsset) {
-              await new Promise<void>((r) => requestAnimationFrame(() => r()));
-            }
+          const rect = tryOnLaunchButtonRef.current?.getBoundingClientRect();
+          if (rect) {
+            setTryOnLaunchMenuPos({ top: rect.bottom + 4, right: Math.max(8, window.innerWidth - rect.right) });
           }
-          if (!readyAsset && selectedShape?.img && (!selectedImage || selectedShape.img !== selectedImage)) {
-            readyAsset = selectedShape.img;
-          }
-          if (!readyAsset) {
-            alert("No modified image available for try-on. Edit/select an image first.");
-            return;
-          }
-          setRenderedWorkspaceImg(readyAsset);
-          setShowPartPainter(true);
+          setShowTryOnLaunchMenu((prev) => !prev);
         } else {
+          setShowTryOnLaunchMenu(false);
           setShowTryOn(false);
           setShowPartPainter(false);
           setRenderedWorkspaceImg(null);
         }
       }}
+      aria-haspopup="menu"
+      aria-expanded={showTryOnLaunchMenu}
       className={`${toolbarButtonInteractiveClass} inline-flex min-w-0 max-w-[7.25rem] gap-1 px-1.5 text-[8px] sm:max-w-none sm:gap-1.5 sm:px-2.5 sm:text-[10px]`}
       style={showTryOn || showPartPainter
         ? { backgroundColor: '#fde68a', borderColor: '#f59e0b', color: '#000000' }
@@ -5790,6 +5837,58 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       <span className="truncate sm:hidden">{showTryOn || showPartPainter ? "Close" : "Live"}</span>
       <span className="hidden sm:inline">{showTryOn || showPartPainter ? "✕ Close Try-On View" : "✨ Test Live on Webcam"}</span>
     </button>
+
+    {showTryOnLaunchMenu && !showTryOn && !showPartPainter && (
+      <div
+        role="menu"
+        style={{ position: 'fixed', top: tryOnLaunchMenuPos.top, right: tryOnLaunchMenuPos.right }}
+        className="studio-pop z-[280] w-56 overflow-hidden whitespace-normal rounded-xl border-2 border-slate-300 bg-white shadow-lg"
+      >
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            // UI only for now: the photo (upload -> output image) flow is not
+            // wired up yet. Remember the choice so the wiring has a home.
+            setTryOnCaptureMode("photo");
+            setShowTryOnLaunchMenu(false);
+          }}
+          className={`flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-yellow-50 ${tryOnCaptureMode === "photo" ? "bg-yellow-50" : ""}`}
+        >
+          <span className="text-[10px] font-black uppercase text-slate-800">📷 Photo mode</span>
+          <span className="text-[9px] leading-tight text-slate-500">Upload a photo of you wearing it and get an output image.</span>
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          onClick={async () => {
+            setTryOnCaptureMode("live");
+            setShowTryOnLaunchMenu(false);
+            let readyAsset: string | null = null;
+            for (let attempt = 0; attempt < 3 && !readyAsset; attempt++) {
+              readyAsset = await syncWorkspaceToTryOn();
+              if (!readyAsset) {
+                await new Promise<void>((r) => requestAnimationFrame(() => r()));
+              }
+            }
+            if (!readyAsset && selectedShape?.img && (!selectedImage || selectedShape.img !== selectedImage)) {
+              readyAsset = selectedShape.img;
+            }
+            if (!readyAsset) {
+              alert("No modified image available for try-on. Edit/select an image first.");
+              return;
+            }
+            setRenderedWorkspaceImg(readyAsset);
+            setShowPartPainter(true);
+          }}
+          className={`flex w-full flex-col items-start gap-0.5 border-t border-slate-100 px-3 py-2 text-left hover:bg-yellow-50 ${tryOnCaptureMode === "live" ? "bg-yellow-50" : ""}`}
+        >
+          <span className="text-[10px] font-black uppercase text-slate-800">🎥 Live webcam</span>
+          <span className="text-[9px] leading-tight text-slate-500">Real-time video feed from your camera.</span>
+        </button>
+      </div>
+    )}
+    </div>
 
     <div className="relative z-[270] md:hidden" onClick={(e) => e.stopPropagation()}>
       <button
@@ -5808,7 +5907,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       {showTopPanelMenu && (
         <div
           id="studio-top-panel-menu"
-          className="fixed right-3 top-[4.6rem] z-[500] w-[12.5rem] rounded-2xl border border-slate-300 bg-[#fffdfa] p-2.5 shadow-[0_20px_40px_rgba(15,23,42,0.22)]"
+          className="studio-pop fixed right-3 top-[4.6rem] z-[500] w-[12.5rem] rounded-2xl border border-slate-300 bg-[#fffdfa] p-2.5 shadow-[0_20px_40px_rgba(15,23,42,0.22)]"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="mb-2 border-b border-slate-200 px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
@@ -6186,7 +6285,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
             </div>
           )}
           {contextMenu && (
-            <div className="fixed z-[300] bg-white border border-slate-200 shadow-2xl rounded-2xl overflow-hidden py-1 min-w-[140px]" style={{ left: contextMenu.x, top: contextMenu.y }} onClick={(e) => e.stopPropagation()}>
+            <div className="studio-pop fixed z-[300] bg-white border border-slate-200 shadow-2xl rounded-2xl overflow-hidden py-1 min-w-[140px]" style={{ left: contextMenu.x, top: contextMenu.y }} onClick={(e) => e.stopPropagation()}>
               <>
                 {contextMenu.type === "selection" && (
                   <>
@@ -6267,24 +6366,12 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                         copyFabricDebugFromSelection({ type: "stroke", id: contextMenu.id });
                       }
                     }}
-                    disabled={!isLocked || fabricBusy !== null}
+                    disabled={!canCopyFabric({ fabricBusy })}
                     className="w-full text-left px-4 py-2 hover:bg-indigo-50 text-[9px] font-black uppercase border-b border-slate-100 text-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
-                    title={!isLocked ? 'Lock to enable' : 'Copy fabric'}
+                    title="Copy fabric"
                   >
                     {fabricBusy === 'copy' ? '🧪 Flattening…' : '🧪 Copy Fabric'}
                   </button>
-                )}
-
-                {(contextMenu.type === "selection" || contextMenu.type === "shape" || contextMenu.type === "stroke") && !isLocked && (
-                  <div className="px-4 py-2 border-b border-slate-100 bg-amber-50/80">
-                    <p className="text-[9px] font-black uppercase text-amber-700">Lock to enable fabric copy</p>
-                    <button
-                      onClick={() => setIsLocked(true)}
-                      className="mt-1 text-[9px] font-black uppercase text-amber-800 underline"
-                    >
-                      Lock now
-                    </button>
-                  </div>
                 )}
 
                 {(contextMenu.type === "selection" || contextMenu.type === "shape" || contextMenu.type === "stroke") && (
@@ -7461,7 +7548,7 @@ isProcessingRef.current = false;
                 });
                 pendingResizeRecordingRef.current = null;
               }
-              isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingStrokeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setDraggingDotClusterId(null); setResizingId(null); setRotatingId(null); }}>
+              releaseCanvasInteraction(); }}>
               
             <svg 
               id="workspace-svg" 
@@ -7510,7 +7597,7 @@ isProcessingRef.current = false;
                             <image key={`img-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`} data-shape-id={shape.id} href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={shape.dots && shape.dots.length > 0 ? `url(#cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length})` : undefined} onPointerDown={(e) => {
                               if (pickColorMode) { e.stopPropagation();
                               const c = getCoords(e); handlePickRemove(shape, c.x, c.y); return; }
-                              if (activeTool === "cursor" && !isLocked) { e.stopPropagation();
+                              if (shouldStartItemDrag({ activeTool, isLocked })) { e.stopPropagation();
                               const c = getCoords(e); if (tutorialRecording) { const timestamp = recordTutorialStep({ type: 'drag_shape', targetId: shape.id, label: 'Drag shape', clientX: c.rx, clientY: c.ry, canvasX: c.x, canvasY: c.y, dragOffsetX: c.x - shape.position.x, dragOffsetY: c.y - shape.position.y, targetShapePositionX: shape.position.x, targetShapePositionY: shape.position.y, targetShapeScale: shape.scale, targetShapeDots: shape.dots.map(shapeDot => ({ ...shapeDot })), targetShapeImg: shape.img, targetShapeDims: { ...shape.dims }, targetShapeRotation: shape.rotation, targetShapeIsMannequin: shape.isMannequin }); pendingShapeDragRecordingRef.current = { targetId: shape.id, timestamp }; } setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y });
                               }
                             }} onContextMenu={(e) => { e.preventDefault();
@@ -7563,7 +7650,7 @@ isProcessingRef.current = false;
                               if (tutorialRecording) { recordTutorialStep({ type: 'fill_shape', targetId: shape.id, label: 'Fill shape', fillTargetKind: 'shape', clientX: e.clientX, clientY: e.clientY }); }
                               saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? { ...s, fabricFillSrc: undefined, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : s));
                               return; }
-                              if (activeTool === "cursor" && !isLocked) { e.stopPropagation();
+                              if (shouldStartItemDrag({ activeTool, isLocked })) { e.stopPropagation();
                               const c = getCoords(e); if (tutorialRecording) { const timestamp = recordTutorialStep({ type: 'drag_shape', targetId: shape.id, label: 'Drag shape', clientX: c.rx, clientY: c.ry, canvasX: c.x, canvasY: c.y, dragOffsetX: c.x - shape.position.x, dragOffsetY: c.y - shape.position.y, targetShapePositionX: shape.position.x, targetShapePositionY: shape.position.y, targetShapeScale: shape.scale, targetShapeDots: shape.dots.map(shapeDot => ({ ...shapeDot })), targetShapeImg: shape.img, targetShapeDims: { ...shape.dims }, targetShapeRotation: shape.rotation, targetShapeIsMannequin: shape.isMannequin }); pendingShapeDragRecordingRef.current = { targetId: shape.id, timestamp }; } setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y });
                               }
                             }} onContextMenu={(e) => { e.preventDefault();
@@ -7858,7 +7945,7 @@ isProcessingRef.current = false;
                                       if (tutorialRecording) { recordTutorialStep({ type: 'fill_shape', targetId: s.id, label: 'Fill stroke', fillTargetKind: 'stroke', clientX: e.clientX, clientY: e.clientY }); }
                                       saveForUndo();
                                       setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st));
-                                    } else if (activeTool === "cursor" && !isLocked) {
+                                    } else if (shouldStartItemDrag({ activeTool, isLocked })) {
                                       e.stopPropagation();
                                       if (tutorialRecording) {
                                         recordTutorialStepOnce({ type: 'drag_stroke', targetId: s.id, label: 'Drag stroke' });
@@ -7883,7 +7970,7 @@ isProcessingRef.current = false;
                               height={Math.max(...s.points.map(p => p.y)) - Math.min(...s.points.map(p => p.y))}
                               onPointerDown={(e) => {
                                   if (activeTool === "fill") {
-                                  } else if (activeTool === "cursor" && !isLocked) {
+                                  } else if (shouldStartItemDrag({ activeTool, isLocked })) {
                                     e.stopPropagation();
                                     if (tutorialRecording) {
                                       recordTutorialStepOnce({ type: 'drag_stroke', targetId: s.id, label: 'Drag stroke' });
@@ -7911,7 +7998,7 @@ isProcessingRef.current = false;
                                     if (tutorialRecording) { recordTutorialStep({ type: 'fill_shape', targetId: s.id, label: 'Fill stroke', fillTargetKind: 'stroke', clientX: e.clientX, clientY: e.clientY }); }
                                     saveForUndo();
                                     setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st));
-                                  } else if (activeTool === "cursor" && !isLocked) {
+                                  } else if (shouldStartItemDrag({ activeTool, isLocked })) {
                                     e.stopPropagation();
                                     if (tutorialRecording) {
                                       recordTutorialStepOnce({ type: 'drag_stroke', targetId: s.id, label: 'Drag stroke' });
@@ -7939,7 +8026,7 @@ isProcessingRef.current = false;
                                     e.stopPropagation();
                                     saveForUndo();
                                     setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st));
-                                  } else if (activeTool === "cursor" && !isLocked) {
+                                  } else if (shouldStartItemDrag({ activeTool, isLocked })) {
                                     e.stopPropagation();
                                     const c = getCoords(e);
                                     setDraggingStrokeId(s.id);
@@ -7960,7 +8047,7 @@ isProcessingRef.current = false;
                                         e.stopPropagation();
                                         saveForUndo();
                                         setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st));
-                                      } else if (activeTool === "cursor" && !isLocked) {
+                                      } else if (shouldStartItemDrag({ activeTool, isLocked })) {
                                         e.stopPropagation();
                                         if (tutorialRecording) {
                                           recordTutorialStepOnce({ type: 'drag_stroke', targetId: s.id, label: 'Drag stroke' });
@@ -7983,7 +8070,7 @@ isProcessingRef.current = false;
                                 if (tutorialRecording) { recordTutorialStep({ type: 'fill_shape', targetId: s.id, label: 'Fill stroke', fillTargetKind: 'stroke', clientX: e.clientX, clientY: e.clientY }); }
                                 saveForUndo();
                                 setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st));
-                              } else if (activeTool === "cursor" && !isLocked) {
+                              } else if (shouldStartItemDrag({ activeTool, isLocked })) {
                                   e.stopPropagation();
                                   if (tutorialRecording) {
                                     recordTutorialStepOnce({ type: 'drag_stroke', targetId: s.id, label: 'Drag stroke' });
@@ -8043,7 +8130,7 @@ isProcessingRef.current = false;
                             </defs>
                           )}
                           {meshStroke ? (
-                            <g onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); if (tutorialRecording) { recordTutorialStep({ type: 'fill_shape', targetId: s.id, label: 'Fill stroke', fillTargetKind: 'stroke', clientX: e.clientX, clientY: e.clientY }); } saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType), strokeStyle: normalizeFabric(selectedClothType) === 'mesh' ? 'mesh' : st.strokeStyle, meshPattern: normalizeFabric(selectedClothType) === 'mesh' ? { horizontalLines: meshHorizontalLines, verticalLines: meshVerticalLines } : st.meshPattern } : st)); setShowColorPanel(false); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); openContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
+                            <g onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); if (tutorialRecording) { recordTutorialStep({ type: 'fill_shape', targetId: s.id, label: 'Fill stroke', fillTargetKind: 'stroke', clientX: e.clientX, clientY: e.clientY }); } saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType), strokeStyle: normalizeFabric(selectedClothType) === 'mesh' ? 'mesh' : st.strokeStyle, meshPattern: normalizeFabric(selectedClothType) === 'mesh' ? { horizontalLines: meshHorizontalLines, verticalLines: meshVerticalLines } : st.meshPattern } : st)); setShowColorPanel(false); } else if (shouldStartItemDrag({ activeTool, isLocked })) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); openContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
                               <g clipPath={`url(#mesh-stroke-clip-${s.id})`} opacity={s.visible === false ? 0.3 : 1}>
                                 <rect x={meshMinX} y={meshMinY} width={meshPatternWidth} height={meshPatternHeight} fill="transparent" />
                                 {Array.from({ length: meshPattern.horizontalLines }, (_, idx) => {
@@ -8057,7 +8144,7 @@ isProcessingRef.current = false;
                               </g>
                             </g>
                               ) : (
-                            <path d={generatePathData(s.points, s.closed ?? false)} stroke={s.visible === false ? (globalShowDots ? s.color : "transparent") : s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={s.visible === false ? "5,5" : undefined} opacity={s.visible === false ? 0.3 : 1} onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); if (tutorialRecording) { recordTutorialStep({ type: 'fill_shape', targetId: s.id, label: 'Fill stroke', fillTargetKind: 'stroke', clientX: e.clientX, clientY: e.clientY }); } saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType), strokeStyle: normalizeFabric(selectedClothType) === 'mesh' ? 'mesh' : st.strokeStyle, meshPattern: normalizeFabric(selectedClothType) === 'mesh' ? { horizontalLines: meshHorizontalLines, verticalLines: meshVerticalLines } : st.meshPattern } : st)); setShowColorPanel(false); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); openContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }} />
+                            <path d={generatePathData(s.points, s.closed ?? false)} stroke={s.visible === false ? (globalShowDots ? s.color : "transparent") : s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={s.visible === false ? "5,5" : undefined} opacity={s.visible === false ? 0.3 : 1} onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); if (tutorialRecording) { recordTutorialStep({ type: 'fill_shape', targetId: s.id, label: 'Fill stroke', fillTargetKind: 'stroke', clientX: e.clientX, clientY: e.clientY }); } saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType), strokeStyle: normalizeFabric(selectedClothType) === 'mesh' ? 'mesh' : st.strokeStyle, meshPattern: normalizeFabric(selectedClothType) === 'mesh' ? { horizontalLines: meshHorizontalLines, verticalLines: meshVerticalLines } : st.meshPattern } : st)); setShowColorPanel(false); } else if (shouldStartItemDrag({ activeTool, isLocked })) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); openContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }} />
                           )}
                         </>
                       )}

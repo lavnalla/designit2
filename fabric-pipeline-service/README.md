@@ -14,6 +14,7 @@ the sampled pixels across the target's bounding box and distorted the weave.
 | 1 | Garment segmentation | Pixel-accurate garment mask, and the pixels-per-centimetre estimate derived from it | `segmenter.py` |
 | 1b | Patch selection | Picks a region that is actually cloth, not neckline or backdrop | `patch.py` |
 | 2 | Texture rectification | Diffusion pass that removes folds, shadows and perspective skew, producing a flat tileable swatch | `rectify.py` |
+| 2b | Delighting | Divides out the low-frequency lighting the diffusion pass leaves behind, so the swatch carries pattern and colour only | `delight.py` |
 | 3 | Isotropic tiling | Repeats the swatch at a fixed px/cm ratio rather than resizing it to fit | `compositor.py` |
 | 4 | Photometric blending | Modulates the tiled fabric by the destination's own shading to keep drape and cast shadows | `compositor.py` |
 
@@ -61,14 +62,17 @@ stdin at EOF, which some CLIs read as a shutdown signal, and the server then
 dies seconds after reporting that it started.
 
 The Next.js side reaches the service at `FABRIC_SERVICE_URL`, defaulting to
-`http://127.0.0.1:8010`. If it is not running, copy and paste both fall back to
-the previous stretch behaviour and say so in the UI rather than failing.
+`http://127.0.0.1:8010`. If it is not running, copy keeps a plain crop on the
+clipboard and says so; paste then **leaves garments unchanged** and reports why,
+rather than stretching raw source pixels over them (the old fallback, which
+carried the source's shadows across and ignored the target's folds). Strokes,
+which have no image to segment, still take the plain-crop path.
 
 ## API
 
 - `GET /health` — model readiness, device, cache size
 - `POST /warm` — load both models up front
-- `POST /copy` — `{ imageDataUrl, rect?, seed?, rectify? }` → flat swatch + `srcPxPerCm`
+- `POST /copy` — `{ imageDataUrl, rect?, seed?, rectify?, delight? }` → flat swatch + `srcPxPerCm`
 - `POST /paste` — `{ swatchDataUrl, destImageDataUrl, cropWidth, cropHeight, srcPxPerCm, multiplier?, shadingStrength?, targetWidth?, targetHeight? }` → composited RGBA
 
 `/copy` needs the **whole source photo**, not just the crop. Physical scale is
@@ -141,6 +145,7 @@ silhouette accuracy with 2.3% mean error, against 18.2% for the median row.
 .venv/bin/python test_scale_transfer.py # end-to-end transfer across garment types
 .venv/bin/python test_tiling.py         # scale maths + tiling geometry, needs the service up
 .venv/bin/python test_shading.py        # isolates stage 4 with a flat grey swatch
+.venv/bin/python test_delight.py        # stage 2b delighting + shading filter A/B, offline
 .venv/bin/python test_cross_garment.py  # pattern transfer between different garment types
 .venv/bin/python test_api_routes.py     # through the Next.js proxy routes, needs `npm run dev`
 .venv/bin/python test_pipeline.py ../public/designFrom.png ../public/designTo1.png

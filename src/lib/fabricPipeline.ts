@@ -97,12 +97,38 @@ export class FabricPipelineError extends Error {
   }
 }
 
-async function postJson<T>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+/**
+ * Upper bound on one pipeline call. Copy runs a 20-step diffusion on a 256px
+ * patch (about 1.3 s warm on the RTX 3070, tens of seconds on a cold model),
+ * so this is generous -- its job is to stop a hung service leaving the copy
+ * and paste buttons disabled forever, not to police normal latency.
+ */
+export const FABRIC_REQUEST_TIMEOUT_MS = 120_000;
+
+async function postJson<T>(url: string, body: unknown, timeoutMs: number = FABRIC_REQUEST_TIMEOUT_MS): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new FabricPipelineError(
+        `Fabric pipeline did not answer within ${Math.round(timeoutMs / 1000)}s`,
+        0,
+        "The fabric service is not responding. Check that it is running on port 8010.",
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 
   const text = await res.text();
   let parsed: unknown = null;

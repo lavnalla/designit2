@@ -16,6 +16,8 @@ from dataclasses import dataclass
 import numpy as np
 from PIL import Image
 
+import delight
+
 # Smallest sensible tile. Below this the swatch is being squeezed so hard that
 # it reads as noise, and it usually means the scale estimate went wrong.
 MIN_TILE_PX = 8
@@ -36,6 +38,27 @@ SHADING_CEIL = 2.00
 # carries 47% of its high-frequency weave across; 0.012 tracks at r=0.739 and
 # carries 4.1%. The curve knees here, so this is the default.
 DEFAULT_DETAIL_SIGMA_FRAC = 0.012
+
+# How the drape is separated from the weave.
+#
+# "gaussian" is the default. "guided" is an edge-preserving low-pass
+# (delight.guided_filter) that was tried as a replacement so creases would
+# stay sharp: on a synthetic crease-plus-weave it keeps 94% of the step within
+# 4px against the Gaussian's 80% (test_delight.py). On real garments it does
+# not hold up. Measured on three destinations (designTo1 dress, t-shirt
+# template, worn red gown), the share of the destination's high-frequency
+# energy that leaks into the shading map was 0.5-1.7% for the Gaussian and
+# 18-48% for guided at eps=12^2; raising eps to 90^2 only brought the leak down
+# to 5-11% while the correlation with the destination fell back to the
+# Gaussian's. A printed garment's motif has the same local contrast as a
+# crease, so no variance threshold separates the two, and the extra
+# "correlation" the guided filter shows is the old print being copied back in.
+# It stays available for A/B, not as the default. Window radius is in Gaussian
+# sigmas so both have the same reach; eps is luminance variance (0..255
+# units, squared) below which structure counts as texture rather than fold.
+DEFAULT_SHADING_METHOD = "gaussian"
+GUIDED_RADIUS_SIGMAS = 2.0
+GUIDED_EPS = 12.0 ** 2
 
 # Above this fraction of full brightness, output rolls off smoothly instead of
 # clipping. A pale swatch under a bright highlight otherwise saturates to flat
@@ -112,6 +135,7 @@ def extract_shading(
     mask: np.ndarray,
     detail_sigma_frac: float = DEFAULT_DETAIL_SIGMA_FRAC,
     strength: float = 1.0,
+    method: str = DEFAULT_SHADING_METHOD,
 ) -> np.ndarray:
     """Pull a normalised shading map out of the destination garment.
 
@@ -139,7 +163,15 @@ def extract_shading(
     mean_inside = float(lum[inside].mean()) if inside.any() else float(lum.mean())
     filled = np.where(inside, lum, mean_inside)
 
-    drape = _gaussian_blur(filled, sigma)
+    if method == "guided":
+        # Self-guided edge-preserving low-pass: a crease is a strong edge and
+        # is kept sharp; the old weave is weak texture and averages away. The
+        # window is sized like the Gaussian it replaces so the two are
+        # comparable knob-for-knob.
+        radius = max(1, int(round(GUIDED_RADIUS_SIGMAS * sigma)))
+        drape = delight.guided_filter(filled, filled, radius=radius, eps=GUIDED_EPS)
+    else:
+        drape = _gaussian_blur(filled, sigma)
 
     denom = mean_inside if mean_inside > 1e-6 else 1.0
     shading = drape / denom

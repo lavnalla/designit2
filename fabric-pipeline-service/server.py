@@ -24,6 +24,7 @@ from PIL import Image
 from pydantic import BaseModel, Field
 
 import compositor
+import delight
 import patch
 import rectify
 import segmenter
@@ -107,6 +108,9 @@ class CopyRequest(BaseModel):
     seamBlendPx: int = 0
     # Skip the diffusion stage; useful for A/B against the old naive path.
     rectify: bool = True
+    # Divide out the lighting that survives rectification (see delight.py).
+    # Off only for A/B measurement.
+    delight: bool = True
 
 
 class PasteRequest(BaseModel):
@@ -188,7 +192,7 @@ def copy_fabric(req: CopyRequest) -> dict:
     crop_buf = io.BytesIO()
     crop.save(crop_buf, format="PNG")
     cache_key = hashlib.sha256(
-        crop_buf.getvalue() + f"|{req.seed}|{req.seamBlendPx}|{req.rectify}".encode()
+        crop_buf.getvalue() + f"|{req.seed}|{req.seamBlendPx}|{req.rectify}|{req.delight}".encode()
     ).hexdigest()
 
     cached = _cache_get(cache_key)
@@ -206,6 +210,11 @@ def copy_fabric(req: CopyRequest) -> dict:
         else:
             swatch_image = crop.resize((rectify.PATCH_SIZE, rectify.PATCH_SIZE), Image.LANCZOS)
             rectify_seconds = 0.0
+        # Stage 2b -- strip the lighting the diffusion left behind, so the
+        # swatch carries pattern and colour only and takes all of its shading
+        # from the destination at paste time.
+        if req.delight:
+            swatch_image = delight.delight(swatch_image)
         swatch_data_url = _encode_data_url(swatch_image)
         _cache_put(cache_key, {"swatchDataUrl": swatch_data_url})
         from_cache = False
@@ -229,6 +238,7 @@ def copy_fabric(req: CopyRequest) -> dict:
         "segmentSeconds": seg.inference_seconds,
         "rectifySeconds": rectify_seconds,
         "rectified": req.rectify,
+        "delighted": req.delight,
         # Where the fabric was actually taken from, so the UI can say when it
         # moved the sample rather than silently ignoring the user's selection.
         "patchRect": {
