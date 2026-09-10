@@ -20,6 +20,8 @@ import {
   runFabricCopy,
   runFabricPaste,
   imageToDataUrl,
+  imageToBoundedDataUrl,
+  scaleRect,
   FabricPipelineError,
   type FabricClipboard,
 } from "../lib/fabricPipeline";
@@ -3553,7 +3555,11 @@ const splitLoopWithLine = (
     rect: { x: number; y: number; width: number; height: number } | null,
   ): Promise<{ imageDataUrl: string; rect: { x: number; y: number; width: number; height: number } | null } | null> => {
     if (shape?.img) {
-      const imageDataUrl = await imageToDataUrl(shape.img);
+      // Bounded, JPEG-encoded: the service needs nothing above ~1280px and a
+      // full-size PNG of a phone photo would blow past Vercel's 4.5 MB body
+      // limit on the proxy route.
+      const bounded = await imageToBoundedDataUrl(shape.img);
+      const imageDataUrl = bounded.dataUrl;
       if (!rect) return { imageDataUrl, rect: null };
 
       // Selection is in canvas coordinates; undo the shape's placement and
@@ -3575,9 +3581,10 @@ const splitLoopWithLine = (
       const kx = natural.width / Math.max(1, shape.dims.width);
       const ky = natural.height / Math.max(1, shape.dims.height);
 
+      // ...and finally from natural pixels into the bounded image that was sent.
       return {
         imageDataUrl,
-        rect: { x: localX * kx, y: localY * ky, width: localW * kx, height: localH * ky },
+        rect: scaleRect({ x: localX * kx, y: localY * ky, width: localW * kx, height: localH * ky }, bounded.scale),
       };
     }
 

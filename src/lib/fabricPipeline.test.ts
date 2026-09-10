@@ -1,5 +1,23 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { runFabricCopy, FabricPipelineError } from "./fabricPipeline";
+import { runFabricCopy, FabricPipelineError, scaleRect, SOURCE_MAX_SIDE } from "./fabricPipeline";
+
+describe("bounded source image", () => {
+  it("keeps the selection aligned when the source is downscaled", () => {
+    // A 4000px-wide photo is sent at SOURCE_MAX_SIDE; a selection made in
+    // natural pixels has to shrink by the same factor or it lands on the
+    // wrong garment.
+    const scale = SOURCE_MAX_SIDE / 4000;
+    const rect = scaleRect({ x: 1000, y: 2000, width: 400, height: 300 }, scale);
+    expect(rect.x).toBeCloseTo(320);
+    expect(rect.y).toBeCloseTo(640);
+    expect(rect.width).toBeCloseTo(128);
+    expect(rect.height).toBeCloseTo(96);
+  });
+
+  it("is the identity for images already within the bound", () => {
+    expect(scaleRect({ x: 10, y: 20, width: 30, height: 40 }, 1)).toEqual({ x: 10, y: 20, width: 30, height: 40 });
+  });
+});
 
 afterEach(() => {
   vi.restoreAllMocks();

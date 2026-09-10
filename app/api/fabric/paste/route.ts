@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { FABRIC_SERVICE_URL, fabricServiceUnavailable } from "../service";
+import { FABRIC_SERVICE_URL, fabricServiceHeaders, fabricServiceUnavailable } from "../service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
   try {
     const res = await fetch(`${FABRIC_SERVICE_URL}/paste`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: fabricServiceHeaders(),
       body: JSON.stringify(body),
       signal: controller.signal,
     });

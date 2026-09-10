@@ -1,5 +1,6 @@
 # Local python env and model artefacts -- multi-GB, rebuilt with ./setup.sh
 .venv/
+cache/
 __pycache__/
 *.pyc
 

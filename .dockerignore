@@ -1,0 +1,11 @@
+node_modules
+.next
+.git
+fabric-pipeline-service/.venv
+fabric-pipeline-service/cache
+fabric-pipeline-service/outputs
+fabric-pipeline-service/testdata
+fabric-pipeline-service/__pycache__
+fabric-pipeline-service/*.log
+fashion-segmentation-service
+public/static-libs

@@ -181,6 +181,77 @@ export function imageToDataUrl(src: string, width?: number, height?: number): Pr
   });
 }
 
+/**
+ * Longest side the *source photo* is sent at. The segmenter runs at 1024px
+ * or less anyway and the sampled crop is resized to 256px, so nothing above
+ * this helps the result; what it does is keep a phone photo (often 12MP, tens
+ * of MB as PNG) under the 4.5 MB request-body limit of a Vercel function and
+ * off a slow upload. JPEG at this quality lands a 1280px photo around 300 KB.
+ */
+export const SOURCE_MAX_SIDE = 1280;
+export const SOURCE_JPEG_QUALITY = 0.92;
+
+export type BoundedImage = {
+  dataUrl: string;
+  width: number;
+  height: number;
+  /** Multiply natural-pixel coordinates by this to land in the sent image. */
+  scale: number;
+};
+
+/**
+ * Load an image and re-encode it no larger than `maxSide` on its longest
+ * edge, as JPEG unless it needs transparency. Returns the scale factor so
+ * callers can map a selection made in natural pixels onto what was sent.
+ */
+export function imageToBoundedDataUrl(
+  src: string,
+  maxSide: number = SOURCE_MAX_SIDE,
+  quality: number = SOURCE_JPEG_QUALITY,
+): Promise<BoundedImage> {
+  return new Promise((resolve, reject) => {
+    const img = new window.Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const naturalW = Math.max(1, img.naturalWidth || img.width);
+      const naturalH = Math.max(1, img.naturalHeight || img.height);
+      const scale = Math.min(1, maxSide / Math.max(naturalW, naturalH));
+      const w = Math.max(1, Math.round(naturalW * scale));
+      const h = Math.max(1, Math.round(naturalH * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Canvas context unavailable"));
+        return;
+      }
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(img, 0, 0, w, h);
+      try {
+        // PNG sources may carry transparency the segmenter uses as background;
+        // JPEG would flatten it to black. Keep PNG for those, JPEG otherwise.
+        const isPng = /^data:image\/png|\.png(\?|$)/i.test(src);
+        const dataUrl = isPng ? canvas.toDataURL("image/png") : canvas.toDataURL("image/jpeg", quality);
+        resolve({ dataUrl, width: w, height: h, scale });
+      } catch (error) {
+        reject(error);
+      }
+    };
+    img.onerror = () => reject(new Error("Could not load image for fabric pipeline"));
+    img.src = src;
+  });
+}
+
+/** Scale a rectangle given in natural pixels onto the bounded image. */
+export function scaleRect(
+  rect: { x: number; y: number; width: number; height: number },
+  scale: number,
+): { x: number; y: number; width: number; height: number } {
+  return { x: rect.x * scale, y: rect.y * scale, width: rect.width * scale, height: rect.height * scale };
+}
+
 export function measureImage(src: string): Promise<{ width: number; height: number }> {
   return new Promise((resolve, reject) => {
     const img = new window.Image();

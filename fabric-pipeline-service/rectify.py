@@ -102,6 +102,7 @@ class TextureRectifier:
         # to fall back to fp32 or the UNet throws on half-precision matmuls.
         self.dtype = torch.float16 if self.device.type == "cuda" else torch.float32
         self.pipe = None
+        self.prompt_embeds = None
         self.ready = False
         self.load_seconds: float | None = None
 
@@ -122,6 +123,22 @@ class TextureRectifier:
         _set_circular_padding(pipe.vae)
         pipe.set_progress_bar_config(disable=True)
 
+        # The prompt is always "", so its embedding never changes. Compute it
+        # once and hand it in as prompt_embeds on every call, then drop the
+        # text encoder: ~0.5 GB of fp32 weights that would otherwise sit in
+        # RAM doing nothing. Matters on an 8 GB laptop, not on the 3070.
+        try:
+            # diffusers renamed _encode_prompt -> encode_prompt at some point;
+            # the InstructPix2Pix pipeline in 0.40 still has only the old name.
+            encode = getattr(pipe, "encode_prompt", None) or getattr(pipe, "_encode_prompt")
+            with torch.inference_mode():
+                embeds = encode("", self.device, 1, False)
+            self.prompt_embeds = embeds[0] if isinstance(embeds, (tuple, list)) else embeds
+            pipe.text_encoder = None
+            pipe.tokenizer = None
+        except Exception:  # noqa: BLE001 -- keep the encoder rather than fail the load
+            self.prompt_embeds = None
+
         self.pipe = pipe
         self.load_seconds = time.perf_counter() - start
         self.ready = True
@@ -132,8 +149,17 @@ class TextureRectifier:
         n_samples: int = 1,
         seed: int | None = None,
         seam_blend_px: int = 0,
+        steps: int = NUM_INFERENCE_STEPS,
+        guidance_scale: float = GUIDANCE_SCALE,
+        image_guidance_scale: float = IMAGE_GUIDANCE_SCALE,
     ) -> RectifyResult:
-        """Flatten one garment crop into a tileable material swatch."""
+        """Flatten one garment crop into a tileable material swatch.
+
+        `steps` and the two guidance scales come from the quality tier
+        (profile.py). With guidance_scale <= 1 diffusers disables
+        classifier-free guidance entirely and runs the UNet at batch 1
+        instead of 3, which is where the `fast` tier gets most of its time.
+        """
         self.load()
         assert self.pipe is not None
         pipe = self.pipe
@@ -146,7 +172,7 @@ class TextureRectifier:
 
         start = time.perf_counter()
         with torch.inference_mode():
-            pipe.scheduler.set_timesteps(NUM_INFERENCE_STEPS)
+            pipe.scheduler.set_timesteps(steps)
             timesteps = pipe.scheduler.timesteps
 
             image = pipe.image_processor.preprocess(rgb)
@@ -173,12 +199,17 @@ class TextureRectifier:
 
             tiled_image = torch.tile(image, (n_samples, 1, 1, 1))
 
+            prompt_kwargs = (
+                {"prompt_embeds": self.prompt_embeds, "negative_prompt_embeds": self.prompt_embeds}
+                if self.prompt_embeds is not None
+                else {"prompt": ""}
+            )
             outputs = pipe(
-                "",
+                **prompt_kwargs,
                 image=tiled_image,
-                num_inference_steps=NUM_INFERENCE_STEPS,
-                image_guidance_scale=IMAGE_GUIDANCE_SCALE,
-                guidance_scale=GUIDANCE_SCALE,
+                num_inference_steps=steps,
+                image_guidance_scale=image_guidance_scale,
+                guidance_scale=guidance_scale,
                 latents=noisy,
                 num_images_per_prompt=n_samples,
                 generator=generator,
@@ -191,7 +222,7 @@ class TextureRectifier:
             swatch=swatch,
             seconds=round(seconds, 3),
             device=str(self.device),
-            steps=NUM_INFERENCE_STEPS,
+            steps=steps,
         )
 
 

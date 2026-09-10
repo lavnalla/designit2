@@ -12,6 +12,18 @@ import { NextResponse } from "next/server";
 export const FABRIC_SERVICE_URL =
   process.env.FABRIC_SERVICE_URL || "http://127.0.0.1:8010";
 
+/**
+ * Headers for a call to the service. When FABRIC_SERVICE_TOKEN is set (it
+ * must match the same variable on the service) it is sent as a bearer token.
+ * This is server-side only: the token never reaches the browser.
+ */
+export function fabricServiceHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const token = process.env.FABRIC_SERVICE_TOKEN?.trim();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
 export function fabricServiceUnavailable(error: unknown) {
   const aborted = error instanceof Error && error.name === "AbortError";
   return NextResponse.json(

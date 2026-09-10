@@ -68,11 +68,113 @@ rather than stretching raw source pixels over them (the old fallback, which
 carried the source's shadows across and ignored the target's folds). Strokes,
 which have no image to segment, still take the plain-crop path.
 
+## Running on ordinary hardware
+
+The service does not need a GPU. On CPU it picks a lighter quality tier and
+pre-computes the bundled templates so the common case is instant. Measured on
+an 8-core Ryzen 7 5700X (a fast desktop CPU -- budget about 2x for a laptop),
+one run each:
+
+| step | RTX 3070 | 5700X CPU |
+|---|---:|---:|
+| segment a 400x500 photo | <0.1 s | 0.6 s |
+| flatten, `full` tier (20 steps, guidance on) | 1.3 s | 33 s |
+| flatten, `fast` tier (10 steps, guidance off) | -- | 11 s |
+| flatten, `classic` tier (no diffusion) | -- | 0.06 s |
+| paste (segment + tile + relight) | <0.5 s | 0.6 s |
+| copy of a pre-warmed template (cache hit) | 0.3 s | 0.8 s |
+| resident memory with the diffusion model loaded | 3 GB VRAM | ~6 GB RAM |
+
+One UNet step costs ~0.9 s at batch 1 on that CPU and ~1.9 s with
+classifier-free guidance on (batch 3). Channels-last and bf16 autocast were
+both tried and were slower on that CPU, so the tiers below are the levers.
+
+### Quality tiers
+
+| tier | what it is | when it is used |
+|---|---|---|
+| `full` | 20 steps, guidance on -- the reference configuration | CUDA present |
+| `fast` | 10 steps, guidance off; the prompt is always empty so the text half of the guidance was a no-op, and dropping it cuts the batch from 3 to 1 | CPU |
+| `classic` | no diffusion: delight + offset-and-blend seam (`delight.classic_swatch`); crisp, seamless, but folds are only de-shaded, not undone | CPU with under `FABRIC_MIN_FREE_GB` (5 GB) of free RAM, or by request |
+
+`auto` (the default) resolves as in the last column. A client can override
+per request with `quality` on `/copy`. `/health` reports the resolved profile.
+
+### Pre-warm and cache
+
+At startup the service flattens every garment in `public/templates/` on a
+background thread (about 50 s on the 5700X in `fast` tier, once) and writes
+the swatches to `cache/`. Copies are keyed by a 64-bit perceptual hash of the
+source image plus the selection, matched within a small Hamming distance, so
+the browser's bounded JPEG re-encoding of the same template still hits, and
+the disk cache survives restarts. Inference is
+serialised with a lock so the pre-warm cannot slow a user's copy.
+
+### Environment variables
+
+| variable | default | meaning |
+|---|---|---|
+| `FABRIC_DEVICE` | `cuda` if available, else `cpu` | torch device |
+| `FABRIC_QUALITY` | `auto` | `auto` / `full` / `fast` / `classic` |
+| `FABRIC_THREADS` | torch default (physical cores) | CPU threads |
+| `FABRIC_MIN_FREE_GB` | `5` | below this free RAM on CPU, use `classic` instead of loading the diffusion model |
+| `FABRIC_PREWARM` | `1` | flatten `public/templates/*` at startup |
+| `FABRIC_CACHE_DIR` | `fabric-pipeline-service/cache` | swatch disk cache |
+| `FABRIC_SERVICE_TOKEN` | unset | when set, every route except `/health` needs `Authorization: Bearer <token>`; set the same value on the Next.js side |
+| `FABRIC_SERVICE_PORT` | `8010` | port used by `service.sh` |
+
+### Docker (CPU)
+
+```bash
+docker build -t fabric-pipeline -f fabric-pipeline-service/Dockerfile .
+docker run -d -p 8010:8010 -e FABRIC_SERVICE_TOKEN=change-me \
+  -v fabric-cache:/app/fabric-pipeline-service/cache \
+  -v hf-cache:/root/.cache/huggingface fabric-pipeline
+```
+
+The image uses the CPU torch wheels (about 2 GB). Weights (~2.5 GB) download
+on first start into the `hf-cache` volume. Build from the repository root so
+the templates are included for the pre-warm.
+
+## Deploying with the Next.js app
+
+The Next.js app only ever talks to the service through its own API routes
+(`app/api/fabric/*`), which read two environment variables:
+
+| variable | where | value |
+|---|---|---|
+| `FABRIC_SERVICE_URL` | Next.js (Vercel project settings) | public URL of the service, e.g. `https://fabric.example.com` |
+| `FABRIC_SERVICE_TOKEN` | Next.js **and** the service | the same shared secret; the browser never sees it |
+
+Steps for a Vercel deployment:
+
+1. Run the service somewhere that stays up: a small VM (4+ cores, 16 GB RAM
+   is comfortable; 8 GB works in `classic` tier), a spare machine behind a
+   Cloudflare Tunnel or Tailscale Funnel, or a GPU box if you want the `full`
+   tier. Docker above is the simplest path. Put it behind HTTPS.
+2. Set `FABRIC_SERVICE_TOKEN` on the service (Docker `-e`, or the environment
+   of `service.sh`).
+3. In the Vercel project, set `FABRIC_SERVICE_URL` and the same
+   `FABRIC_SERVICE_TOKEN`, then redeploy.
+4. Check `https://<service>/health` shows `"ok": true` and a `prewarm` status
+   of `done`, then copy a template garment in Studio: the status line should
+   say `cached`.
+
+Without these variables the deployed app still runs; copy falls back to a
+plain crop and paste leaves garments unchanged, both with a visible message.
+
+Two Vercel limits to know about. The browser sends the source photo bounded
+to 1280 px as JPEG (`imageToBoundedDataUrl`), which keeps a request well
+under the 4.5 MB body limit of a Vercel function. A `full`-tier copy on a
+cold GPU or a `fast`-tier copy on a slow laptop can exceed the 10 s Hobby-plan
+function timeout; the pre-warm and the cache make the common case sub-second,
+and `maxDuration` can be raised on Pro.
+
 ## API
 
-- `GET /health` — model readiness, device, cache size
+- `GET /health` — model readiness, device, resolved profile, pre-warm status, cache sizes (no token needed)
 - `POST /warm` — load both models up front
-- `POST /copy` — `{ imageDataUrl, rect?, seed?, rectify?, delight? }` → flat swatch + `srcPxPerCm`
+- `POST /copy` — `{ imageDataUrl, rect?, seed?, rectify?, delight?, quality? }` → flat swatch + `srcPxPerCm`
 - `POST /paste` — `{ swatchDataUrl, destImageDataUrl, cropWidth, cropHeight, srcPxPerCm, multiplier?, shadingStrength?, targetWidth?, targetHeight? }` → composited RGBA
 
 `/copy` needs the **whole source photo**, not just the crop. Physical scale is
@@ -146,6 +248,7 @@ silhouette accuracy with 2.3% mean error, against 18.2% for the median row.
 .venv/bin/python test_tiling.py         # scale maths + tiling geometry, needs the service up
 .venv/bin/python test_shading.py        # isolates stage 4 with a flat grey swatch
 .venv/bin/python test_delight.py        # stage 2b delighting + shading filter A/B, offline
+.venv/bin/python test_runtime.py        # boots the service on CPU with a token: tiers, pre-warm, disk cache, auth
 .venv/bin/python test_cross_garment.py  # pattern transfer between different garment types
 .venv/bin/python test_api_routes.py     # through the Next.js proxy routes, needs `npm run dev`
 .venv/bin/python test_pipeline.py ../public/designFrom.png ../public/designTo1.png
