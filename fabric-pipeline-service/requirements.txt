@@ -1,0 +1,21 @@
+# Fabric pipeline service.
+#
+# Install into a python3.10 venv (see setup.sh) -- the system python3 is 3.14,
+# which has no torch wheels.
+#
+#   ./setup.sh
+#
+# torch ships bundled CUDA 12 wheels on PyPI, which match the RTX 3070 (sm_86).
+
+torch>=2.4
+torchvision>=0.19
+transformers>=4.44
+diffusers>=0.30
+accelerate>=0.33
+safetensors>=0.4
+pillow>=10.0
+numpy>=1.26
+scipy>=1.11
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.9

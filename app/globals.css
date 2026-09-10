@@ -73,3 +73,30 @@ header,
   background-position: 0 0, 15px 15px;
 }
 
+
+/* Studio: one press/transition treatment for every button, matching the
+   toolbar's own interactive style (transition + scale-95 + 1px sink on
+   press) so the whole workspace feels the same under the cursor. Unlayered on
+   purpose: it must win over per-button utility classes. */
+.studio-ui button {
+  transition:
+    transform 150ms ease-out,
+    box-shadow 150ms ease-out,
+    background-color 150ms ease-out,
+    border-color 150ms ease-out,
+    color 150ms ease-out,
+    opacity 150ms ease-out;
+}
+.studio-ui button:active:not(:disabled) {
+  transform: scale(0.95) translateY(1px);
+}
+
+/* Popups (context menu, toolbar dropdowns) ease in rather than snapping. */
+@keyframes studio-pop {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.studio-pop {
+  animation: studio-pop 140ms ease-out both;
+  transform-origin: top;
+}

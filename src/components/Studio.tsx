@@ -16,6 +16,18 @@ import ImageTracer from "imagetracerjs";
 import { removeBackground, preload } from '@imgly/background-removal';
 import { SubmissionModal } from './SubmissionModal';
 import BodySilhouetteView from "./BodySilhouetteView";
+import {
+  runFabricCopy,
+  runFabricPaste,
+  imageToDataUrl,
+  imageToBoundedDataUrl,
+  scaleRect,
+  FabricPipelineError,
+  FABRIC_QUALITY_OPTIONS,
+  type FabricQuality,
+  type FabricClipboard,
+} from "../lib/fabricPipeline";
+import { canCopyFabric, shouldStartItemDrag, useReleaseInteractionOnWindow } from "../lib/canvasInteraction";
 
 const MOBILE_BREAKPOINT = 1024;
 
@@ -988,6 +1000,23 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
 
   const [showTryOn, setShowTryOn] = useState(false);
   const [showPartPainter, setShowPartPainter] = useState(false);
+  // The "Test Live on Webcam" button opens a small picker first: photo mode
+  // (upload a picture of yourself wearing something, get an output image) or
+  // live webcam (real-time video). Photo mode is UI only for now; live is the
+  // existing try-on flow.
+  const [showTryOnLaunchMenu, setShowTryOnLaunchMenu] = useState(false);
+  const [tryOnCaptureMode, setTryOnCaptureMode] = useState<"photo" | "live">("live");
+  // The toolbar scrolls horizontally (overflow-x: auto), which clips anything
+  // absolutely positioned inside it, so the menu is fixed to the viewport at
+  // the button's position instead.
+  const tryOnLaunchButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [tryOnLaunchMenuPos, setTryOnLaunchMenuPos] = useState({ top: 0, right: 0 });
+  useEffect(() => {
+    if (!showTryOnLaunchMenu) return;
+    const close = () => setShowTryOnLaunchMenu(false);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [showTryOnLaunchMenu]);
   const [showSourcePanel, setShowSourcePanel] = useState(false);
   const [renderedWorkspaceImg, setRenderedWorkspaceImg] = useState<string | null>(null);
   const [tryOnMode, setTryOnMode] = useState<"garment" | "necklace" | "earrings">("garment");
@@ -1079,6 +1108,20 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   const [draggingDotClusterId, setDraggingDotClusterId] = useState<string | null>(null);
   const [clipboard, setClipboard] = useState<{ shapes: ClipboardShape[]; strokes: Stroke[] } | null>(null);
   const [fabricClipboardSrc, setFabricClipboardSrc] = useState<string | null>(null);
+  // Flattened swatch plus the scale metadata the tiling stage needs. Held
+  // separately from fabricClipboardSrc so the older paths that only ever want
+  // a plain image source keep working untouched.
+  const [fabricClipboard, setFabricClipboard] = useState<FabricClipboard | null>(null);
+  // Corrects the automatic pixels-per-centimetre estimate. 1.0 means "trust
+  // the segmentation"; the slider exists because the assumed garment widths
+  // behind that estimate are averages, not measurements.
+  const [fabricTileScale, setFabricTileScale] = useState(1);
+  const [fabricShadingStrength, setFabricShadingStrength] = useState(1);
+  // Flatten quality for the next copy. `auto` lets the service choose by its
+  // hardware; the other tiers trade fidelity for time (see fabricPipeline.ts).
+  const [fabricQuality, setFabricQuality] = useState<FabricQuality>('auto');
+  const [fabricBusy, setFabricBusy] = useState<null | 'copy' | 'paste'>(null);
+  const [fabricStatus, setFabricStatus] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [customAssets, setCustomAssets] = useState<{name: string, path: string}[]>([]);
@@ -1100,6 +1143,23 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   const workspaceShapesRef = useRef<DistortableShape[]>([]);
   const isPointerDownRef = useRef(false);
   const penRef = useRef<{ pointerId: number; lastX: number; lastY: number; strokeIds: string[]; meshGroupId?: string; pendingMesh?: boolean; color?: string; width?: number } | null>(null);
+
+  // Single place that ends every pointer interaction. Called from the canvas's
+  // own pointer-up and from the window-level release below, so a mouse button
+  // released over the toolbar (or outside the browser) can no longer leave a
+  // garment glued to the cursor.
+  const releaseCanvasInteraction = useCallback(() => {
+    isPointerDownRef.current = false;
+    penRef.current = null;
+    setDraggingShapeId(null);
+    setDraggingStrokeId(null);
+    setDraggingDot(null);
+    setDraggingStrokeDot(null);
+    setDraggingDotClusterId(null);
+    setResizingId(null);
+    setRotatingId(null);
+  }, []);
+  useReleaseInteractionOnWindow(releaseCanvasInteraction);
   const PEN_SPACING = 30; 
   const ERASE_RADIUS = 15;
   const hasImportedSource = Boolean(selectedImage && !templates.includes(selectedImage));
@@ -3484,11 +3544,124 @@ const splitLoopWithLine = (
     return clone;
   }, [workspaceShapes, strokes, getBoundingBox, isItemInRect]);
 
+  /**
+   * Work out what to send the pipeline as the *source photo*, and where the
+   * sampled patch sits inside it.
+   *
+   * The crop on its own is not enough. Estimating physical scale means seeing
+   * the whole garment -- a 200px patch tells you nothing about how big the
+   * weave is in centimetres until you know the garment it came from spans, say,
+   * 800px. So prefer the underlying shape's own image and map the selection
+   * into its pixel space; fall back to a render of the whole workspace when the
+   * selection is not over a shape.
+   */
+  const resolveFabricSource = useCallback(async (
+    shape: DistortableShape | null | undefined,
+    rect: { x: number; y: number; width: number; height: number } | null,
+  ): Promise<{ imageDataUrl: string; rect: { x: number; y: number; width: number; height: number } | null } | null> => {
+    if (shape?.img) {
+      // Bounded, JPEG-encoded: the service needs nothing above ~1280px and a
+      // full-size PNG of a phone photo would blow past Vercel's 4.5 MB body
+      // limit on the proxy route.
+      const bounded = await imageToBoundedDataUrl(shape.img);
+      const imageDataUrl = bounded.dataUrl;
+      if (!rect) return { imageDataUrl, rect: null };
+
+      // Selection is in canvas coordinates; undo the shape's placement and
+      // scale to land in the shape's local space.
+      const invScale = 1 / Math.max(0.1, shape.scale);
+      const localX = (rect.x - shape.position.x) * invScale;
+      const localY = (rect.y - shape.position.y) * invScale;
+      const localW = rect.width * invScale;
+      const localH = rect.height * invScale;
+
+      // The <image> is drawn at shape.dims, which need not match the file's
+      // natural size, so convert local units into real image pixels.
+      const natural = await new Promise<{ width: number; height: number }>((resolve) => {
+        const probe = new window.Image();
+        probe.onload = () => resolve({ width: probe.naturalWidth || probe.width, height: probe.naturalHeight || probe.height });
+        probe.onerror = () => resolve({ width: shape.dims.width, height: shape.dims.height });
+        probe.src = shape.img;
+      });
+      const kx = natural.width / Math.max(1, shape.dims.width);
+      const ky = natural.height / Math.max(1, shape.dims.height);
+
+      // ...and finally from natural pixels into the bounded image that was sent.
+      return {
+        imageDataUrl,
+        rect: scaleRect({ x: localX * kx, y: localY * ky, width: localW * kx, height: localH * ky }, bounded.scale),
+      };
+    }
+
+    if (!workspaceRef.current || !rect) return null;
+
+    // No shape under the selection: rasterise the whole canvas instead, so the
+    // segmenter still sees a complete garment somewhere in the frame.
+    const svg = workspaceRef.current;
+    const vb = svg.viewBox?.baseVal;
+    const full = vb && vb.width > 0
+      ? { x: vb.x, y: vb.y, width: vb.width, height: vb.height }
+      : { x: 0, y: 0, width: svg.clientWidth || rect.width, height: svg.clientHeight || rect.height };
+
+    const clone = buildSelectionClone(svg, full);
+    const images = Array.from(clone.querySelectorAll('image')) as SVGImageElement[];
+    for (const imgEl of images) {
+      const href = imgEl.getAttribute('href') || imgEl.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || '';
+      if (!href || href.startsWith('data:')) continue;
+      try {
+        const res = await fetch(href, { mode: 'cors' });
+        const blob = await res.blob();
+        const reader = new FileReader();
+        const dataUrl: string = await new Promise((resolve, reject) => {
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+        imgEl.setAttribute('href', dataUrl);
+      } catch (e) {
+        console.warn('[resolveFabricSource] image inline failed', href, e);
+      }
+    }
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+
+    let source = new XMLSerializer().serializeToString(clone);
+    if (!source.match(/^<\?xml/)) source = '<?xml version="1.0" standalone="no"?>\n' + source;
+    const url = URL.createObjectURL(new Blob([source], { type: 'image/svg+xml;charset=utf-8' }));
+
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const img = new window.Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(full.width));
+          canvas.height = Math.max(1, Math.round(full.height));
+          const ctx = canvas.getContext('2d');
+          if (!ctx) { reject(new Error('Canvas context unavailable')); return; }
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/png'));
+        };
+        img.onerror = reject;
+        img.src = url;
+      });
+      return {
+        imageDataUrl: dataUrl,
+        rect: { x: rect.x - full.x, y: rect.y - full.y, width: rect.width, height: rect.height },
+      };
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }, [buildSelectionClone]);
+
+  // No lock is required here. The only thing the canvas lock changed for this
+  // path was letting a marquee start on top of a garment (a pointer-down on a
+  // shape normally begins a drag instead); the shape and stroke right-click
+  // paths never use the marquee, and copy only reads state. Requiring the lock
+  // left the canvas locked after copy/paste, which is why newly added garments
+  // "could not be moved".
   const copyFabricDebugFromSelection = useCallback(async (target?: { type: 'shape' | 'stroke' | 'selection'; id: string }) => {
-  if (!isLocked) {
-    alert('Lock to enable fabric copy.');
-    return;
-  }
+    if (!canCopyFabric({ fabricBusy })) return;
 
     try {
       let normalizedFabric = 'selection-crop';
@@ -3602,6 +3775,63 @@ const splitLoopWithLine = (
 
       setFabricClipboardSrc(fabricSrc);
 
+      // Stages 1-2: estimate the source garment's pixel density and flatten
+      // the sampled patch into a tileable swatch. If the service is not
+      // running this degrades to the previous behaviour rather than failing
+      // the copy outright -- fabricClipboard stays null and paste falls back.
+      setFabricClipboard(null);
+      setFabricBusy('copy');
+      setFabricStatus('Flattening fabric…');
+      try {
+        const selectionArea = selectionRect
+          ? {
+              x: Math.min(selectionRect.x1, selectionRect.x2),
+              y: Math.min(selectionRect.y1, selectionRect.y2),
+              width: Math.abs(selectionRect.x2 - selectionRect.x1),
+              height: Math.abs(selectionRect.y2 - selectionRect.y1),
+            }
+          : null;
+
+        const contextShape = targetShape
+          || (selectionRect
+            ? workspaceShapes.find(shape => isItemInRect(getBoundingBox(shape), selectionRect))
+            : null);
+
+        const resolved = await resolveFabricSource(contextShape, selectionArea);
+        if (!resolved) throw new Error('Could not resolve a source image for the fabric pipeline');
+
+        const copyResult = await runFabricCopy(resolved.imageDataUrl, resolved.rect, { quality: fabricQuality });
+        setFabricClipboard({
+          swatchDataUrl: copyResult.swatchDataUrl,
+          cropWidth: copyResult.cropWidth,
+          cropHeight: copyResult.cropHeight,
+          srcPxPerCm: copyResult.srcPxPerCm,
+          sourceGarment: copyResult.sourceGarment,
+          sourceGarmentFound: copyResult.sourceGarmentFound,
+          sourceSilhouette: copyResult.sourceSilhouette,
+          sourceScaleConfidence: copyResult.sourceScaleConfidence,
+          sourceScaleNote: copyResult.sourceScaleNote,
+          sourcePersonPresent: copyResult.sourcePersonPresent,
+          rectified: copyResult.rectified,
+          rawCropDataUrl: fabricSrc,
+          patchRelocated: copyResult.patchRelocated,
+          patchReason: copyResult.patchReason,
+        });
+        const worn = copyResult.sourcePersonPresent ? 'worn photo' : 'flat image';
+        const base = copyResult.sourceGarmentFound
+          ? `Flattened from a ${copyResult.sourceSilhouette} garment (${worn}) · ${copyResult.srcPxPerCm.toFixed(1)} px/cm · ${copyResult.quality || 'auto'}${copyResult.fromCache ? ' · cached' : ` · ${copyResult.rectifySeconds.toFixed(1)}s`}`
+          : 'Flattened, but no garment was detected in the source — scale is a guess';
+        // Say when the sample moved. Silently overriding the selection would
+        // look like the tool ignoring the user.
+        setFabricStatus(copyResult.patchRelocated ? `${base} — ${copyResult.patchReason}` : base);
+      } catch (pipelineError) {
+        const hint = pipelineError instanceof FabricPipelineError ? pipelineError.hint : undefined;
+        console.warn('Fabric pipeline copy unavailable; falling back to plain crop.', pipelineError);
+        setFabricStatus(hint ? `Pipeline offline — using plain crop. ${hint}` : 'Pipeline unavailable — using plain crop.');
+      } finally {
+        setFabricBusy(null);
+      }
+
       try {
         await navigator.clipboard.writeText(fabricSrc);
       } catch (clipboardError) {
@@ -3614,7 +3844,7 @@ const splitLoopWithLine = (
 
     setSelectionRect(null);
     setContextMenu(null);
-  }, [isLocked, selectionRect, workspaceShapes, strokes, selectedShapeId, selectedClothType, activeColor, buildSelectionClone]);
+  }, [fabricBusy, fabricQuality, selectionRect, workspaceShapes, strokes, selectedShapeId, selectedClothType, activeColor, buildSelectionClone, resolveFabricSource, getBoundingBox, isItemInRect]);
 
   const copyFromSelection = useCallback(async () => {
     if (!selectionRect || !workspaceRef.current) return;
@@ -3710,7 +3940,7 @@ const splitLoopWithLine = (
 
   
   const pasteFabricToSelection = useCallback(async (target?: { type: 'shape' | 'stroke'; id: string }) => {
-  if (!fabricClipboardSrc) {
+  if (!fabricClipboardSrc && !fabricClipboard) {
     return;
   }
 
@@ -3724,7 +3954,7 @@ const splitLoopWithLine = (
       }
     : null;
 
-  const targetShapes = target
+  let targetShapes = target
     ? (target.type === 'shape' ? workspaceShapes.filter(shape => shape.id === target.id) : [])
     : hasSelectionArea
       ? workspaceShapes.filter(shape => isItemInRect(getBoundingBox(shape), selectionRect))
@@ -3735,6 +3965,130 @@ const splitLoopWithLine = (
     : hasSelectionArea
       ? strokes.filter(stroke => isItemInRect(getBoundingBox(stroke), selectionRect))
       : [];
+
+  // ---- Stages 1, 3, 4: segment the destination, tile isotropically, relight.
+  //
+  // The service returns an image sized to exactly the shape's dims, which is
+  // what defuses the renderer: the fabric <image> is drawn at
+  // width=dims.width height=dims.height with preserveAspectRatio="none", so a
+  // 1:1 payload passes through untouched instead of being stretched to fit.
+  if (fabricClipboard && targetShapes.length > 0) {
+    setFabricBusy('paste');
+    setFabricStatus('Tiling fabric…');
+    try {
+      const composites = await Promise.all(targetShapes.map(async (shape) => {
+        if (!shape.img) return null;
+        const width = Math.max(1, Math.round(shape.dims.width));
+        const height = Math.max(1, Math.round(shape.dims.height));
+        const destImageDataUrl = await imageToDataUrl(shape.img, width, height);
+        const result = await runFabricPaste(
+          fabricClipboard,
+          destImageDataUrl,
+          width,
+          height,
+          { multiplier: fabricTileScale, shadingStrength: fabricShadingStrength },
+        );
+        return { id: shape.id, result, width, height };
+      }));
+
+      const applied = composites.filter((entry): entry is NonNullable<typeof entry> => !!entry);
+      if (applied.length === 0) throw new Error('No target shape carried an image to paste onto');
+
+      saveForUndo();
+      const byId = new Map(applied.map(entry => [entry.id, entry]));
+
+      setWorkspaceShapes(prev => prev.map(shape => {
+        const entry = byId.get(shape.id);
+        if (!entry) return shape;
+
+        // Honour an area selection by masking, exactly as the legacy path
+        // does -- the composite itself always covers the whole shape.
+        let fabricPasteArea: { x: number; y: number; width: number; height: number } | undefined;
+        if (selectionBounds) {
+          const renderW = Math.max(1, shape.dims.width * Math.max(0.1, shape.scale));
+          const renderH = Math.max(1, shape.dims.height * Math.max(0.1, shape.scale));
+          const ix = Math.max(shape.position.x, selectionBounds.x);
+          const iy = Math.max(shape.position.y, selectionBounds.y);
+          const ix2 = Math.min(shape.position.x + renderW, selectionBounds.x + selectionBounds.width);
+          const iy2 = Math.min(shape.position.y + renderH, selectionBounds.y + selectionBounds.height);
+          if (ix2 - ix > 1 && iy2 - iy > 1) {
+            const invScale = 1 / Math.max(0.1, shape.scale);
+            fabricPasteArea = {
+              x: Math.max(0, (ix - shape.position.x) * invScale),
+              y: Math.max(0, (iy - shape.position.y) * invScale),
+              width: Math.min(shape.dims.width, (ix2 - ix) * invScale),
+              height: Math.min(shape.dims.height, (iy2 - iy) * invScale),
+            };
+          }
+          if (!fabricPasteArea) return shape;
+        }
+
+        const existingAreas = shape.fabricPasteAreas && shape.fabricPasteAreas.length > 0
+          ? shape.fabricPasteAreas
+          : (shape.fabricPasteArea ? [shape.fabricPasteArea] : []);
+        const existingLayers = shape.fabricLayers && shape.fabricLayers.length > 0 ? shape.fabricLayers : [];
+
+        return {
+          ...shape,
+          fabricFillSrc: entry.result.imageDataUrl,
+          fabricFillWidth: entry.width,
+          fabricFillHeight: entry.height,
+          fabricPasteArea,
+          fabricPasteAreas: fabricPasteArea ? [...existingAreas, fabricPasteArea] : undefined,
+          fabricLayers: fabricPasteArea
+            ? [...existingLayers, { src: entry.result.imageDataUrl, area: fabricPasteArea }]
+            : undefined,
+          baseFill: undefined,
+          fillColor: undefined,
+          clothType: undefined,
+          clipUpdate: Date.now(),
+        };
+      }));
+
+      const first = applied[0].result;
+      const shapeNote = fabricClipboard.sourceSilhouette !== first.destSilhouette
+        ? ` · ${fabricClipboard.sourceSilhouette} → ${first.destSilhouette}`
+        : '';
+      setFabricStatus(
+        `${first.destSilhouette} garment${shapeNote} · tile ${first.tileWidth}×${first.tileHeight}px · ${first.repeatsX.toFixed(1)}×${first.repeatsY.toFixed(1)} repeats · scale ×${first.scaleRatio.toFixed(2)}`,
+      );
+      setSelectionRect(null);
+      setContextMenu(null);
+      return;
+    } catch (pipelineError) {
+      const hint = pipelineError instanceof FabricPipelineError ? pipelineError.hint : undefined;
+      console.warn('Fabric pipeline paste unavailable; garments left unchanged.', pipelineError);
+      setFabricStatus(hint ? `Pipeline offline — garments left unchanged. ${hint}` : 'Pipeline unavailable — garments left unchanged.');
+      // Falls through to the legacy path below, which now refuses garments
+      // and only handles strokes.
+    } finally {
+      setFabricBusy(null);
+    }
+  }
+
+  // ---- Legacy stretch path. Kept only for strokes, which carry no source
+  // image to segment. Garments are refused here on purpose: without the
+  // pipeline the only thing this path can do is stretch the raw source pixels
+  // (source shadows included, target folds ignored) over the shape, which is
+  // exactly the "pasted on" result the pipeline exists to avoid. Better to
+  // leave the garment untouched and say why.
+  if (targetShapes.length > 0) {
+    if (!fabricClipboard) {
+      setFabricStatus('Fabric was copied while the pipeline was offline — start the fabric service and copy it again. Garments left unchanged.');
+    }
+    targetShapes = [];
+    if (targetStrokes.length === 0) {
+      setSelectionRect(null);
+      setContextMenu(null);
+      return;
+    }
+  }
+
+  if (!fabricClipboardSrc) {
+    setSelectionRect(null);
+    setContextMenu(null);
+    return;
+  }
 
   const loadImage = (src: string) =>
     new Promise<HTMLImageElement>((resolve, reject) => {
@@ -4123,7 +4477,7 @@ const splitLoopWithLine = (
 
   setSelectionRect(null);
   setContextMenu(null);
-}, [fabricClipboardSrc, workspaceShapes, strokes, selectedShapeId, selectionRect, getBoundingBox, isItemInRect, saveForUndo]);
+}, [fabricClipboardSrc, fabricClipboard, fabricTileScale, fabricShadingStrength, workspaceShapes, strokes, selectedShapeId, selectionRect, getBoundingBox, isItemInRect, saveForUndo]);
   
 const extractSelection = useCallback(async (asJpeg = false) => {
     if (!selectionRect) return;
@@ -5285,7 +5639,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
   if (!mounted) return null;
 
   return (
-    <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-[#fffdfa] text-slate-900 select-none" onClick={() => { setContextMenu(null); setShowTopPanelMenu(false); setShowHeaderMenu(false); }}>
+    <div className="studio-ui flex h-[100dvh] w-full flex-col overflow-hidden bg-[#fffdfa] text-slate-900 select-none" onClick={() => { setContextMenu(null); setShowTopPanelMenu(false); setShowHeaderMenu(false); }}>
       {aiDraping.active && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-md">
            <div className="bg-white p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4">
@@ -5468,31 +5822,25 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       </select>
     </div>
 
+    <div className="relative" onClick={(e) => e.stopPropagation()}>
     <button
-      onClick={async () => {
+      ref={tryOnLaunchButtonRef}
+      onClick={() => {
         if (!showTryOn && !showPartPainter) {
-          let readyAsset: string | null = null;
-          for (let attempt = 0; attempt < 3 && !readyAsset; attempt++) {
-            readyAsset = await syncWorkspaceToTryOn();
-            if (!readyAsset) {
-              await new Promise<void>((r) => requestAnimationFrame(() => r()));
-            }
+          const rect = tryOnLaunchButtonRef.current?.getBoundingClientRect();
+          if (rect) {
+            setTryOnLaunchMenuPos({ top: rect.bottom + 4, right: Math.max(8, window.innerWidth - rect.right) });
           }
-          if (!readyAsset && selectedShape?.img && (!selectedImage || selectedShape.img !== selectedImage)) {
-            readyAsset = selectedShape.img;
-          }
-          if (!readyAsset) {
-            alert("No modified image available for try-on. Edit/select an image first.");
-            return;
-          }
-          setRenderedWorkspaceImg(readyAsset);
-          setShowPartPainter(true);
+          setShowTryOnLaunchMenu((prev) => !prev);
         } else {
+          setShowTryOnLaunchMenu(false);
           setShowTryOn(false);
           setShowPartPainter(false);
           setRenderedWorkspaceImg(null);
         }
       }}
+      aria-haspopup="menu"
+      aria-expanded={showTryOnLaunchMenu}
       className={`${toolbarButtonInteractiveClass} inline-flex min-w-0 max-w-[7.25rem] gap-1 px-1.5 text-[8px] sm:max-w-none sm:gap-1.5 sm:px-2.5 sm:text-[10px]`}
       style={showTryOn || showPartPainter
         ? { backgroundColor: '#fde68a', borderColor: '#f59e0b', color: '#000000' }
@@ -5501,6 +5849,58 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       <span className="truncate sm:hidden">{showTryOn || showPartPainter ? "Close" : "Live"}</span>
       <span className="hidden sm:inline">{showTryOn || showPartPainter ? "✕ Close Try-On View" : "✨ Test Live on Webcam"}</span>
     </button>
+
+    {showTryOnLaunchMenu && !showTryOn && !showPartPainter && (
+      <div
+        role="menu"
+        style={{ position: 'fixed', top: tryOnLaunchMenuPos.top, right: tryOnLaunchMenuPos.right }}
+        className="studio-pop z-[280] w-56 overflow-hidden whitespace-normal rounded-xl border-2 border-slate-300 bg-white shadow-lg"
+      >
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            // UI only for now: the photo (upload -> output image) flow is not
+            // wired up yet. Remember the choice so the wiring has a home.
+            setTryOnCaptureMode("photo");
+            setShowTryOnLaunchMenu(false);
+          }}
+          className={`flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-yellow-50 ${tryOnCaptureMode === "photo" ? "bg-yellow-50" : ""}`}
+        >
+          <span className="text-[10px] font-black uppercase text-slate-800">📷 Photo mode</span>
+          <span className="text-[9px] leading-tight text-slate-500">Upload a photo of you wearing it and get an output image.</span>
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          onClick={async () => {
+            setTryOnCaptureMode("live");
+            setShowTryOnLaunchMenu(false);
+            let readyAsset: string | null = null;
+            for (let attempt = 0; attempt < 3 && !readyAsset; attempt++) {
+              readyAsset = await syncWorkspaceToTryOn();
+              if (!readyAsset) {
+                await new Promise<void>((r) => requestAnimationFrame(() => r()));
+              }
+            }
+            if (!readyAsset && selectedShape?.img && (!selectedImage || selectedShape.img !== selectedImage)) {
+              readyAsset = selectedShape.img;
+            }
+            if (!readyAsset) {
+              alert("No modified image available for try-on. Edit/select an image first.");
+              return;
+            }
+            setRenderedWorkspaceImg(readyAsset);
+            setShowPartPainter(true);
+          }}
+          className={`flex w-full flex-col items-start gap-0.5 border-t border-slate-100 px-3 py-2 text-left hover:bg-yellow-50 ${tryOnCaptureMode === "live" ? "bg-yellow-50" : ""}`}
+        >
+          <span className="text-[10px] font-black uppercase text-slate-800">🎥 Live webcam</span>
+          <span className="text-[9px] leading-tight text-slate-500">Real-time video feed from your camera.</span>
+        </button>
+      </div>
+    )}
+    </div>
 
     <div className="relative z-[270] md:hidden" onClick={(e) => e.stopPropagation()}>
       <button
@@ -5519,7 +5919,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
       {showTopPanelMenu && (
         <div
           id="studio-top-panel-menu"
-          className="fixed right-3 top-[4.6rem] z-[500] w-[12.5rem] rounded-2xl border border-slate-300 bg-[#fffdfa] p-2.5 shadow-[0_20px_40px_rgba(15,23,42,0.22)]"
+          className="studio-pop fixed right-3 top-[4.6rem] z-[500] w-[12.5rem] rounded-2xl border border-slate-300 bg-[#fffdfa] p-2.5 shadow-[0_20px_40px_rgba(15,23,42,0.22)]"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="mb-2 border-b border-slate-200 px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
@@ -5897,7 +6297,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
             </div>
           )}
           {contextMenu && (
-            <div className="fixed z-[300] bg-white border border-slate-200 shadow-2xl rounded-2xl overflow-hidden py-1 min-w-[140px]" style={{ left: contextMenu.x, top: contextMenu.y }} onClick={(e) => e.stopPropagation()}>
+            <div className="studio-pop fixed z-[300] bg-white border border-slate-200 shadow-2xl rounded-2xl overflow-hidden py-1 min-w-[140px]" style={{ left: contextMenu.x, top: contextMenu.y }} onClick={(e) => e.stopPropagation()}>
               <>
                 {contextMenu.type === "selection" && (
                   <>
@@ -5978,23 +6378,40 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                         copyFabricDebugFromSelection({ type: "stroke", id: contextMenu.id });
                       }
                     }}
-                    disabled={!isLocked}
+                    disabled={!canCopyFabric({ fabricBusy })}
                     className="w-full text-left px-4 py-2 hover:bg-indigo-50 text-[9px] font-black uppercase border-b border-slate-100 text-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
-                    title={!isLocked ? 'Lock to enable' : 'Copy fabric'}
+                    title="Copy fabric"
                   >
-                    🧪 Copy Fabric
+                    {fabricBusy === 'copy' ? '🧪 Flattening…' : '🧪 Copy Fabric'}
                   </button>
                 )}
 
-                {(contextMenu.type === "selection" || contextMenu.type === "shape" || contextMenu.type === "stroke") && !isLocked && (
-                  <div className="px-4 py-2 border-b border-slate-100 bg-amber-50/80">
-                    <p className="text-[9px] font-black uppercase text-amber-700">Lock to enable fabric copy</p>
-                    <button
-                      onClick={() => setIsLocked(true)}
-                      className="mt-1 text-[9px] font-black uppercase text-amber-800 underline"
-                    >
-                      Lock now
-                    </button>
+                {(contextMenu.type === "selection" || contextMenu.type === "shape" || contextMenu.type === "stroke") && (
+                  <div className="px-4 py-2 border-b border-slate-100 bg-indigo-50/40">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-black uppercase text-indigo-800">Copy quality</span>
+                      <span className="text-[9px] text-indigo-700/80">
+                        {FABRIC_QUALITY_OPTIONS.find(o => o.value === fabricQuality)?.hint}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex gap-1" role="radiogroup" aria-label="Copy quality">
+                      {FABRIC_QUALITY_OPTIONS.map(option => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="radio"
+                          aria-checked={fabricQuality === option.value}
+                          title={option.hint}
+                          disabled={fabricBusy !== null}
+                          onClick={() => setFabricQuality(option.value)}
+                          className={`flex-1 rounded-md border px-1.5 py-1 text-[9px] font-black uppercase disabled:opacity-40 ${fabricQuality === option.value
+                            ? 'border-indigo-500 bg-indigo-600 text-white'
+                            : 'border-slate-200 bg-white text-slate-600 hover:bg-indigo-50'}`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -6008,10 +6425,96 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                         pasteFabricToSelection({ type: targetType, id: contextMenu.id });
                       }
                     }}
-                    className="w-full text-left px-4 py-2 hover:bg-cyan-50 text-[9px] font-black uppercase border-b border-slate-100 text-cyan-700"
+                    disabled={fabricBusy !== null}
+                    className="w-full text-left px-4 py-2 hover:bg-cyan-50 text-[9px] font-black uppercase border-b border-slate-100 text-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    🧵 Paste Fabric
+                    {fabricBusy === 'paste' ? '🧵 Tiling…' : '🧵 Paste Fabric'}
                   </button>
+                )}
+
+                {(contextMenu.type === "selection" || contextMenu.type === "shape" || contextMenu.type === "stroke") && fabricClipboard && (
+                  <div className="px-4 py-2 border-b border-slate-100 bg-cyan-50/50 space-y-2">
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <label htmlFor="fabric-tile-scale" className="text-[9px] font-black uppercase text-cyan-800">
+                          Tile scale
+                        </label>
+                        <span className="text-[9px] font-black tabular-nums text-cyan-700">
+                          ×{fabricTileScale.toFixed(2)}
+                        </span>
+                      </div>
+                      <input
+                        id="fabric-tile-scale"
+                        type="range"
+                        min={0.25}
+                        max={4}
+                        step={0.05}
+                        value={fabricTileScale}
+                        onChange={(e) => setFabricTileScale(Number(e.target.value))}
+                        className="mt-1 w-full accent-cyan-600"
+                      />
+                      <p className="text-[8px] leading-tight text-slate-500">
+                        Corrects the automatic px/cm estimate. ×1 keeps the weave at its measured physical size.
+                      </p>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <label htmlFor="fabric-shading" className="text-[9px] font-black uppercase text-cyan-800">
+                          Drape
+                        </label>
+                        <span className="text-[9px] font-black tabular-nums text-cyan-700">
+                          {Math.round(fabricShadingStrength * 100)}%
+                        </span>
+                      </div>
+                      <input
+                        id="fabric-shading"
+                        type="range"
+                        min={0}
+                        max={1.5}
+                        step={0.05}
+                        value={fabricShadingStrength}
+                        onChange={(e) => setFabricShadingStrength(Number(e.target.value))}
+                        className="mt-1 w-full accent-cyan-600"
+                      />
+                      <p className="text-[8px] leading-tight text-slate-500">
+                        How strongly the target garment&apos;s own folds and shadows shape the pasted fabric.
+                      </p>
+                    </div>
+
+                    {fabricClipboard.sourceScaleConfidence < 0.5 && (
+                      <div className="rounded border border-amber-300 bg-amber-50 px-2 py-1">
+                        <p className="text-[8px] font-black uppercase leading-tight text-amber-800">
+                          Scale uncertain
+                        </p>
+                        <p className="text-[8px] leading-tight text-amber-700">
+                          {fabricClipboard.sourceScaleNote}. Use Tile scale to correct it.
+                        </p>
+                      </div>
+                    )}
+
+                    {fabricClipboard.rawCropDataUrl && (
+                      <div className="flex items-center gap-2 pt-1">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={fabricClipboard.rawCropDataUrl} alt="Sampled crop" className="h-8 w-8 rounded border border-slate-300 object-cover" />
+                        <span className="text-[8px] text-slate-400">→</span>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={fabricClipboard.swatchDataUrl} alt="Flattened swatch" className="h-8 w-8 rounded border border-cyan-400 object-cover" />
+                        <span className="text-[8px] leading-tight text-slate-500">
+                          {fabricClipboard.rectified ? 'flattened' : 'raw'} · {fabricClipboard.sourceGarment.toLowerCase()}
+                          {fabricClipboard.patchRelocated && (
+                            <span className="block text-amber-700">sample moved to clean fabric</span>
+                          )}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {(contextMenu.type === "selection" || contextMenu.type === "shape" || contextMenu.type === "stroke") && fabricStatus && (
+                  <div className="px-4 py-1.5 border-b border-slate-100 bg-slate-50">
+                    <p className="text-[8px] leading-tight text-slate-600">{fabricStatus}</p>
+                  </div>
                 )}
 
                 {(contextMenu.type === "shape" || contextMenu.type === "stroke") && (
@@ -7086,7 +7589,7 @@ isProcessingRef.current = false;
                 });
                 pendingResizeRecordingRef.current = null;
               }
-              isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingStrokeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setDraggingDotClusterId(null); setResizingId(null); setRotatingId(null); }}>
+              releaseCanvasInteraction(); }}>
               
             <svg 
               id="workspace-svg" 
@@ -7135,7 +7638,7 @@ isProcessingRef.current = false;
                             <image key={`img-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`} data-shape-id={shape.id} href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={shape.dots && shape.dots.length > 0 ? `url(#cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length})` : undefined} onPointerDown={(e) => {
                               if (pickColorMode) { e.stopPropagation();
                               const c = getCoords(e); handlePickRemove(shape, c.x, c.y); return; }
-                              if (activeTool === "cursor" && !isLocked) { e.stopPropagation();
+                              if (shouldStartItemDrag({ activeTool, isLocked })) { e.stopPropagation();
                               const c = getCoords(e); if (tutorialRecording) { const timestamp = recordTutorialStep({ type: 'drag_shape', targetId: shape.id, label: 'Drag shape', clientX: c.rx, clientY: c.ry, canvasX: c.x, canvasY: c.y, dragOffsetX: c.x - shape.position.x, dragOffsetY: c.y - shape.position.y, targetShapePositionX: shape.position.x, targetShapePositionY: shape.position.y, targetShapeScale: shape.scale, targetShapeDots: shape.dots.map(shapeDot => ({ ...shapeDot })), targetShapeImg: shape.img, targetShapeDims: { ...shape.dims }, targetShapeRotation: shape.rotation, targetShapeIsMannequin: shape.isMannequin }); pendingShapeDragRecordingRef.current = { targetId: shape.id, timestamp }; } setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y });
                               }
                             }} onContextMenu={(e) => { e.preventDefault();
@@ -7188,7 +7691,7 @@ isProcessingRef.current = false;
                               if (tutorialRecording) { recordTutorialStep({ type: 'fill_shape', targetId: shape.id, label: 'Fill shape', fillTargetKind: 'shape', clientX: e.clientX, clientY: e.clientY }); }
                               saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? { ...s, fabricFillSrc: undefined, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : s));
                               return; }
-                              if (activeTool === "cursor" && !isLocked) { e.stopPropagation();
+                              if (shouldStartItemDrag({ activeTool, isLocked })) { e.stopPropagation();
                               const c = getCoords(e); if (tutorialRecording) { const timestamp = recordTutorialStep({ type: 'drag_shape', targetId: shape.id, label: 'Drag shape', clientX: c.rx, clientY: c.ry, canvasX: c.x, canvasY: c.y, dragOffsetX: c.x - shape.position.x, dragOffsetY: c.y - shape.position.y, targetShapePositionX: shape.position.x, targetShapePositionY: shape.position.y, targetShapeScale: shape.scale, targetShapeDots: shape.dots.map(shapeDot => ({ ...shapeDot })), targetShapeImg: shape.img, targetShapeDims: { ...shape.dims }, targetShapeRotation: shape.rotation, targetShapeIsMannequin: shape.isMannequin }); pendingShapeDragRecordingRef.current = { targetId: shape.id, timestamp }; } setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y });
                               }
                             }} onContextMenu={(e) => { e.preventDefault();
@@ -7483,7 +7986,7 @@ isProcessingRef.current = false;
                                       if (tutorialRecording) { recordTutorialStep({ type: 'fill_shape', targetId: s.id, label: 'Fill stroke', fillTargetKind: 'stroke', clientX: e.clientX, clientY: e.clientY }); }
                                       saveForUndo();
                                       setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st));
-                                    } else if (activeTool === "cursor" && !isLocked) {
+                                    } else if (shouldStartItemDrag({ activeTool, isLocked })) {
                                       e.stopPropagation();
                                       if (tutorialRecording) {
                                         recordTutorialStepOnce({ type: 'drag_stroke', targetId: s.id, label: 'Drag stroke' });
@@ -7508,7 +8011,7 @@ isProcessingRef.current = false;
                               height={Math.max(...s.points.map(p => p.y)) - Math.min(...s.points.map(p => p.y))}
                               onPointerDown={(e) => {
                                   if (activeTool === "fill") {
-                                  } else if (activeTool === "cursor" && !isLocked) {
+                                  } else if (shouldStartItemDrag({ activeTool, isLocked })) {
                                     e.stopPropagation();
                                     if (tutorialRecording) {
                                       recordTutorialStepOnce({ type: 'drag_stroke', targetId: s.id, label: 'Drag stroke' });
@@ -7536,7 +8039,7 @@ isProcessingRef.current = false;
                                     if (tutorialRecording) { recordTutorialStep({ type: 'fill_shape', targetId: s.id, label: 'Fill stroke', fillTargetKind: 'stroke', clientX: e.clientX, clientY: e.clientY }); }
                                     saveForUndo();
                                     setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st));
-                                  } else if (activeTool === "cursor" && !isLocked) {
+                                  } else if (shouldStartItemDrag({ activeTool, isLocked })) {
                                     e.stopPropagation();
                                     if (tutorialRecording) {
                                       recordTutorialStepOnce({ type: 'drag_stroke', targetId: s.id, label: 'Drag stroke' });
@@ -7564,7 +8067,7 @@ isProcessingRef.current = false;
                                     e.stopPropagation();
                                     saveForUndo();
                                     setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st));
-                                  } else if (activeTool === "cursor" && !isLocked) {
+                                  } else if (shouldStartItemDrag({ activeTool, isLocked })) {
                                     e.stopPropagation();
                                     const c = getCoords(e);
                                     setDraggingStrokeId(s.id);
@@ -7585,7 +8088,7 @@ isProcessingRef.current = false;
                                         e.stopPropagation();
                                         saveForUndo();
                                         setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st));
-                                      } else if (activeTool === "cursor" && !isLocked) {
+                                      } else if (shouldStartItemDrag({ activeTool, isLocked })) {
                                         e.stopPropagation();
                                         if (tutorialRecording) {
                                           recordTutorialStepOnce({ type: 'drag_stroke', targetId: s.id, label: 'Drag stroke' });
@@ -7608,7 +8111,7 @@ isProcessingRef.current = false;
                                 if (tutorialRecording) { recordTutorialStep({ type: 'fill_shape', targetId: s.id, label: 'Fill stroke', fillTargetKind: 'stroke', clientX: e.clientX, clientY: e.clientY }); }
                                 saveForUndo();
                                 setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st));
-                              } else if (activeTool === "cursor" && !isLocked) {
+                              } else if (shouldStartItemDrag({ activeTool, isLocked })) {
                                   e.stopPropagation();
                                   if (tutorialRecording) {
                                     recordTutorialStepOnce({ type: 'drag_stroke', targetId: s.id, label: 'Drag stroke' });
@@ -7668,7 +8171,7 @@ isProcessingRef.current = false;
                             </defs>
                           )}
                           {meshStroke ? (
-                            <g onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); if (tutorialRecording) { recordTutorialStep({ type: 'fill_shape', targetId: s.id, label: 'Fill stroke', fillTargetKind: 'stroke', clientX: e.clientX, clientY: e.clientY }); } saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType), strokeStyle: normalizeFabric(selectedClothType) === 'mesh' ? 'mesh' : st.strokeStyle, meshPattern: normalizeFabric(selectedClothType) === 'mesh' ? { horizontalLines: meshHorizontalLines, verticalLines: meshVerticalLines } : st.meshPattern } : st)); setShowColorPanel(false); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); openContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
+                            <g onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); if (tutorialRecording) { recordTutorialStep({ type: 'fill_shape', targetId: s.id, label: 'Fill stroke', fillTargetKind: 'stroke', clientX: e.clientX, clientY: e.clientY }); } saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType), strokeStyle: normalizeFabric(selectedClothType) === 'mesh' ? 'mesh' : st.strokeStyle, meshPattern: normalizeFabric(selectedClothType) === 'mesh' ? { horizontalLines: meshHorizontalLines, verticalLines: meshVerticalLines } : st.meshPattern } : st)); setShowColorPanel(false); } else if (shouldStartItemDrag({ activeTool, isLocked })) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); openContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
                               <g clipPath={`url(#mesh-stroke-clip-${s.id})`} opacity={s.visible === false ? 0.3 : 1}>
                                 <rect x={meshMinX} y={meshMinY} width={meshPatternWidth} height={meshPatternHeight} fill="transparent" />
                                 {Array.from({ length: meshPattern.horizontalLines }, (_, idx) => {
@@ -7682,7 +8185,7 @@ isProcessingRef.current = false;
                               </g>
                             </g>
                               ) : (
-                            <path d={generatePathData(s.points, s.closed ?? false)} stroke={s.visible === false ? (globalShowDots ? s.color : "transparent") : s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={s.visible === false ? "5,5" : undefined} opacity={s.visible === false ? 0.3 : 1} onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); if (tutorialRecording) { recordTutorialStep({ type: 'fill_shape', targetId: s.id, label: 'Fill stroke', fillTargetKind: 'stroke', clientX: e.clientX, clientY: e.clientY }); } saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType), strokeStyle: normalizeFabric(selectedClothType) === 'mesh' ? 'mesh' : st.strokeStyle, meshPattern: normalizeFabric(selectedClothType) === 'mesh' ? { horizontalLines: meshHorizontalLines, verticalLines: meshVerticalLines } : st.meshPattern } : st)); setShowColorPanel(false); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); openContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }} />
+                            <path d={generatePathData(s.points, s.closed ?? false)} stroke={s.visible === false ? (globalShowDots ? s.color : "transparent") : s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={s.visible === false ? "5,5" : undefined} opacity={s.visible === false ? 0.3 : 1} onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); if (tutorialRecording) { recordTutorialStep({ type: 'fill_shape', targetId: s.id, label: 'Fill stroke', fillTargetKind: 'stroke', clientX: e.clientX, clientY: e.clientY }); } saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType), strokeStyle: normalizeFabric(selectedClothType) === 'mesh' ? 'mesh' : st.strokeStyle, meshPattern: normalizeFabric(selectedClothType) === 'mesh' ? { horizontalLines: meshHorizontalLines, verticalLines: meshVerticalLines } : st.meshPattern } : st)); setShowColorPanel(false); } else if (shouldStartItemDrag({ activeTool, isLocked })) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); openContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }} />
                           )}
                         </>
                       )}

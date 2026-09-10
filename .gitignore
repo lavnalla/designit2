@@ -22,9 +22,36 @@
 # production
 /build
 
+# python
+# General rules, not per-directory ones: this repo runs local virtualenvs in
+# more than one place (tools/, fabric-pipeline-service/) and the narrow
+# /tools/... entries above missed orphaned bytecode elsewhere.
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# fabric pipeline service
+# Also declared in fabric-pipeline-service/.gitignore; repeated here so these
+# stay ignored even if that file is moved or removed.
+#   .venv     ~6GB of torch and CUDA wheels, rebuilt with ./setup.sh
+#   testdata  reference photos and the VITON-HD subset -- third-party images,
+#             not ours to redistribute; re-fetch with ./fetch_dataset.py
+#   outputs   generated renders from the test and eval scripts
+/fabric-pipeline-service/.venv/
+/fabric-pipeline-service/testdata/
+/fabric-pipeline-service/outputs/
+
 # misc
 .DS_Store
 *.pem
+*.log
+
+# windows explorer junk
+Thumbs.db
+ehthumbs.db
+desktop.ini
 
 # personal editor settings
 .vscode
