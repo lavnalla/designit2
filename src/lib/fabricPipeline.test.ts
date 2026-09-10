@@ -44,6 +44,18 @@ describe("fabric pipeline client timeout", () => {
     await assertion;
   });
 
+  it("sends the chosen quality tier, and nothing for auto", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(String(init.body)));
+      return new Response(JSON.stringify({ swatchDataUrl: "x" }), { status: 200 });
+    }));
+    await runFabricCopy("data:image/png;base64,", null, { quality: "fast" });
+    await runFabricCopy("data:image/png;base64,", null, { quality: "auto" });
+    await runFabricCopy("data:image/png;base64,", null);
+    expect(bodies.map((b) => b.quality)).toEqual(["fast", null, null]);
+  });
+
   it("passes a normal response through untouched", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ swatchDataUrl: "x" }), { status: 200 })));
     const res = await runFabricCopy("data:image/png;base64,", null);

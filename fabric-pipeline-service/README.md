@@ -97,8 +97,9 @@ both tried and were slower on that CPU, so the tiers below are the levers.
 | `fast` | 10 steps, guidance off; the prompt is always empty so the text half of the guidance was a no-op, and dropping it cuts the batch from 3 to 1 | CPU |
 | `classic` | no diffusion: delight + offset-and-blend seam (`delight.classic_swatch`); crisp, seamless, but folds are only de-shaded, not undone | CPU with under `FABRIC_MIN_FREE_GB` (5 GB) of free RAM, or by request |
 
-`auto` (the default) resolves as in the last column. A client can override
-per request with `quality` on `/copy`. `/health` reports the resolved profile.
+`auto` (the default) resolves as in the last column. Studio's right-click menu
+has a **Copy quality** picker (Auto / Instant / Fast / Best) that sends
+`quality` on `/copy` per request; `/health` reports the server's own profile.
 
 ### Pre-warm and cache
 

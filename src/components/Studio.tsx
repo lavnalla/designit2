@@ -23,6 +23,8 @@ import {
   imageToBoundedDataUrl,
   scaleRect,
   FabricPipelineError,
+  FABRIC_QUALITY_OPTIONS,
+  type FabricQuality,
   type FabricClipboard,
 } from "../lib/fabricPipeline";
 import { canCopyFabric, shouldStartItemDrag, useReleaseInteractionOnWindow } from "../lib/canvasInteraction";
@@ -1115,6 +1117,9 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   // behind that estimate are averages, not measurements.
   const [fabricTileScale, setFabricTileScale] = useState(1);
   const [fabricShadingStrength, setFabricShadingStrength] = useState(1);
+  // Flatten quality for the next copy. `auto` lets the service choose by its
+  // hardware; the other tiers trade fidelity for time (see fabricPipeline.ts).
+  const [fabricQuality, setFabricQuality] = useState<FabricQuality>('auto');
   const [fabricBusy, setFabricBusy] = useState<null | 'copy' | 'paste'>(null);
   const [fabricStatus, setFabricStatus] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -3795,7 +3800,7 @@ const splitLoopWithLine = (
         const resolved = await resolveFabricSource(contextShape, selectionArea);
         if (!resolved) throw new Error('Could not resolve a source image for the fabric pipeline');
 
-        const copyResult = await runFabricCopy(resolved.imageDataUrl, resolved.rect);
+        const copyResult = await runFabricCopy(resolved.imageDataUrl, resolved.rect, { quality: fabricQuality });
         setFabricClipboard({
           swatchDataUrl: copyResult.swatchDataUrl,
           cropWidth: copyResult.cropWidth,
@@ -3814,7 +3819,7 @@ const splitLoopWithLine = (
         });
         const worn = copyResult.sourcePersonPresent ? 'worn photo' : 'flat image';
         const base = copyResult.sourceGarmentFound
-          ? `Flattened from a ${copyResult.sourceSilhouette} garment (${worn}) · ${copyResult.srcPxPerCm.toFixed(1)} px/cm${copyResult.fromCache ? ' · cached' : ` · ${copyResult.rectifySeconds.toFixed(1)}s`}`
+          ? `Flattened from a ${copyResult.sourceSilhouette} garment (${worn}) · ${copyResult.srcPxPerCm.toFixed(1)} px/cm · ${copyResult.quality || 'auto'}${copyResult.fromCache ? ' · cached' : ` · ${copyResult.rectifySeconds.toFixed(1)}s`}`
           : 'Flattened, but no garment was detected in the source — scale is a guess';
         // Say when the sample moved. Silently overriding the selection would
         // look like the tool ignoring the user.
@@ -3839,7 +3844,7 @@ const splitLoopWithLine = (
 
     setSelectionRect(null);
     setContextMenu(null);
-  }, [fabricBusy, selectionRect, workspaceShapes, strokes, selectedShapeId, selectedClothType, activeColor, buildSelectionClone, resolveFabricSource, getBoundingBox, isItemInRect]);
+  }, [fabricBusy, fabricQuality, selectionRect, workspaceShapes, strokes, selectedShapeId, selectedClothType, activeColor, buildSelectionClone, resolveFabricSource, getBoundingBox, isItemInRect]);
 
   const copyFromSelection = useCallback(async () => {
     if (!selectionRect || !workspaceRef.current) return;
@@ -6379,6 +6384,35 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                   >
                     {fabricBusy === 'copy' ? '🧪 Flattening…' : '🧪 Copy Fabric'}
                   </button>
+                )}
+
+                {(contextMenu.type === "selection" || contextMenu.type === "shape" || contextMenu.type === "stroke") && (
+                  <div className="px-4 py-2 border-b border-slate-100 bg-indigo-50/40">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-black uppercase text-indigo-800">Copy quality</span>
+                      <span className="text-[9px] text-indigo-700/80">
+                        {FABRIC_QUALITY_OPTIONS.find(o => o.value === fabricQuality)?.hint}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex gap-1" role="radiogroup" aria-label="Copy quality">
+                      {FABRIC_QUALITY_OPTIONS.map(option => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="radio"
+                          aria-checked={fabricQuality === option.value}
+                          title={option.hint}
+                          disabled={fabricBusy !== null}
+                          onClick={() => setFabricQuality(option.value)}
+                          className={`flex-1 rounded-md border px-1.5 py-1 text-[9px] font-black uppercase disabled:opacity-40 ${fabricQuality === option.value
+                            ? 'border-indigo-500 bg-indigo-600 text-white'
+                            : 'border-slate-200 bg-white text-slate-600 hover:bg-indigo-50'}`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 )}
 
                 {(contextMenu.type === "selection" || contextMenu.type === "shape" || contextMenu.type === "stroke") && (

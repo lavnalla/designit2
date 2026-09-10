@@ -33,8 +33,24 @@ export type FabricClipboard = {
   patchReason: string;
 };
 
+/**
+ * Quality tier for the flatten stage, mirrored from the service's runtime.py.
+ * `auto` sends nothing and lets the service pick by hardware (full on a GPU,
+ * fast on a CPU, classic when RAM is short).
+ */
+export type FabricQuality = "auto" | "classic" | "fast" | "full";
+
+export const FABRIC_QUALITY_OPTIONS: { value: FabricQuality; label: string; hint: string }[] = [
+  { value: "auto", label: "Auto", hint: "Server picks by hardware" },
+  { value: "classic", label: "Instant", hint: "No AI pass; crisp, seamless, folds only de-shaded" },
+  { value: "fast", label: "Fast", hint: "10-step AI flatten; ~10-25 s on a CPU" },
+  { value: "full", label: "Best", hint: "20-step AI flatten; seconds on a GPU, ~30-60 s on a CPU" },
+];
+
 export type FabricCopyResponse = {
   swatchDataUrl: string;
+  /** Tier actually used: full | fast | classic | raw. */
+  quality: string;
   cropWidth: number;
   cropHeight: number;
   srcPxPerCm: number;
@@ -270,7 +286,7 @@ export function measureImage(src: string): Promise<{ width: number; height: numb
 export async function runFabricCopy(
   imageDataUrl: string,
   rect: { x: number; y: number; width: number; height: number } | null,
-  options: { seed?: number; rectify?: boolean; seamBlendPx?: number } = {},
+  options: { seed?: number; rectify?: boolean; seamBlendPx?: number; quality?: FabricQuality } = {},
 ): Promise<FabricCopyResponse> {
   return postJson<FabricCopyResponse>("/api/fabric/copy", {
     imageDataUrl,
@@ -278,6 +294,7 @@ export async function runFabricCopy(
     seed: options.seed ?? null,
     rectify: options.rectify ?? true,
     seamBlendPx: options.seamBlendPx ?? 0,
+    quality: options.quality && options.quality !== "auto" ? options.quality : null,
   });
 }
 
