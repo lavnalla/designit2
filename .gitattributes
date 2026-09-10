@@ -1,0 +1,23 @@
+# Normalize line endings to LF in the repo and in the working tree.
+# This repo is developed in WSL; files edited from the Windows side across
+# the \wsl.localhost share were being re-saved with CRLF, producing diffs
+# that touched thousands of lines without changing any code.
+* text=auto eol=lf
+
+# Keep genuinely binary assets untouched.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.mp4 binary
+*.glb binary
+*.onnx binary
+*.pt binary
+*.pth binary
