@@ -92,7 +92,7 @@ const HERO_CARDS = [
     ctaLabel: "About The Studio",
     ctaHref: "/about",
     beforeImage: "designFrom.png", // Replace with your actual asset path
-    afterImage: "designTo.png",   // Replace with your actual asset path
+    afterImage: "designTo.png", // Replace with your actual asset path
   },
   {
     eyebrow: "Try It On",
@@ -100,7 +100,7 @@ const HERO_CARDS = [
     ctaLabel: "Open The Studio",
     ctaHref: "/studio",
     beforeImage: "earrings.png", // Replace with your actual asset path
-    afterImage: "wearingearrings.png",   // Replace with your actual asset path
+    afterImage: "wearingearrings.png", // Replace with your actual asset path
   },
 ];
 
@@ -114,7 +114,9 @@ export default function LandingPage() {
   const [activeHeroCardIndex, setActiveHeroCardIndex] = useState(0);
   const homepageAdSlot = process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_HOME_SLOT;
   const demoVideoRef = useRef<HTMLVideoElement | null>(null);
-  const demoTransitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const demoTransitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   const openStudioWithSourceAsset = (assetPath: string) => {
     if (typeof window !== "undefined") {
@@ -196,7 +198,9 @@ export default function LandingPage() {
 
   useEffect(() => {
     const intervalId = setInterval(() => {
-      setActiveHeroCardIndex((currentIndex) => (currentIndex + 1) % HERO_CARDS.length);
+      setActiveHeroCardIndex(
+        (currentIndex) => (currentIndex + 1) % HERO_CARDS.length,
+      );
     }, 5000);
 
     return () => clearInterval(intervalId);
@@ -206,15 +210,44 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-[#e8e0d9] px-4 pt-0 font-sans text-slate-900 md:px-8 lg:px-10">
-      <aside className="fixed left-2 top-28 z-40 hidden w-44 lg:block xl:left-[max(1rem,calc((100vw-1120px)/2-15.5rem))]">
+      <aside className="fixed left-2 top-28 z-40 w-32 lg:w-44 xl:left-[max(1rem,calc((100vw-1120px)/2-15.5rem))]">
         <div className="border border-[#ddd3c9] bg-[#fffdfb] p-5 text-[#4b5563] shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
-          <p className="mb-4 text-[11px] font-black uppercase tracking-[0.24em] text-[#8a644a]">Navigate</p>
-          <nav className={`${whisperingSignature.className} flex flex-col gap-3 text-lg text-[#7f8fb0]`}>
-            <a href="#how-to" className="transition-colors hover:text-[#4f264f]">How It Works</a>
-            <a href="#features" className="transition-colors hover:text-[#4f264f]">Features</a>
-            <Link href="/blog" className="transition-colors hover:text-[#4f264f]">Blog</Link>
-            <Link href="/community" className="transition-colors hover:text-[#4f264f]">Community</Link>
-            <Link href="/about" className="transition-colors hover:text-[#4f264f]">About</Link>
+          <p className="mb-4 text-[11px] font-black uppercase tracking-[0.24em] text-[#8a644a]">
+            Navigate
+          </p>
+          <nav
+            className={`${whisperingSignature.className} flex flex-col gap-3 text-lg text-[#7f8fb0]`}
+          >
+            <a
+              href="#how-to"
+              className="transition-colors hover:text-[#4f264f]"
+            >
+              How It Works
+            </a>
+            <a
+              href="#features"
+              className="transition-colors hover:text-[#4f264f]"
+            >
+              Features
+            </a>
+            <Link
+              href="/blog"
+              className="transition-colors hover:text-[#4f264f]"
+            >
+              Blog
+            </Link>
+            <Link
+              href="/community"
+              className="transition-colors hover:text-[#4f264f]"
+            >
+              Community
+            </Link>
+            <Link
+              href="/about"
+              className="transition-colors hover:text-[#4f264f]"
+            >
+              About
+            </Link>
           </nav>
         </div>
       </aside>
@@ -223,7 +256,9 @@ export default function LandingPage() {
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/80 p-6 backdrop-blur-sm">
           <div className="relative w-full max-w-5xl border border-slate-200 bg-white p-4 shadow-[0_30px_80px_rgba(15,23,42,0.35)]">
             <div className="mb-3 flex items-center justify-between gap-3">
-              <p className="text-sm font-black uppercase tracking-[0.2em] text-[#8a644a]">Studio Demo</p>
+              <p className="text-sm font-black uppercase tracking-[0.2em] text-[#8a644a]">
+                Studio Demo
+              </p>
               <button
                 type="button"
                 onClick={() => setIsDemoPopupOpen(false)}
@@ -242,7 +277,10 @@ export default function LandingPage() {
               onEnded={playNextDemoVideo}
               key={`popup-${demoVideoSources[activeDemoVideoIndex]}`}
             >
-              <source src={demoVideoSources[activeDemoVideoIndex]} type="video/mp4" />
+              <source
+                src={demoVideoSources[activeDemoVideoIndex]}
+                type="video/mp4"
+              />
             </video>
           </div>
         </div>
@@ -252,71 +290,85 @@ export default function LandingPage() {
         <section className="bg-[#fffdfa] px-5 py-8 md:px-8 md:py-10">
           <div className="relative grid gap-5 lg:grid-cols-[1.05fr_0.95fr] lg:pb-8">
             <div className="max-w-xl lg:pb-24">
-                <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#8a644a]">Creative Technology For Fashion</p>
-                <h1 className={`${hughIsLife.className} mt-3 text-4xl leading-tight tracking-tight text-[#4f264f] md:text-5xl xl:text-6xl`}>
-                  Design Clothes & Jewelry.
-                </h1>
-                <h2 className={`${hughIsLife.className} mt-2 text-2xl leading-tight tracking-tight text-[#4f264f] md:text-3xl xl:text-4xl`}>
-                  Create, Customize & Try Them On.
-                </h2>
-                <p className="mt-4 max-w-md text-base leading-7 text-slate-600">
-                  Move from blank canvas to polished visual in a browser studio built for garments, jewelry, swatches, and AR previews.
-                </p>
-                <div className="mt-6 flex flex-wrap gap-3">
-                  <Link
-                    href="/studio"
-                    className="bg-black px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white"
-                  >
-                    Try On In Studio
-                  </Link>
-                  <Link href="/blog" className="border border-slate-300 px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700">
-                    Read The Guides
-                  </Link>
+              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#8a644a]">
+                Creative Technology For Fashion
+              </p>
+              <h1
+                className={`${hughIsLife.className} mt-3 text-4xl leading-tight tracking-tight text-[#4f264f] md:text-5xl xl:text-6xl`}
+              >
+                Design Clothes & Jewelry.
+              </h1>
+              <h2
+                className={`${hughIsLife.className} mt-2 text-2xl leading-tight tracking-tight text-[#4f264f] md:text-3xl xl:text-4xl`}
+              >
+                Create, Customize & Try Them On.
+              </h2>
+              <p className="mt-4 max-w-md text-base leading-7 text-slate-600">
+                Move from blank canvas to polished visual in a browser studio
+                built for garments, jewelry, swatches, and AR previews.
+              </p>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <Link
+                  href="/studio"
+                  className="bg-black px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white"
+                >
+                  Try On In Studio
+                </Link>
+                <Link
+                  href="/blog"
+                  className="border border-slate-300 px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700"
+                >
+                  Read The Guides
+                </Link>
+              </div>
+            </div>
+            <div className="relative flex min-h-[34rem] flex-col justify-between overflow-hidden bg-[linear-gradient(180deg,#f7b64f_0%,#f6cb67_38%,#5d82a8_72%,#7a4bbb_100%)] p-6 md:p-8">
+              {/* Before & After Images at Top */}
+              <div className="grid grid-cols-2 gap-3 mb-6">
+                <div className="relative overflow-hidden border border-white/20 bg-black/20">
+                  <span className="absolute left-2 top-2 z-10 bg-black/60 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white">
+                    Before
+                  </span>
+                  <img
+                    src={activeHeroCard.beforeImage}
+                    alt="Before transformation"
+                    className="h-36 w-full object-contain md:h-44 bg-gray-100" // added object-contain and optional background
+                  />
+                </div>
+                <div className="relative overflow-hidden border border-white/20 bg-black/20">
+                  <span className="absolute left-2 top-2 z-10 bg-black/60 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white">
+                    After
+                  </span>
+                  <img
+                    src={activeHeroCard.afterImage}
+                    alt="After transformation"
+                    className="h-36 w-full object-contain md:h-44 bg-gray-100" // added object-contain and optional background
+                  />
                 </div>
               </div>
-            <div className="relative flex min-h-[34rem] flex-col justify-between overflow-hidden bg-[linear-gradient(180deg,#f7b64f_0%,#f6cb67_38%,#5d82a8_72%,#7a4bbb_100%)] p-6 md:p-8">
-  {/* Before & After Images at Top */}
-  <div className="grid grid-cols-2 gap-3 mb-6">
-    <div className="relative overflow-hidden border border-white/20 bg-black/20">
-      <span className="absolute left-2 top-2 z-10 bg-black/60 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white">
-        Before
-      </span>
-      <img
-  src={activeHeroCard.beforeImage}
-  alt="Before transformation"
-  className="h-36 w-full object-contain md:h-44 bg-gray-100" // added object-contain and optional background
-/>
-    </div>
-    <div className="relative overflow-hidden border border-white/20 bg-black/20">
-      <span className="absolute left-2 top-2 z-10 bg-black/60 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white">
-        After
-      </span>
-      <img
-  src={activeHeroCard.afterImage}
-  alt="After transformation"
-  className="h-36 w-full object-contain md:h-44 bg-gray-100" // added object-contain and optional background
-/>
-    </div>
-  </div>
 
-  {/* Card Content Below Images */}
-  <div className="border border-white/20 bg-[#7c49b4] p-6 md:p-8 text-white shadow-[0_18px_36px_rgba(15,23,42,0.18)]">
-    <p className="text-[10px] uppercase tracking-[0.18em] text-white/70">{activeHeroCard.eyebrow}</p>
-    <p className="mt-3 text-xl leading-8 md:text-2xl md:leading-9">
-      {activeHeroCard.body}
-    </p>
-    <Link
-      href={activeHeroCard.ctaHref}
-      className="mt-5 inline-block bg-black px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-800"
-    >
-      {activeHeroCard.ctaLabel}
-    </Link>
-  </div>
-</div>
+              {/* Card Content Below Images */}
+              <div className="border border-white/20 bg-[#7c49b4] p-6 md:p-8 text-white shadow-[0_18px_36px_rgba(15,23,42,0.18)]">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-white/70">
+                  {activeHeroCard.eyebrow}
+                </p>
+                <p className="mt-3 text-xl leading-8 md:text-2xl md:leading-9">
+                  {activeHeroCard.body}
+                </p>
+                <Link
+                  href={activeHeroCard.ctaHref}
+                  className="mt-5 inline-block bg-black px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-800"
+                >
+                  {activeHeroCard.ctaLabel}
+                </Link>
+              </div>
+            </div>
 
             <div className="border border-[#e6ddd4] bg-[#fffdfa] p-3 shadow-[0_18px_36px_rgba(15,23,42,0.08)] lg:absolute lg:left-[2rem] lg:top-[20rem] lg:z-20 lg:w-[18rem] xl:left-[2.5rem] xl:top-[20.5rem] xl:w-[19rem]">
               <div className="mb-2 flex items-center justify-between gap-2">
-                <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#8a644a]">Studio Demo</p>
+                <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#8a644a]">
+                  Studio Demo
+                </p>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -344,33 +396,58 @@ export default function LandingPage() {
                 onEnded={playNextDemoVideo}
                 key={demoVideoSources[activeDemoVideoIndex]}
               >
-                <source src={demoVideoSources[activeDemoVideoIndex]} type="video/mp4" />
+                <source
+                  src={demoVideoSources[activeDemoVideoIndex]}
+                  type="video/mp4"
+                />
               </video>
             </div>
           </div>
-
         </section>
 
         <section className="px-5 py-8 md:px-8">
           <div className="border-t border-[#e7ddd4] pt-6">
             <div className="mb-6 flex items-center justify-between gap-4">
               <div>
-                <p className={`${whisperingSignature.className} text-3xl text-[#4f264f]`}>Features</p>
-                <p className="mt-1 text-sm text-slate-500">A design workflow built for creative iteration, publishing, and AR previewing.</p>
+                <p
+                  className={`${whisperingSignature.className} text-3xl text-[#4f264f]`}
+                >
+                  Features
+                </p>
+                <p className="mt-1 text-sm text-slate-500">
+                  A design workflow built for creative iteration, publishing,
+                  and AR previewing.
+                </p>
               </div>
-              <Link href="/studio" className="bg-black px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white">
+              <Link
+                href="/studio"
+                className="bg-black px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white"
+              >
                 See More
               </Link>
             </div>
-            <div id="features" className="divide-y divide-[#e7ddd4] border-y border-[#e7ddd4] bg-[#fffdfa]">
+            <div
+              id="features"
+              className="divide-y divide-[#e7ddd4] border-y border-[#e7ddd4] bg-[#fffdfa]"
+            >
               {FEATURES.map((feature, index) => (
-                <div key={feature.title} className="grid items-center gap-4 px-4 py-5 md:grid-cols-[5rem_1fr_auto] md:px-0">
-                  <div className="text-center text-2xl font-light text-slate-500">{String(index + 1).padStart(2, "0")}</div>
+                <div
+                  key={feature.title}
+                  className="grid items-center gap-4 px-4 py-5 md:grid-cols-[5rem_1fr_auto] md:px-0"
+                >
+                  <div className="text-center text-2xl font-light text-slate-500">
+                    {String(index + 1).padStart(2, "0")}
+                  </div>
                   <div>
                     <h3 className="text-2xl text-slate-900">{feature.title}</h3>
-                    <p className="mt-1 text-sm leading-7 text-slate-500">{feature.desc}</p>
+                    <p className="mt-1 text-sm leading-7 text-slate-500">
+                      {feature.desc}
+                    </p>
                   </div>
-                  <Link href="/studio" className="justify-self-start bg-[#8f6a88] px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white md:justify-self-end">
+                  <Link
+                    href="/studio"
+                    className="justify-self-start bg-[#8f6a88] px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white md:justify-self-end"
+                  >
                     Explore
                   </Link>
                 </div>
@@ -385,7 +462,11 @@ export default function LandingPage() {
               <p className="mb-3 text-center text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">
                 Sponsored
               </p>
-              <AdSlot slot={homepageAdSlot} className="mx-auto min-h-[90px]" style={{ minHeight: 90 }} />
+              <AdSlot
+                slot={homepageAdSlot}
+                className="mx-auto min-h-[90px]"
+                style={{ minHeight: 90 }}
+              />
             </div>
           </section>
         )}
@@ -394,28 +475,51 @@ export default function LandingPage() {
           <div>
             <div className="grid gap-5 lg:grid-cols-[0.95fr_1.2fr_0.8fr]">
               <div className="overflow-hidden bg-[#efe6dc]">
-                <img src="/design2.png" alt="Design workflow inspiration" className="h-full w-full object-cover" />
+                <img
+                  src="/design2.png"
+                  alt="Design workflow inspiration"
+                  className="h-full w-full object-cover"
+                />
               </div>
               <div className="flex min-h-[17rem] items-center bg-[#7c49b4] p-8 text-white">
                 <div>
-                  <p className="text-[10px] uppercase tracking-[0.18em] text-white/70">What We Offer</p>
-                  <p className="mt-4 text-3xl leading-10">From vector editing tools to AR preview workflows, the studio brings ideas into focus fast.</p>
-                  <Link href="/studio" className="mt-6 inline-block bg-black px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white">
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-white/70">
+                    What We Offer
+                  </p>
+                  <p className="mt-4 text-3xl leading-10">
+                    From vector editing tools to AR preview workflows, the
+                    studio brings ideas into focus fast.
+                  </p>
+                  <Link
+                    href="/studio"
+                    className="mt-6 inline-block bg-black px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white"
+                  >
                     Open The Studio
                   </Link>
                 </div>
               </div>
               <div className="overflow-hidden bg-[#fffdfa]">
-                <img src="/design3.png" alt="Creative community inspiration" className="h-full w-full object-cover" />
+                <img
+                  src="/design3.png"
+                  alt="Creative community inspiration"
+                  className="h-full w-full object-cover"
+                />
               </div>
             </div>
 
             <section className="py-12">
               <div className="grid grid-cols-2 gap-0 border border-[#e7ddd4] bg-[#fffdfa] text-center md:grid-cols-4">
                 {VALUE_POINTS.map((item) => (
-                  <div key={item.label} className="flex flex-col items-center gap-1 border border-[#e3ccc5] p-6 sm:p-7">
-                    <span className="text-2xl font-black text-[#4f264f]">{item.stat}</span>
-                    <span className="text-xs font-medium text-slate-500">{item.label}</span>
+                  <div
+                    key={item.label}
+                    className="flex flex-col items-center gap-1 border border-[#e3ccc5] p-6 sm:p-7"
+                  >
+                    <span className="text-2xl font-black text-[#4f264f]">
+                      {item.stat}
+                    </span>
+                    <span className="text-xs font-medium text-slate-500">
+                      {item.label}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -425,14 +529,23 @@ export default function LandingPage() {
 
             <section className="border-t border-[#e7ddd4] bg-[#fffdfa] px-5 py-16 sm:px-6 sm:py-20">
               <div className="mx-auto max-w-2xl">
-                <p className="mb-2 text-center text-xs font-bold uppercase tracking-widest text-[#8a644a]">FAQ</p>
-                <h2 className="mb-10 text-center text-3xl font-black text-slate-900">Frequently Asked Questions</h2>
+                <p className="mb-2 text-center text-xs font-bold uppercase tracking-widest text-[#8a644a]">
+                  FAQ
+                </p>
+                <h2 className="mb-10 text-center text-3xl font-black text-slate-900">
+                  Frequently Asked Questions
+                </h2>
 
                 <div className="flex flex-col gap-3">
                   {FAQS.map((faq, index) => (
-                    <div key={faq.q} className="overflow-hidden border border-slate-100 bg-white">
+                    <div
+                      key={faq.q}
+                      className="overflow-hidden border border-slate-100 bg-white"
+                    >
                       <button
-                        onClick={() => setOpenFaq(openFaq === index ? null : index)}
+                        onClick={() =>
+                          setOpenFaq(openFaq === index ? null : index)
+                        }
                         className="flex w-full items-center justify-between px-5 py-4 text-left text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-50"
                       >
                         {faq.q}
@@ -455,23 +568,39 @@ export default function LandingPage() {
 
           <section id="how-to" className="hidden lg:block">
             <div className="sticky top-28 border border-[#e7ddd4] bg-[#fffdfa] p-6 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
-              <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[#8a644a]">How It Works</p>
-              <h2 className={`${whisperingSignature.className} mb-8 text-3xl text-slate-900`}>
+              <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[#8a644a]">
+                How It Works
+              </p>
+              <h2
+                className={`${whisperingSignature.className} mb-8 text-3xl text-slate-900`}
+              >
                 From sketch to try-on in 3 steps
               </h2>
 
               <div className="grid grid-cols-1 gap-4">
                 {STEPS.map((step) => (
-                  <div key={step.num} className="border border-[#eadfd7] bg-[#fffdfa] p-5">
-                    <span className="mb-3 block text-4xl font-black text-[#4f264f]">{step.num}</span>
-                    <h3 className="mb-2 text-lg font-bold text-slate-800">{step.title}</h3>
-                    <p className="text-sm leading-relaxed text-slate-500">{step.desc}</p>
+                  <div
+                    key={step.num}
+                    className="border border-[#eadfd7] bg-[#fffdfa] p-5"
+                  >
+                    <span className="mb-3 block text-4xl font-black text-[#4f264f]">
+                      {step.num}
+                    </span>
+                    <h3 className="mb-2 text-lg font-bold text-slate-800">
+                      {step.title}
+                    </h3>
+                    <p className="text-sm leading-relaxed text-slate-500">
+                      {step.desc}
+                    </p>
                   </div>
                 ))}
               </div>
 
               <div className="mt-8">
-                <Link href="/studio" className="inline-flex bg-black px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white">
+                <Link
+                  href="/studio"
+                  className="inline-flex bg-black px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white"
+                >
                   Start Designing
                 </Link>
               </div>
@@ -481,16 +610,29 @@ export default function LandingPage() {
 
         <section className="px-5 pb-10 lg:hidden md:px-8">
           <div className="border border-[#e7ddd4] bg-[#fffdfa] p-6 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
-            <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[#8a644a]">How It Works</p>
-            <h2 className={`${whisperingSignature.className} mb-8 text-3xl text-slate-900`}>
+            <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[#8a644a]">
+              How It Works
+            </p>
+            <h2
+              className={`${whisperingSignature.className} mb-8 text-3xl text-slate-900`}
+            >
               From sketch to try-on in 3 steps
             </h2>
             <div className="grid gap-4">
               {STEPS.map((step) => (
-                <div key={`mobile-${step.num}`} className="border border-[#eadfd7] bg-[#fffdfa] p-5">
-                  <span className="mb-3 block text-4xl font-black text-[#4f264f]">{step.num}</span>
-                  <h3 className="mb-2 text-lg font-bold text-slate-800">{step.title}</h3>
-                  <p className="text-sm leading-relaxed text-slate-500">{step.desc}</p>
+                <div
+                  key={`mobile-${step.num}`}
+                  className="border border-[#eadfd7] bg-[#fffdfa] p-5"
+                >
+                  <span className="mb-3 block text-4xl font-black text-[#4f264f]">
+                    {step.num}
+                  </span>
+                  <h3 className="mb-2 text-lg font-bold text-slate-800">
+                    {step.title}
+                  </h3>
+                  <p className="text-sm leading-relaxed text-slate-500">
+                    {step.desc}
+                  </p>
                 </div>
               ))}
             </div>
@@ -502,11 +644,15 @@ export default function LandingPage() {
             <div>
               <h2 className="text-3xl font-black text-[#4f264f]">DesignIt</h2>
               <p className="mt-3 max-w-xs text-sm leading-7 text-slate-600">
-                A browser-native studio for fashion, jewelry, and AR-guided design exploration.
+                A browser-native studio for fashion, jewelry, and AR-guided
+                design exploration.
               </p>
             </div>
             <div>
-              <p className="text-xl leading-8 text-slate-900">We have a lot of creative possibilities waiting. Be the first to find out.</p>
+              <p className="text-xl leading-8 text-slate-900">
+                We have a lot of creative possibilities waiting. Be the first to
+                find out.
+              </p>
               <div className="mt-5 flex max-w-md gap-3">
                 <input
                   type="email"
@@ -520,17 +666,23 @@ export default function LandingPage() {
             </div>
             <div className="flex flex-col gap-2 text-sm text-slate-600">
               {FEATURED_LINKS.map((item) => (
-                <Link key={`footer-${item.href}`} href={item.href} className="hover:text-slate-900">
+                <Link
+                  key={`footer-${item.href}`}
+                  href={item.href}
+                  className="hover:text-slate-900"
+                >
                   {item.label}
                 </Link>
               ))}
-              <Link href="/studio" className="mt-3 inline-block bg-black px-4 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white">
+              <Link
+                href="/studio"
+                className="mt-3 inline-block bg-black px-4 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white"
+              >
                 Make a Design
               </Link>
             </div>
           </div>
         </section>
-
       </div>
     </div>
   );

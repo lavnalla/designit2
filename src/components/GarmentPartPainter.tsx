@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { detectGarmentParts } from "../lib/garmentSegmenter";
 
 export type GarmentPart = "arm" | "body" | "neck" | "shoulders";
 
@@ -191,15 +192,7 @@ export default function GarmentPartPainter({
     setIsAutoDetecting(true);
     setAutoDetectError(null);
     try {
-      const response = await fetch("/api/garment-segment", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageDataUrl: imageSrc }),
-      });
-      const data = await response.json();
-      if (!response.ok || !data?.maskDataUrl) {
-        throw new Error(data?.details || data?.error || "Auto-detect failed");
-      }
+      const data = await detectGarmentParts(imageSrc);
 
       const maskImg = new Image();
       await new Promise<void>((resolve, reject) => {
