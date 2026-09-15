@@ -29,6 +29,7 @@ interface GarmentPartPainterProps {
   onSave: (maskDataUrl: string) => void;
   onContinue: () => void;
   onClose: () => void;
+  continueLabel?: string;
 }
 
 export default function GarmentPartPainter({
@@ -36,6 +37,7 @@ export default function GarmentPartPainter({
   onSave,
   onContinue,
   onClose,
+  continueLabel = "Continue to Webcam →",
 }: GarmentPartPainterProps) {
   const imageCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const maskCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -462,7 +464,7 @@ export default function GarmentPartPainter({
               cursor: "pointer",
             }}
           >
-            Continue to Webcam →
+            {continueLabel}
           </button>
         </div>
       </div>

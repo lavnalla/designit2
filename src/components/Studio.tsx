@@ -1316,6 +1316,11 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [tryOnMode, setTryOnMode] = useState<
     "garment" | "necklace" | "earrings"
   >("garment");
+  const [tryOnSource, setTryOnSource] = useState<"webcam" | "photo">(
+    "webcam",
+  );
+  // Arm/body/neck/shoulders outline saved from GarmentPartPainter
+  const [garmentPartMask, setGarmentPartMask] = useState<string | null>(null);
   const [showWelcomePrompt, setShowWelcomePrompt] = useState(true);
 
   const [mounted, setMounted] = useState(false);
@@ -7498,9 +7503,36 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 </select>
               </div>
 
-              <button
-                onClick={async () => {
-                  if (!showTryOn && !showPartPainter) {
+              {showTryOn || showPartPainter ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowTryOn(false);
+                    setShowPartPainter(false);
+                    setRenderedWorkspaceImg(null);
+                  }}
+                  className={`${toolbarButtonInteractiveClass} inline-flex min-w-0 max-w-[7.25rem] gap-1 px-1.5 text-[8px] sm:max-w-none sm:gap-1.5 sm:px-2.5 sm:text-[10px]`}
+                  style={{
+                    backgroundColor: "#fde68a",
+                    borderColor: "#f59e0b",
+                    color: "#000000",
+                  }}
+                >
+                  <span className="truncate sm:hidden">Close</span>
+                  <span className="hidden sm:inline">✕ Close Try-On View</span>
+                </button>
+              ) : (
+                // Native select so the option list is the OS dropdown and can't be
+                // clipped by the toolbar's overflow. Its value stays "" (the
+                // placeholder), so picking the same option again still fires onChange.
+                <select
+                  value=""
+                  aria-label="Test try-on"
+                  onChange={async (e) => {
+                    const source = e.target.value as "webcam" | "photo" | "";
+                    if (!source) return;
+                    setTryOnSource(source);
+                    setGarmentPartMask(null);
                     let readyAsset: string | null = null;
                     for (
                       let attempt = 0;
@@ -7529,36 +7561,21 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     }
                     setRenderedWorkspaceImg(readyAsset);
                     setShowPartPainter(true);
-                  } else {
-                    setShowTryOn(false);
-                    setShowPartPainter(false);
-                    setRenderedWorkspaceImg(null);
-                  }
-                }}
-                className={`${toolbarButtonInteractiveClass} inline-flex min-w-0 max-w-[7.25rem] gap-1 px-1.5 text-[8px] sm:max-w-none sm:gap-1.5 sm:px-2.5 sm:text-[10px]`}
-                style={
-                  showTryOn || showPartPainter
-                    ? {
-                        backgroundColor: "#fde68a",
-                        borderColor: "#f59e0b",
-                        color: "#000000",
-                      }
-                    : {
-                        backgroundColor: "#fef08a",
-                        borderColor: "#eab308",
-                        color: "#000000",
-                      }
-                }
-              >
-                <span className="truncate sm:hidden">
-                  {showTryOn || showPartPainter ? "Close" : "Live"}
-                </span>
-                <span className="hidden sm:inline">
-                  {showTryOn || showPartPainter
-                    ? "✕ Close Try-On View"
-                    : "✨ Test Live on Webcam"}
-                </span>
-              </button>
+                  }}
+                  className={`${toolbarButtonInteractiveClass} min-w-0 max-w-[7.25rem] cursor-pointer px-1.5 text-[8px] font-black outline-none sm:max-w-none sm:px-2.5 sm:text-[10px]`}
+                  style={{
+                    backgroundColor: "#fef08a",
+                    borderColor: "#eab308",
+                    color: "#000000",
+                  }}
+                >
+                  <option value="" disabled hidden>
+                    ✨ Test Try-On
+                  </option>
+                  <option value="webcam">🎥 Test on Live Webcam</option>
+                  <option value="photo">🖼️ Test on Photo</option>
+                </select>
+              )}
 
               <div
                 className="relative z-[270] md:hidden"
@@ -12521,11 +12538,13 @@ export function Studio({ onBack }: { onBack: () => void }) {
         <GarmentPartPainter
           imageSrc={renderedWorkspaceImg}
           onSave={(maskDataUrl) => {
-            console.log(
-              "[GARMENT PART PAINTER] Saved outline",
-              maskDataUrl.slice(0, 64),
-            );
+            setGarmentPartMask(maskDataUrl);
           }}
+          continueLabel={
+            tryOnSource === "webcam"
+              ? "Continue to Webcam →"
+              : "Continue to Photo →"
+          }
           onContinue={() => {
             setShowPartPainter(false);
             setShowTryOn(true);
@@ -12551,10 +12570,14 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 <div className="sticky top-0 z-10 flex items-center justify-between gap-3 px-3 sm:px-5 py-3 border-b border-slate-200 bg-white/95 backdrop-blur rounded-t-2xl">
                   <div>
                     <h3 className="text-xs sm:text-sm font-black uppercase tracking-wide text-slate-800">
-                      Live Device Try-On
+                      {tryOnSource === "webcam"
+                        ? "Live Device Try-On"
+                        : "Photo Try-On"}
                     </h3>
                     <p className="text-[10px] sm:text-xs text-slate-500">
-                      Full-screen webcam preview with mobile scrolling support
+                      {tryOnSource === "webcam"
+                        ? "Full-screen webcam preview with mobile scrolling support"
+                        : "Upload a photo of yourself to preview the design"}
                     </p>
                   </div>
                   <button
@@ -12581,6 +12604,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
                         key={`${renderedWorkspaceImg.length}-${renderedWorkspaceImg.slice(-64)}`}
                         selectedImageSrc={renderedWorkspaceImg}
                         mode={tryOnMode}
+                        inputSource={tryOnSource}
+                        partMaskSrc={garmentPartMask}
                         onClose={() => {
                           setShowTryOn(false);
                           setRenderedWorkspaceImg(null);
