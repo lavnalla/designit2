@@ -1,5 +1,5 @@
 // NOTE: Make sure to check the import path relative to where this file is
-import { saveSubmission, getSubmissions } from '../../../src/lib/storage';
+import { saveSubmission, getSubmissions, StorageUnavailableError } from '../../../src/lib/storage';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -42,6 +42,10 @@ export async function POST(request: Request) {
     console.log('[API] Saved successfully:', newSubmission.id);
     return Response.json(newSubmission);
   } catch (error) {
+    if (error instanceof StorageUnavailableError) {
+      // No database is connected: say so instead of a generic server error
+      return Response.json({ error: error.message }, { status: 503 });
+    }
     console.error('Submission error:', error);
     return Response.json({ error: 'Internal Server Error' }, { status: 500 });
   }
