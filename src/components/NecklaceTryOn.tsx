@@ -490,8 +490,8 @@ function drawGarmentPieces(
 // lines found on the silhouette: horizontally the shoulder tips; vertically the top of the shoulder a
 // quarter of the way out from the neck. Shoulders slope down to the tips, so putting the garment's (nearly
 // flat) shoulder line at the tips' height left a gap above it; at this height the garment's shoulders
-// rest on the model's and cover the slope out to the tips. Without shoulder lines, the pose's shoulder
-// joints, raised by a tenth of the shoulder width (the joints sit below the top of the shoulder).
+// rest on the model's and cover the slope out to the tips. Without shoulder lines (always, on the webcam),
+// the pose's shoulder joints, moved out toward the tips and up to the top of the shoulder.
 function modelShoulderPoints(
   body: BodyAnalysis | null,
   lm: PoseLandmark[] | null | undefined,
@@ -507,16 +507,23 @@ function modelShoulderPoints(
     return { left: point(leftLine), right: point(rightLine), source: "shoulder lines" };
   }
   if (lm?.[11] && lm?.[12]) {
-    const lift = Math.hypot((lm[12].x - lm[11].x) * w, (lm[12].y - lm[11].y) * h) * 0.1;
-    const a = { x: lm[11].x * w, y: lm[11].y * h - lift };
-    const b = { x: lm[12].x * w, y: lm[12].y * h - lift };
+    const ax = lm[11].x * w;
+    const ay = lm[11].y * h;
+    const bx = lm[12].x * w;
+    const by = lm[12].y * h;
+    // The joints sit inside the body: push each out toward its shoulder tip (15% wider in total) and up
+    // to the top of the shoulder (a tenth of the shoulder width)
+    const outward = 0.075;
+    const lift = Math.hypot(bx - ax, by - ay) * 0.1;
+    const a = { x: ax + (ax - bx) * outward, y: ay + (ay - by) * outward - lift };
+    const b = { x: bx + (bx - ax) * outward, y: by + (by - ay) * outward - lift };
     const source = "pose shoulder joints";
     return a.x <= b.x ? { left: a, right: b, source } : { left: b, right: a, source };
   }
   return null;
 }
 
-// Photo mode: places the whole garment in one piece, upright, so its shoulders span the model's shoulder
+// Photo and webcam: places the whole garment in one piece, upright, so its shoulders span the model's shoulder
 // points and are centred on them — one move and scale, nothing stretched or turned. The garment's image-left shoulder goes on
 // the model's image-left shoulder. Returns false when the garment has no shoulder points (data from older
 // code that survived a hot reload).
@@ -1626,10 +1633,11 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
 
                 canvasCtx.drawImage(croppedImageElement, drawX, drawY, drawW, drawH);
               }
-            } else if (isPhoto && garmentPiecesRef.current && piecesCtx) {
-              // Photo mode: the whole garment drawn straight on top of the photo in one piece — not trimmed
-              // to the model's outline and without the webcam's face/hand cut-outs, so its full shape
-              // (sleeves included) stays visible. Its shoulders go on the model's shoulders.
+            } else if (garmentPiecesRef.current && piecesCtx) {
+              // Photo and webcam: the whole garment drawn straight on top in one piece — not trimmed to the
+              // person's outline and without face/hand cut-outs, so its full shape (sleeves included) stays
+              // visible. Its shoulders go on the person's shoulders: from the body analysis on a photo, from
+              // the pose on the webcam (the analysis only rebuilds every 250ms, which would lag live video).
               const garmentPieces = garmentPiecesRef.current;
               piecesCtx.clearRect(0, 0, w, h);
               const modelShoulders = modelShoulderPoints(bodyAnalysis, lm, w, h);
