@@ -379,6 +379,32 @@ export default function GarmentPartPainter({
               touchAction: "none",
             }}
           />
+          {isAutoDetecting && (
+            // Hourglass over the picture while auto-detect runs; also blocks painting until it's done
+            <div
+              role="status"
+              aria-live="polite"
+              style={{
+                position: "absolute",
+                inset: 0,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "8px",
+                background: "rgba(15, 23, 42, 0.45)",
+                color: "#f8fafc",
+                fontSize: "13px",
+                fontWeight: 700,
+                cursor: "wait",
+              }}
+            >
+              <span className="animate-spin" style={{ display: "inline-block", fontSize: "32px" }}>
+                ⏳
+              </span>
+              Detecting garment parts…
+            </div>
+          )}
         </div>
 
         <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", flexWrap: "wrap" }}>
@@ -449,9 +475,12 @@ export default function GarmentPartPainter({
           </button>
           <button
             onClick={() => {
+              if (isAutoDetecting) return;
               if (!hasSaved) handleSave();
               onContinue();
             }}
+            disabled={isAutoDetecting}
+            title={isAutoDetecting ? "Wait for auto-detect to finish" : undefined}
             style={{
               padding: "8px 14px",
               borderRadius: "8px",
@@ -461,7 +490,8 @@ export default function GarmentPartPainter({
               fontSize: "11px",
               fontWeight: 800,
               textTransform: "uppercase",
-              cursor: "pointer",
+              cursor: isAutoDetecting ? "not-allowed" : "pointer",
+              opacity: isAutoDetecting ? 0.5 : 1,
             }}
           >
             {continueLabel}
