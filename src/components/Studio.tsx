@@ -18,9 +18,11 @@ import BodySilhouetteView from "./BodySilhouetteView";
 
 const MOBILE_BREAKPOINT = 1024;
 
-const toolbarControlClass = `relative flex h-9 min-w-0 items-center justify-center overflow-hidden rounded-2xl border px-2 text-xs font-medium tracking-[0.01em] transition-all whitespace-nowrap sm:px-3`;
-const toolbarSelectClass = `h-9 min-w-0 w-full rounded-2xl border border-cyan-900/25 bg-gradient-to-b from-cyan-200 via-cyan-300 to-cyan-400 px-2 text-[11px] font-medium text-cyan-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_5px_12px_rgba(8,145,178,0.16),0_2px_0_rgba(14,116,144,0.4)] transition-all focus:outline-none focus:ring-2 focus:ring-cyan-900 cursor-pointer sm:px-3`;
-const toolbarCanvasWrapperClass = `${toolbarControlClass} w-[9rem] gap-1.5 bg-gradient-to-b from-white via-slate-50 to-slate-100 border-slate-300 px-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),inset_0_-1px_0_rgba(148,163,184,0.22),0_10px_22px_rgba(15,23,42,0.1),0_3px_8px_rgba(15,23,42,0.06)] backdrop-blur-md`;
+// Header controls scale with the browser window's width (height, padding and text, each between a
+// minimum and a maximum), so the header fits small windows and isn't cramped on large ones
+const toolbarControlClass = `relative flex h-[clamp(1.75rem,2.6vw,2.25rem)] min-w-0 items-center justify-center overflow-hidden rounded-2xl border px-[clamp(0.35rem,0.8vw,0.75rem)] text-[length:clamp(0.6rem,0.85vw,0.8rem)] font-medium tracking-[0.01em] transition-all whitespace-nowrap`;
+const toolbarSelectClass = `h-[clamp(1.75rem,2.6vw,2.25rem)] min-w-0 w-full rounded-2xl border border-cyan-900/25 bg-gradient-to-b from-cyan-200 via-cyan-300 to-cyan-400 px-[clamp(0.35rem,0.8vw,0.75rem)] text-[length:clamp(0.6rem,0.8vw,0.7rem)] font-medium text-cyan-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_5px_12px_rgba(8,145,178,0.16),0_2px_0_rgba(14,116,144,0.4)] transition-all focus:outline-none focus:ring-2 focus:ring-cyan-900 cursor-pointer`;
+const toolbarCanvasWrapperClass = `${toolbarControlClass} w-[clamp(6.5rem,10vw,9rem)] gap-1.5 bg-gradient-to-b from-white via-slate-50 to-slate-100 border-slate-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),inset_0_-1px_0_rgba(148,163,184,0.22),0_10px_22px_rgba(15,23,42,0.1),0_3px_8px_rgba(15,23,42,0.06)] backdrop-blur-md`;
 const toolbarButtonBaseClass = `${toolbarControlClass} bg-white border-slate-300 text-black [text-shadow:0_1px_0_rgba(255,255,255,0.55),0_0_1px_rgba(0,0,0,0.9)] shadow-[inset_0_2px_0_rgba(255,255,255,0.82),inset_0_-1px_0_rgba(148,163,184,0.18),0_10px_22px_rgba(15,23,42,0.14),0_3px_0_rgba(71,85,105,0.24)]`;
 const toolbarButtonInteractiveClass = `${toolbarButtonBaseClass} active:scale-95 active:translate-y-[1px] active:shadow-[inset_0_1px_0_rgba(255,255,255,0.5),0_4px_10px_rgba(15,23,42,0.12),0_1px_0_rgba(51,65,85,0.18)]`;
 const leftToolButtonBaseClass = `group relative flex h-9 items-center justify-center rounded-lg border px-2 text-sm font-medium text-black transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.78),0_6px_14px_rgba(15,23,42,0.12),0_2px_0_rgba(51,65,85,0.16)] hover:-translate-y-0.5 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_10px_18px_rgba(15,23,42,0.16),0_3px_0_rgba(51,65,85,0.2)] active:translate-y-[1px] active:shadow-[inset_0_2px_4px_rgba(15,23,42,0.14),0_4px_8px_rgba(15,23,42,0.12)]`;
@@ -1505,9 +1507,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
   } | null>(null);
   const PEN_SPACING = 30;
   const ERASE_RADIUS = 15;
-  const hasImportedSource = Boolean(
-    selectedImage && !templates.includes(selectedImage),
-  );
 
   const handleDetectSourceArticles = async () => {
     const detectImage = originalSourceImage ?? selectedImage;
@@ -7495,7 +7494,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                       e.target.value as "garment" | "necklace" | "earrings",
                     )
                   }
-                  className="rounded-xl bg-white px-1.5 py-1 text-[7px] font-black uppercase text-slate-700 outline-none sm:px-2 sm:py-1.5 sm:text-[9px]"
+                  className="rounded-xl bg-white px-[clamp(0.3rem,0.6vw,0.5rem)] py-[clamp(0.2rem,0.4vw,0.375rem)] text-[length:clamp(0.5rem,0.75vw,0.6rem)] font-black uppercase text-slate-700 outline-none"
                 >
                   <option value="garment">Garment</option>
                   <option value="necklace">Necklace</option>
@@ -7511,7 +7510,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     setShowPartPainter(false);
                     setRenderedWorkspaceImg(null);
                   }}
-                  className={`${toolbarButtonInteractiveClass} inline-flex min-w-0 max-w-[7.25rem] gap-1 px-1.5 text-[8px] sm:max-w-none sm:gap-1.5 sm:px-2.5 sm:text-[10px]`}
+                  className={`${toolbarButtonInteractiveClass} inline-flex min-w-0 max-w-[7.25rem] gap-1 sm:max-w-none sm:gap-1.5`}
                   style={{
                     backgroundColor: "#fde68a",
                     borderColor: "#f59e0b",
@@ -7562,7 +7561,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     setRenderedWorkspaceImg(readyAsset);
                     setShowPartPainter(true);
                   }}
-                  className={`${toolbarButtonInteractiveClass} min-w-0 max-w-[7.25rem] cursor-pointer px-1.5 text-[8px] font-black outline-none sm:max-w-none sm:px-2.5 sm:text-[10px]`}
+                  className={`${toolbarButtonInteractiveClass} min-w-0 max-w-[7.25rem] cursor-pointer font-black outline-none sm:max-w-none`}
                   style={{
                     backgroundColor: "#fef08a",
                     borderColor: "#eab308",
@@ -8939,11 +8938,15 @@ export function Studio({ onBack }: { onBack: () => void }) {
             </div>
           </div>
           {showSourceWindow && (
-            <aside className="border-r border-slate-200 bg-white transition-all duration-300 shrink-0 flex min-h-0 h-[100dvh] max-h-[100dvh] flex-col overflow-y-auto ml-20 w-[200px] lg:w-[260px] xl:w-[320px]">
-              <div className="p-3 shrink-0 bg-white border-b border-slate-200">
-                <div className="flex justify-between items-center mb-3">
+            /* Sized to the browser window so everything fits without scrolling: it fills the space under
+               the header, its width follows the window's, its buttons, text and thumbnails scale with the
+               window's height, and the preview image takes whatever height is left. Only in very small
+               windows, when even the smallest sizes don't fit, does a scroll bar appear. */
+            <aside className="border-r border-slate-200 bg-white transition-all duration-300 shrink-0 flex min-h-0 h-full max-h-full flex-col overflow-y-auto overscroll-contain ml-20 w-[clamp(170px,22vw,320px)] max-w-[calc(100vw-6rem)]">
+              <div className="p-[clamp(0.35rem,1.2vh,0.75rem)] shrink-0 bg-white border-b border-slate-200">
+                <div className="flex justify-between items-center mb-[clamp(0.25rem,1vh,0.75rem)]">
                   <h3
-                    className={`${whisperingSignature.className} text-xl text-slate-800`}
+                    className={`${whisperingSignature.className} text-[length:clamp(1rem,2.6vh,1.25rem)] text-slate-800`}
                   >
                     Source <span className="text-yellow-500">✨</span>
                   </h3>
@@ -8959,7 +8962,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     </button>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2 mb-2">
+                <div className="grid grid-cols-2 gap-[clamp(0.25rem,0.8vh,0.5rem)] mb-[clamp(0.25rem,0.8vh,0.5rem)]">
                   <button
                     onClick={() => {
                       saveForUndo();
@@ -8989,13 +8992,13 @@ export function Studio({ onBack }: { onBack: () => void }) {
                       setShowSourceWindow(false);
                       setIsSidebarOpen(false);
                     }}
-                    className={`${whisperingSignature.className} col-span-2 bg-gradient-to-r from-yellow-500 to-amber-600 py-1.5 text-sm text-white shadow-sm transition-all hover:shadow-md`}
+                    className={`${whisperingSignature.className} col-span-2 bg-gradient-to-r from-yellow-500 to-amber-600 py-[clamp(0.1rem,0.7vh,0.375rem)] text-[length:clamp(0.7rem,1.7vh,0.875rem)] text-white shadow-sm transition-all hover:shadow-md`}
                   >
                     Add Original Image As-Is
                   </button>
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    className={`${whisperingSignature.className} bg-gradient-to-br from-slate-500 to-slate-600 px-2 py-1 text-sm text-white shadow-sm transition-all hover:shadow-md`}
+                    className={`${whisperingSignature.className} bg-gradient-to-br from-slate-500 to-slate-600 px-2 py-[clamp(0.1rem,0.6vh,0.25rem)] text-[length:clamp(0.7rem,1.7vh,0.875rem)] text-white shadow-sm transition-all hover:shadow-md`}
                   >
                     Upload
                     <input
@@ -9055,29 +9058,17 @@ export function Studio({ onBack }: { onBack: () => void }) {
                       }
                     }}
                     disabled={candidates.filter((c) => c.selected).length === 0}
-                    className={`${whisperingSignature.className} bg-gradient-to-br from-slate-800 to-slate-900 px-2 py-1 text-sm text-yellow-300 shadow-sm transition-all hover:shadow-md disabled:opacity-30`}
+                    className={`${whisperingSignature.className} bg-gradient-to-br from-slate-800 to-slate-900 px-2 py-[clamp(0.1rem,0.6vh,0.25rem)] text-[length:clamp(0.7rem,1.7vh,0.875rem)] text-yellow-300 shadow-sm transition-all hover:shadow-md disabled:opacity-30`}
                   >
                     Add to Canvas
                   </button>
                 </div>
                 {selectedImage && (
                   <div className="mb-2">
-                    {hasImportedSource && templates.length > 0 && (
-                      <div className="mb-3 rounded-2xl border border-sky-200 bg-sky-50/80 px-3 py-2 text-xs font-semibold text-sky-900">
-                        Imported image is active in Source.
-                        <button
-                          type="button"
-                          onClick={() => setSelectedImage(templates[0])}
-                          className="ml-2 rounded-full border border-sky-300 bg-white px-2 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-sky-800 transition-colors hover:bg-sky-100"
-                        >
-                          Back To Templates
-                        </button>
-                      </div>
-                    )}
                     <button
                       onClick={handleRemoveBackground}
                       disabled={isRemovingBg}
-                      className={`${whisperingSignature.className} flex w-full items-center justify-center gap-2 bg-gradient-to-r from-yellow-500 to-amber-600 py-1.5 text-sm text-white shadow-md transition-all hover:shadow-lg disabled:opacity-50`}
+                      className={`${whisperingSignature.className} flex w-full items-center justify-center gap-2 bg-gradient-to-r from-yellow-500 to-amber-600 py-[clamp(0.1rem,0.7vh,0.375rem)] text-[length:clamp(0.7rem,1.7vh,0.875rem)] text-white shadow-md transition-all hover:shadow-lg disabled:opacity-50`}
                     >
                       {isRemovingBg ? (
                         <>
@@ -9092,7 +9083,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                       type="button"
                       onClick={handleDetectSourceArticles}
                       disabled={isDetectingSourceArticles || !selectedImage}
-                      className={`${whisperingSignature.className} mt-2 flex w-full items-center justify-center gap-2 bg-gradient-to-r from-sky-500 to-cyan-600 py-1.5 text-sm text-white shadow-md transition-all hover:shadow-lg disabled:opacity-50`}
+                      className={`${whisperingSignature.className} mt-[clamp(0.25rem,0.8vh,0.5rem)] flex w-full items-center justify-center gap-2 bg-gradient-to-r from-sky-500 to-cyan-600 py-[clamp(0.1rem,0.7vh,0.375rem)] text-[length:clamp(0.7rem,1.7vh,0.875rem)] text-white shadow-md transition-all hover:shadow-lg disabled:opacity-50`}
                     >
                       {isDetectingSourceArticles
                         ? "Detecting Articles..."
@@ -9101,12 +9092,15 @@ export function Studio({ onBack }: { onBack: () => void }) {
                   </div>
                 )}
               </div>
-              <div className="flex-1 min-h-0 p-3 flex flex-col gap-3 overflow-y-auto">
-                <div className="shrink-0 bg-slate-100 rounded-3xl overflow-hidden flex items-center justify-center relative border-2 border-slate-200 shadow-inner min-h-[11rem]">
+              {/* Grows to fill the panel, but won't shrink below its content (the preview at its smallest
+                  plus the templates) — past that the panel scrolls instead of hiding the templates */}
+              <div className="flex-1 p-[clamp(0.35rem,1.2vh,0.75rem)] flex flex-col gap-[clamp(0.35rem,1.2vh,0.75rem)]">
+                {/* The preview takes whatever height is left, so the panel fits the window */}
+                <div className="flex-1 min-h-[4rem] bg-slate-100 rounded-3xl overflow-hidden flex items-center justify-center relative border-2 border-slate-200 shadow-inner">
                   <svg
                     id="trace-svg-container"
                     viewBox={`0 0 ${imgDims.width} ${imgDims.height}`}
-                    className="w-full h-full p-4"
+                    className="w-full h-full p-[clamp(0.25rem,1.5vh,1rem)]"
                   >
                     {selectedImage && (
                       <image
@@ -9154,11 +9148,11 @@ export function Studio({ onBack }: { onBack: () => void }) {
 
                 <div className="shrink-0">
                   {detectedSourceArticles.length > 0 && (
-                    <div className="mb-4">
-                      <h4 className="mb-2 text-[10px] font-black uppercase text-slate-500">
+                    <div className="mb-[clamp(0.35rem,1.2vh,1rem)]">
+                      <h4 className="mb-[clamp(0.2rem,0.8vh,0.5rem)] text-[10px] font-black uppercase text-slate-500">
                         Detected Articles
                       </h4>
-                      <div className="flex items-center gap-2 overflow-x-auto pb-2">
+                      <div className="flex flex-wrap items-center gap-2 pb-1">
                         {detectedSourceArticles.map((article) => (
                           <button
                             key={article.id}
@@ -9166,10 +9160,10 @@ export function Studio({ onBack }: { onBack: () => void }) {
                             onClick={() =>
                               setSelectedImage(article.imageDataUrl)
                             }
-                            className="flex min-w-[7rem] shrink-0 flex-col items-center gap-2 rounded-2xl border border-slate-200 bg-white p-2 text-left shadow-sm transition hover:border-sky-300 hover:shadow-md"
+                            className="flex w-[clamp(3.5rem,9vh,7rem)] shrink-0 flex-col items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1 text-left shadow-sm transition hover:border-sky-300 hover:shadow-md"
                           >
                             <div
-                              className="flex h-20 w-full items-center justify-center rounded-xl border border-white/70"
+                              className="flex h-[clamp(2rem,7vh,5rem)] w-full items-center justify-center rounded-xl border border-white/70"
                               style={{
                                 backgroundColor: toArticlePreviewColor(
                                   article.color,
@@ -9194,26 +9188,21 @@ export function Studio({ onBack }: { onBack: () => void }) {
                       </p>
                     </div>
                   )}
-                  <h4 className="text-[10px] font-black uppercase text-slate-500 mb-2">
+                  <h4 className="text-[10px] font-black uppercase text-slate-500 mb-[clamp(0.2rem,0.8vh,0.5rem)]">
                     Templates
                   </h4>
-                  <div className="flex items-center gap-2 overflow-x-auto pb-2">
+                  {/* Wrapped onto rows; the thumbnails scale with the window height */}
+                  <div className="flex flex-wrap items-center gap-[clamp(0.25rem,0.8vh,0.5rem)]">
                     {templates.map((u, i) => (
                       <img
                         key={i}
                         id={`template-${i}`}
                         src={u}
                         onClick={() => setSelectedImage(u)}
-                        className={`h-10 w-10 shrink-0 rounded-lg object-contain cursor-pointer border-2 transition-all ${selectedImage === u ? "border-yellow-500 scale-105 bg-white" : "border-transparent opacity-70 hover:opacity-100 bg-white/50"}`}
+                        className={`h-[clamp(1.5rem,4.5vh,2.5rem)] w-[clamp(1.5rem,4.5vh,2.5rem)] shrink-0 rounded-lg object-contain cursor-pointer border-2 transition-all ${selectedImage === u ? "border-yellow-500 scale-105 bg-white" : "border-transparent opacity-70 hover:opacity-100 bg-white/50"}`}
                       />
                     ))}
                   </div>
-                  {hasImportedSource && (
-                    <p className="mt-2 text-[11px] text-slate-500">
-                      Templates are still available below. Click any template
-                      thumbnail to replace the imported image.
-                    </p>
-                  )}
                 </div>
               </div>
             </aside>
