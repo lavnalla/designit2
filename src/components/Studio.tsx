@@ -6967,8 +6967,10 @@ export function Studio({ onBack }: { onBack: () => void }) {
   if (!mounted) return null;
 
   return (
+    // Pinned to the viewport: the toolbars must stay reachable on touch devices, where a
+    // stray page scroll would otherwise push them off-screen with no way to swipe back.
     <div
-      className="flex h-[100dvh] w-full flex-col overflow-hidden bg-[#fffdfa] text-slate-900 select-none"
+      className="fixed inset-0 flex h-[100dvh] w-full flex-col overflow-hidden overscroll-none bg-[#fffdfa] text-slate-900 select-none"
       onClick={() => {
         setContextMenu(null);
         setShowTopPanelMenu(false);

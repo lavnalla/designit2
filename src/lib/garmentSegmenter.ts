@@ -81,7 +81,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 
 /** Resize the image to the model's expected input size and build a
  * normalized, channel-planar [1,3,512,512] float32 tensor. */
-function buildInputTensor(img: HTMLImageElement, ort: typeof import("onnxruntime-web")) {
+function buildInputTensor(img: CanvasImageSource, ort: typeof import("onnxruntime-web")) {
   const canvas = document.createElement("canvas");
   canvas.width = INPUT_SIZE;
   canvas.height = INPUT_SIZE;
@@ -102,6 +102,48 @@ function buildInputTensor(img: HTMLImageElement, ort: typeof import("onnxruntime
   }
 
   return new ort.Tensor("float32", floatData, [1, 3, INPUT_SIZE, INPUT_SIZE]);
+}
+
+/** The model's fashion class (0-46, 0 = none) for every pixel of the canvas: the low-resolution logits are
+ * upsampled bilinearly before picking each pixel's best class, so class edges are smooth. */
+export async function parseFashionClasses(canvas: HTMLCanvasElement): Promise<Uint8Array> {
+  const [ort, session] = await Promise.all([getOrt(), getSession()]);
+  const outputs = await session.run({ pixel_values: buildInputTensor(canvas, ort) });
+  const [, numClasses, outH, outW] = outputs.logits.dims as number[];
+  const logits = outputs.logits.data as Float32Array;
+  const plane = outH * outW;
+  const { width: w, height: h } = canvas;
+  const classes = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    const sy = Math.min(outH - 1, Math.max(0, ((y + 0.5) * outH) / h - 0.5));
+    const y0 = Math.floor(sy);
+    const y1 = Math.min(outH - 1, y0 + 1);
+    const fy = sy - y0;
+    for (let x = 0; x < w; x++) {
+      const sx = Math.min(outW - 1, Math.max(0, ((x + 0.5) * outW) / w - 0.5));
+      const x0 = Math.floor(sx);
+      const x1 = Math.min(outW - 1, x0 + 1);
+      const fx = sx - x0;
+      const i00 = y0 * outW + x0;
+      const i01 = y0 * outW + x1;
+      const i10 = y1 * outW + x0;
+      const i11 = y1 * outW + x1;
+      let best = 0;
+      let bestVal = -Infinity;
+      for (let c = 0; c < numClasses; c++) {
+        const o = c * plane;
+        const v =
+          (logits[o + i00] * (1 - fx) + logits[o + i01] * fx) * (1 - fy) +
+          (logits[o + i10] * (1 - fx) + logits[o + i11] * fx) * fy;
+        if (v > bestVal) {
+          bestVal = v;
+          best = c;
+        }
+      }
+      classes[y * w + x] = best;
+    }
+  }
+  return classes;
 }
 
 export async function detectGarmentParts(imageDataUrl: string): Promise<GarmentSegmentResult> {
