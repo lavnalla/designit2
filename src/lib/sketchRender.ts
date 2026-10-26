@@ -4,16 +4,14 @@
 //    edges are evened out about its centre line and smoothed down its height (the hand-drawn wobble and the
 //    polygon's corners go). A garment whose rows aren't one piece across (sleeves apart from the body) is
 //    smoothed and only mirrored if the sketch is nearly symmetric already.
-// 3. Its fabric: the copied fabric grown to fill it (fabricSynthesis.ts), or the sketch's own colours (each
-//    part the colour it's painted, plain cloth if it has none), smooth, with a seam where two colours meet.
+// 3. Its fabric: the sketch's own, kept as it is (its colours, and any fabric's print on it; plain cloth for a
+//    line sketch), with a seam where two clearly different parts meet (a bodice and its skirt).
 // 4. Shading, so it reads as cloth over a body: rounded across (darker toward the sides), lit from the left.
 // 5. A dress (narrowing to a waist, flaring below it): a waist seam, bodice seams, soft folds fanning out
 //    from the waist down the skirt, and a gently waved hem. The neckline keeps the sketch's own (V, sweetheart),
 //    evened out.
 // 6. Lines drawn inside the garment: one joined to the outline is a seam (drawn fine), one on its own a fold.
 // 7. A soft shadow beneath. Everything outside the garment comes out see-through.
-
-import { synthesizeFabric } from "./fabricSynthesis";
 
 type RGBA = { data: Uint8ClampedArray; width: number; height: number };
 
@@ -41,8 +39,15 @@ const FOLD_DEPTH = 0.2;
 // garment's height), and smoothed across this fraction of its width
 const NECK_DIP = 0.012;
 const NECK_SMOOTHING = 0.03;
-// A painted area (not a stroke drawn over one): one colour across at least this many pixels each way
-const AREA_REACH = 3;
+// Two parts of the sketch meet (a seam) where their colours, averaged over this fraction of its size, differ
+// by at least PART_CONTRAST (0-255, across the three colours)
+const PART_REACH = 0.025;
+const PART_CONTRAST = 75;
+// ... and only a seam running on for at least this fraction of the sketch's size (a print's own changes are
+// short)
+const PART_LENGTH = 0.2;
+// An outline drawn round a painted sketch: up to this fraction of its size wide (left out of its colours)
+const OUTLINE_WIDTH = 0.012;
 // The hem's waves: this high (fraction of the garment's height)
 const HEM_WAVE = 0.008;
 // Seams: how dark (their shade over the fabric)
@@ -60,8 +65,7 @@ const PLAIN_CLOTH: [number, number, number] = [232, 226, 214];
 
 export type SketchRenderResult = RGBA | { error: string };
 
-// fabric: the copied fabric, if any; fabricScale: how many sketch pixels each fabric pixel spans
-export function renderSketch(sketch: RGBA, fabric: RGBA | null, fabricScale = 1): SketchRenderResult {
+export function renderSketch(sketch: RGBA): SketchRenderResult {
   const { width: w, height: h, data } = sketch;
   const n = w * h;
   const size = Math.min(w, h);
@@ -112,49 +116,30 @@ export function renderSketch(sketch: RGBA, fabric: RGBA | null, fabricScale = 1)
   }
   garment = keepLargeParts(garment, w, h, 0.02);
 
-  // The sketch's own colours: its painted areas (one colour across a few pixels each way, so strokes drawn over
-  // them aren't areas), each area's colour carried out to the garment pixels nearest it
-  const keyOf = (q: number) => ((data[q * 4] >> 4) << 8) | ((data[q * 4 + 1] >> 4) << 4) | (data[q * 4 + 2] >> 4);
-  const painted = new Uint8Array(n);
-  let paintedCount = 0;
+  // The sketch's own look, kept: each garment pixel takes the sketch's colour there (any fabric's print as it
+  // is). Where the cleaned-up silhouette below reaches past what's painted, the painting is reflected out
+  // across its edge (so a print carries on, not smeared): the pixel as far inside the nearest painted pixel as
+  // this one is outside it. A line sketch is plain cloth.
+  const source = new Uint8Array(n);
+  let sourceCount = 0;
   if (filled) {
-    for (let y = AREA_REACH; y < h - AREA_REACH; y += 1) {
-      for (let x = AREA_REACH; x < w - AREA_REACH; x += 1) {
-        const q = y * w + x;
-        if (!ink[q] || !garment[q]) continue;
-        const key = keyOf(q);
-        let same = true;
-        for (const [dx, dy] of [
-          [AREA_REACH, 0],
-          [-AREA_REACH, 0],
-          [0, AREA_REACH],
-          [0, -AREA_REACH],
-          [AREA_REACH, AREA_REACH],
-          [-AREA_REACH, -AREA_REACH],
-          [AREA_REACH, -AREA_REACH],
-          [-AREA_REACH, AREA_REACH],
-        ]) {
-          if (keyOf(q + dy * w + dx) !== key) {
-            same = false;
-            break;
-          }
-        }
-        if (same) {
-          painted[q] = 1;
-          paintedCount += 1;
-        }
+    // (Not the edge: it's blended with the paper, or drawn over with the sketch's outline)
+    const inner = erode(garment, w, h, Math.max(2, Math.round(size * OUTLINE_WIDTH)));
+    for (let q = 0; q < n; q += 1) {
+      if (inner[q] && ink[q]) {
+        source[q] = 1;
+        sourceCount += 1;
       }
     }
   }
-  const areaColour = new Float32Array(n * 3);
-  if (paintedCount > n * 0.002) {
-    // Carried out from the painted areas to every pixel, nearest first (a breadth-first spread)
-    const reached = new Uint8Array(n);
+  const sketchColour = new Float32Array(n * 3);
+  if (sourceCount > n * 0.002) {
+    // The nearest painted pixel to each pixel (a breadth-first spread from the painting)
+    const nearest = new Int32Array(n).fill(-1);
     let frontier: number[] = [];
     for (let q = 0; q < n; q += 1) {
-      if (!painted[q]) continue;
-      reached[q] = 1;
-      for (let c = 0; c < 3; c += 1) areaColour[q * 3 + c] = data[q * 4 + c];
+      if (!source[q]) continue;
+      nearest[q] = q;
       frontier.push(q);
     }
     while (frontier.length) {
@@ -162,55 +147,87 @@ export function renderSketch(sketch: RGBA, fabric: RGBA | null, fabricScale = 1)
       for (const q of frontier) {
         const x = q % w;
         for (const r of [x > 0 ? q - 1 : -1, x < w - 1 ? q + 1 : -1, q - w, q + w]) {
-          if (r < 0 || r >= n || reached[r]) continue;
-          reached[r] = 1;
-          for (let c = 0; c < 3; c += 1) areaColour[r * 3 + c] = areaColour[q * 3 + c];
+          if (r < 0 || r >= n || nearest[r] >= 0) continue;
+          nearest[r] = nearest[q];
           next.push(r);
         }
       }
       frontier = next;
     }
+    for (let q = 0; q < n; q += 1) {
+      let from = nearest[q];
+      if (from !== q) {
+        // (Reflected across the edge, if that lands on the painting)
+        const qx = q % w;
+        const fx = from % w;
+        const rx = 2 * fx - qx;
+        const ry = 2 * ((from - fx) / w) - (q - qx) / w;
+        if (rx >= 0 && ry >= 0 && rx < w && ry < h && source[ry * w + rx]) from = ry * w + rx;
+      }
+      for (let c = 0; c < 3; c += 1) sketchColour[q * 3 + c] = data[from * 4 + c];
+    }
   } else {
-    for (let q = 0; q < n; q += 1) for (let c = 0; c < 3; c += 1) areaColour[q * 3 + c] = PLAIN_CLOTH[c];
+    for (let q = 0; q < n; q += 1) for (let c = 0; c < 3; c += 1) sketchColour[q * 3 + c] = PLAIN_CLOTH[c];
   }
-  // Lines drawn on the garment: for a filled sketch, strokes far from the colour of the area they're on; for a
-  // line sketch, the ink
+  // Lines drawn on the garment (a line sketch's ink): seams and folds, below
   const drawn = new Uint8Array(n);
-  for (let q = 0; q < n; q += 1) {
-    if (!garment[q] || !ink[q]) continue;
-    if (!filled) drawn[q] = 1;
-    else if (!painted[q]) {
-      const d = Math.hypot(
-        data[q * 4] - areaColour[q * 3],
-        data[q * 4 + 1] - areaColour[q * 3 + 1],
-        data[q * 4 + 2] - areaColour[q * 3 + 2],
-      );
-      if (d > 70) drawn[q] = 1;
+  if (!filled) for (let q = 0; q < n; q += 1) if (garment[q] && ink[q]) drawn[q] = 1;
+  // Where clearly different parts meet: their colours averaged over an area wider than a print's motifs (so a
+  // print doesn't count) change sharply, at the strongest point of that change across it
+  const partR = Math.max(2, Math.round(size * PART_REACH));
+  const region = [0, 1, 2].map((c) => {
+    const channel = new Float32Array(n);
+    for (let q = 0; q < n; q += 1) channel[q] = sketchColour[q * 3 + c];
+    return boxBlur(channel, w, h, partR);
+  });
+  const step = (a: number, b: number) =>
+    Math.hypot(region[0][a] - region[0][b], region[1][a] - region[1][b], region[2][a] - region[2][b]);
+  const across = new Float32Array(n);
+  const down = new Float32Array(n);
+  for (let y = 1; y < h - 1; y += 1) {
+    for (let x = 1; x < w - 1; x += 1) {
+      const q = y * w + x;
+      across[q] = step(q - 1, q + 1);
+      down[q] = step(q - w, q + w);
     }
   }
-  const sameColour = (a: number, b: number) =>
-    Math.abs(areaColour[a * 3] - areaColour[b * 3]) +
-      Math.abs(areaColour[a * 3 + 1] - areaColour[b * 3 + 1]) +
-      Math.abs(areaColour[a * 3 + 2] - areaColour[b * 3 + 2]) <
-    24;
-  // (A stroke where two painted areas meet outlines them: the seam between their colours draws it)
-  const boundaryReach = AREA_REACH + 2;
-  for (let q = 0; q < n; q += 1) {
-    if (!drawn[q]) continue;
-    const x = q % w;
-    const y = (q - x) / w;
-    for (const [dx, dy] of [
-      [boundaryReach, 0],
-      [-boundaryReach, 0],
-      [0, boundaryReach],
-      [0, -boundaryReach],
-    ]) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (nx >= 0 && ny >= 0 && nx < w && ny < h && !sameColour(q, ny * w + nx)) {
-        drawn[q] = 0;
-        break;
+  // (A sharp change spreads over the averaging's width, two pixels of it per step)
+  const partThreshold = (2 * PART_CONTRAST) / (2 * partR + 1);
+  const partEdge = new Uint8Array(n);
+  for (let y = 1; y < h - 1; y += 1) {
+    for (let x = 1; x < w - 1; x += 1) {
+      const q = y * w + x;
+      if (
+        (down[q] > partThreshold && down[q] >= down[q - w] && down[q] >= down[q + w]) ||
+        (across[q] > partThreshold && across[q] >= across[q - 1] && across[q] >= across[q + 1])
+      ) {
+        partEdge[q] = 1;
       }
+    }
+  }
+  // (Only long seams)
+  {
+    const minLength = size * PART_LENGTH;
+    const seen = new Uint8Array(n);
+    for (let start = 0; start < n; start += 1) {
+      if (!partEdge[start] || seen[start]) continue;
+      const members: number[] = [];
+      const stack = [start];
+      seen[start] = 1;
+      while (stack.length) {
+        const q = stack.pop()!;
+        members.push(q);
+        const x = q % w;
+        for (let dy = -1; dy <= 1; dy += 1) {
+          for (let dx = -1; dx <= 1; dx += 1) {
+            const r = q + dy * w + dx;
+            if (x + dx < 0 || x + dx >= w || r < 0 || r >= n || !partEdge[r] || seen[r]) continue;
+            seen[r] = 1;
+            stack.push(r);
+          }
+        }
+      }
+      if (members.length < minLength) for (const q of members) partEdge[q] = 0;
     }
   }
 
@@ -250,16 +267,15 @@ export function renderSketch(sketch: RGBA, fabric: RGBA | null, fabricScale = 1)
   // --- 5 (first, as it shapes the hem). A dress: its waist and how its skirt flares ---
   let dress: { waist: number; apexX: number; apexY: number; spread: number; folds: number } | null = null;
   if (oneSpan) {
-    // The waist: where the sketch's colour changes down the middle (a bodice painted apart from its skirt),
-    // else where it's narrowest
+    // The waist: where two parts meet down the middle (a bodice painted apart from its skirt), else where
+    // it's narrowest
     let narrowest = -1;
     for (let y = Math.round(top + gh * 0.15); y <= top + gh * 0.6; y += 1) {
       if (halfWidth[y] > 0 && (narrowest < 0 || halfWidth[y] < halfWidth[narrowest])) narrowest = y;
     }
     let waist = -1;
     for (let y = Math.round(top + gh * 0.15); y <= top + gh * 0.65 && waist < 0; y += 1) {
-      const q = y * w + Math.round(axis[y]);
-      if (!sameColour(q, q + w)) waist = y;
+      if (partEdge[y * w + Math.round(axis[y])]) waist = y;
     }
     if (waist < 0) waist = narrowest;
     let hemWidth = 0;
@@ -329,31 +345,14 @@ export function renderSketch(sketch: RGBA, fabric: RGBA | null, fabricScale = 1)
   // Its edge anti-aliased
   const soft = boxBlur(Float32Array.from(garment), w, h, 1);
 
-  // --- 3. The fabric ---
+  // --- 3. The fabric: the sketch's own, with a faint grain so plain colour isn't flat paint ---
   const fill = new Float32Array(n * 3);
-  if (fabric) {
-    const fw = Math.max(1, Math.round(gw / fabricScale));
-    const fh = Math.max(1, Math.round(gh / fabricScale));
-    const grown = synthesizeFabric(fabric, fw, fh);
-    for (let y = top; y <= bottom; y += 1) {
-      const fy = Math.min(fh - 1, Math.floor((y - top) / fabricScale));
-      for (let x = minX; x <= maxX; x += 1) {
-        const p = y * w + x;
-        if (!soft[p]) continue;
-        const fx = Math.min(fw - 1, Math.floor((x - minX) / fabricScale));
-        const q = (fy * fw + fx) * 4;
-        for (let c = 0; c < 3; c += 1) fill[p * 3 + c] = grown.data[q + c];
-      }
-    }
-  } else {
-    for (let p = 0; p < n; p += 1) {
-      if (!soft[p]) continue;
-      const x = p % w;
-      const y = (p - x) / w;
-      // A faint grain, so it isn't flat paint
-      const grain = 1 + 0.008 * noise(x, y);
-      for (let c = 0; c < 3; c += 1) fill[p * 3 + c] = areaColour[p * 3 + c] * grain;
-    }
+  for (let p = 0; p < n; p += 1) {
+    if (!soft[p]) continue;
+    const x = p % w;
+    const y = (p - x) / w;
+    const grain = 1 + 0.008 * noise(x, y);
+    for (let c = 0; c < 3; c += 1) fill[p * 3 + c] = sketchColour[p * 3 + c] * grain;
   }
 
   // --- 4. Shading: rounded across, lit from the left; a touch lighter at the top ---
@@ -404,18 +403,13 @@ export function renderSketch(sketch: RGBA, fabric: RGBA | null, fabricScale = 1)
     }
   }
 
-  // Where two of the sketch's colours meet: a seam
-  if (!fabric) {
-    for (let p = 0; p < n; p += 1) {
-      if (!soft[p]) continue;
-      const x = p % w;
-      const edge = (x < w - 1 && !sameColour(p, p + 1)) || (p + w < n && !sameColour(p, p + w));
-      if (edge) {
-        shade[p] *= SEAM_SHADE;
-        if (x < w - 1) shade[p + 1] *= (1 + SEAM_SHADE) / 2;
-        if (p + w < n) shade[p + w] *= (1 + SEAM_SHADE) / 2;
-      }
-    }
+  // Where two parts meet: a seam
+  for (let p = 0; p < n; p += 1) {
+    if (!soft[p] || !partEdge[p]) continue;
+    const x = p % w;
+    shade[p] *= SEAM_SHADE;
+    if (x < w - 1) shade[p + 1] *= (1 + SEAM_SHADE) / 2;
+    if (p + w < n) shade[p + w] *= (1 + SEAM_SHADE) / 2;
   }
 
   // --- 6. Lines drawn on the garment: seams (joined to its edge) and folds (on their own) ---

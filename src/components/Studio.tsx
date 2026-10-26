@@ -347,6 +347,11 @@ export function Studio({ onBack }: { onBack: () => void }) {
   // ...other state hooks...
   // Place after workspaceShapes is defined:
   const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
+  // The item last clicked on the workspace, an image or a drawn stroke (null after clicking empty canvas)
+  const [lastClickedItem, setLastClickedItem] = useState<{
+    type: "shape" | "stroke";
+    id: string;
+  } | null>(null);
   const selectedShape = selectedShapeId
     ? workspaceShapes?.find((s) => s.id === selectedShapeId)
     : null;
@@ -4442,10 +4447,12 @@ export function Studio({ onBack }: { onBack: () => void }) {
     setContextMenu(null);
   }, [selectionRect, saveForUndo, workspaceShapes, strokes]);
 
+  // (only: just these items, instead of everything inside the rectangle)
   const buildSelectionClone = useCallback(
     (
       svgEl: SVGSVGElement,
       rect: { x: number; y: number; width: number; height: number },
+      only?: { shapes: Set<string>; strokes: Set<string> },
     ) => {
       const clone = svgEl.cloneNode(true) as SVGSVGElement;
       const selectionBounds = {
@@ -4454,20 +4461,24 @@ export function Studio({ onBack }: { onBack: () => void }) {
         x2: rect.x + rect.width,
         y2: rect.y + rect.height,
       };
-      const selectedShapeIds = new Set(
-        workspaceShapes
-          .filter((shape) =>
-            isItemInRect(getBoundingBox(shape), selectionBounds),
-          )
-          .map((shape) => shape.id),
-      );
-      const selectedStrokeIds = new Set(
-        strokes
-          .filter((stroke) =>
-            isItemInRect(getBoundingBox(stroke), selectionBounds),
-          )
-          .map((stroke) => stroke.id),
-      );
+      const selectedShapeIds =
+        only?.shapes ??
+        new Set(
+          workspaceShapes
+            .filter((shape) =>
+              isItemInRect(getBoundingBox(shape), selectionBounds),
+            )
+            .map((shape) => shape.id),
+        );
+      const selectedStrokeIds =
+        only?.strokes ??
+        new Set(
+          strokes
+            .filter((stroke) =>
+              isItemInRect(getBoundingBox(stroke), selectionBounds),
+            )
+            .map((stroke) => stroke.id),
+        );
 
       clone
         .querySelectorAll("circle[data-control-dot]")
@@ -5265,12 +5276,23 @@ export function Studio({ onBack }: { onBack: () => void }) {
 
   // The workspace inside a rectangle as pixels (one per workspace unit), on white
   const rasterizeWorkspaceRect = useCallback(
-    async (rect: { x: number; y: number; width: number; height: number }) => {
+    async (
+      rect: { x: number; y: number; width: number; height: number },
+      only?: { shapes: Set<string>; strokes: Set<string> },
+      withoutOutlines = false,
+    ) => {
       const svgEl = workspaceRef.current;
       if (!svgEl) return null;
       const width = Math.max(1, Math.round(rect.width));
       const height = Math.max(1, Math.round(rect.height));
-      const clone = buildSelectionClone(svgEl, rect);
+      const clone = buildSelectionClone(svgEl, rect, only);
+      if (withoutOutlines) {
+        clone.querySelectorAll("[data-stroke-id]").forEach((node) => {
+          const stroke = strokes.find((st) => st.id === node.getAttribute("data-stroke-id"));
+          if (!stroke || !(stroke.fabricFillSrc || stroke.baseFill || stroke.fillColor)) return;
+          node.querySelectorAll("[stroke]").forEach((el) => el.setAttribute("stroke", "none"));
+        });
+      }
       // Images inlined, so the SVG can be drawn on a canvas
       const images = Array.from(clone.querySelectorAll("image")) as SVGImageElement[];
       for (const imgEl of images) {
@@ -5317,12 +5339,13 @@ export function Studio({ onBack }: { onBack: () => void }) {
         URL.revokeObjectURL(url);
       }
     },
-    [buildSelectionClone],
+    [buildSelectionClone, strokes],
   );
 
   // Turns a rough garment sketch (the selected area, or an image or stroke) into a finished-looking garment
-  // (sketchRender.ts), in the copied fabric if there is one, added over the sketch as a new image.
-  // "selected": the selected area, else the selected image, else everything on the workspace.
+  // (sketchRender.ts), added over the sketch as a new image.
+  // "selected": the clicked image or stroke (and anything grouped with it) alone, else the selected area,
+  // else everything on the workspace. The sketch's own colours and fabrics are kept.
   const renderSketchFromWorkspace = useCallback(
     async (target?: { type: "shape" | "stroke"; id: string } | "selected") => {
       const selectionBox = selectionRect
@@ -5334,12 +5357,40 @@ export function Studio({ onBack }: { onBack: () => void }) {
           }
         : null;
       let box: { x: number; y: number; width: number; height: number } | null = null;
+      let only: { shapes: Set<string>; strokes: Set<string> } | undefined;
+      // Just these items (and those grouped with them), over their combined bounds
+      const onlyItems = (items: Array<DistortableShape | Stroke>) => {
+        const groups = new Set(items.map((item) => item.groupId).filter(Boolean));
+        const members = [...workspaceShapes, ...strokes].filter(
+          (item) => items.includes(item) || (item.groupId && groups.has(item.groupId)),
+        );
+        only = {
+          shapes: new Set(members.filter((item) => "dots" in item).map((item) => item.id)),
+          strokes: new Set(members.filter((item) => !("dots" in item)).map((item) => item.id)),
+        };
+        const boxes = members.map((item) => getBoundingBox(item));
+        const x = Math.min(...boxes.map((b) => b.x));
+        const y = Math.min(...boxes.map((b) => b.y));
+        box = {
+          x,
+          y,
+          width: Math.max(...boxes.map((b) => b.x + b.width)) - x,
+          height: Math.max(...boxes.map((b) => b.y + b.height)) - y,
+        };
+      };
       if (target === "selected") {
-        const selected = selectedShapeId
-          ? workspaceShapes.find((shape) => shape.id === selectedShapeId)
+        const clicked = lastClickedItem
+          ? lastClickedItem.type === "shape"
+            ? workspaceShapes.find((shape) => shape.id === lastClickedItem.id)
+            : strokes.find((stroke) => stroke.id === lastClickedItem.id)
           : null;
-        if (selectionBox && selectionBox.width > 10 && selectionBox.height > 10) box = selectionBox;
-        else if (selected) box = getBoundingBox(selected);
+        const selected =
+          clicked ??
+          (selectedShapeId
+            ? workspaceShapes.find((shape) => shape.id === selectedShapeId)
+            : null);
+        if (selected) onlyItems([selected]);
+        else if (selectionBox && selectionBox.width > 10 && selectionBox.height > 10) box = selectionBox;
         else {
           const boxes = [...workspaceShapes, ...strokes]
             .filter((item) => ("dots" in item ? item.dots.length : item.points.length) > 0)
@@ -5360,7 +5411,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
           target.type === "shape"
             ? workspaceShapes.find((shape) => shape.id === target.id)
             : strokes.find((stroke) => stroke.id === target.id);
-        if (item) box = getBoundingBox(item);
+        if (item) onlyItems([item]);
       } else {
         box = selectionBox;
       }
@@ -5378,29 +5429,9 @@ export function Studio({ onBack }: { onBack: () => void }) {
         height: box.height + pad * 2,
       };
       try {
-        const sketch = await rasterizeWorkspaceRect(rect);
+        const sketch = await rasterizeWorkspaceRect(rect, only, true);
         if (!sketch) return;
-        let fabric: ImageData | null = null;
-        if (fabricClipboardSrc) {
-          const img = await new Promise<HTMLImageElement | null>((resolve) => {
-            const el = new window.Image();
-            el.crossOrigin = "anonymous";
-            el.onload = () => resolve(el);
-            el.onerror = () => resolve(null);
-            el.src = fabricClipboardSrc;
-          });
-          if (img) {
-            const canvas = document.createElement("canvas");
-            canvas.width = img.naturalWidth || img.width;
-            canvas.height = img.naturalHeight || img.height;
-            const ctx = canvas.getContext("2d", { willReadFrequently: true });
-            if (ctx && canvas.width && canvas.height) {
-              ctx.drawImage(img, 0, 0);
-              fabric = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            }
-          }
-        }
-        const result = renderSketch(sketch, fabric, fabricClipboardScale);
+        const result = renderSketch(sketch);
         if ("error" in result) {
           alert(result.error);
           return;
@@ -5450,8 +5481,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
       selectedShapeId,
       getBoundingBox,
       rasterizeWorkspaceRect,
-      fabricClipboardSrc,
-      fabricClipboardScale,
+      lastClickedItem,
       saveForUndo,
     ],
   );
@@ -10158,6 +10188,20 @@ export function Studio({ onBack }: { onBack: () => void }) {
             <svg
               id="workspace-svg"
               ref={workspaceRef}
+              onPointerDownCapture={(e) => {
+                const item = (e.target as Element).closest?.(
+                  "[data-shape-id], [data-stroke-id]",
+                );
+                const shapeId = item?.getAttribute("data-shape-id");
+                const strokeId = item?.getAttribute("data-stroke-id");
+                setLastClickedItem(
+                  shapeId
+                    ? { type: "shape", id: shapeId }
+                    : strokeId
+                      ? { type: "stroke", id: strokeId }
+                      : null,
+                );
+              }}
               className={`w-full h-full shadow-2xl rounded-[3rem] lg:rounded-[3rem] rounded-2xl ${getWorkspaceBgClasses()}`}
               onContextMenu={(e) => {
                 e.preventDefault();
