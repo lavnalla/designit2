@@ -97,6 +97,11 @@ const SLEEVE_TOWARD_ARM = 0.5;
 // in steps of about 3 degrees
 const SLEEVE_MAX_LIFT = 0.8;
 const SLEEVE_LIFT_STEP = 0.05;
+// Painted skin is this much darker at the edges of a limb or the torso than along its middle (so it looks
+// round, not flat)
+const SKIN_EDGE_SHADE = 0.22;
+// The most grain painted skin gets (the spread of its brightness), however grainy the photo's real skin is
+const SKIN_GRAIN_MAX = 0.06;
 // A body (or garment) tilted less than this (radians, about 8 degrees) is treated as upright
 const UPRIGHT_TOLERANCE = 0.14;
 
@@ -610,7 +615,12 @@ function bodyZones(body: Body, w: number, h: number, human?: Uint8Array) {
   const sw = body.shoulderWidth;
   // 1 = image-left arm, 2 = image-right arm, 3 = torso, 4 = legs (0 = not body)
   const area = new Uint8Array(n);
-  const capsules: Array<{ a: Vec; b: Vec; r: number; arm: boolean; area: number }> = [];
+  // (skinR: how thick the limb is painted where its clothes come off, tighter than r)
+  const capsules: Array<{ a: Vec; b: Vec; r: number; skinR: number; arm: boolean; area: number }> = [];
+  // The arms as thick as they really are (for painting them bare): the upper arm a little thicker than the
+  // forearm
+  const armSkin = new Uint8Array(n);
+  const skinRoundness = new Float32Array(n).fill(1);
   for (const arm of [body.arms.left, body.arms.right]) {
     const armArea = arm === body.arms.left ? 1 : 2;
     if (arm.elbow) {
@@ -619,16 +629,18 @@ function bodyZones(body: Body, w: number, h: number, human?: Uint8Array) {
       // this, which only trims sleeves reaching far beyond any arm (a pallu hanging from the shoulder)
       const forearm = human ? forearmHalfWidth(arm, human, w, h, sw) : null;
       const upper = Math.min(sw * 0.2, Math.max(sw * 0.13, (forearm ?? sw * 0.1) * 1.6));
-      capsules.push({ a: arm.shoulder, b: arm.elbow, r: upper, arm: true, area: armArea });
-      if (arm.wrist) capsules.push({ a: arm.elbow, b: arm.wrist, r: (forearm ?? sw * 0.1) * 1.25, arm: true, area: armArea });
+      const forearmSkin = forearm ?? sw * 0.09;
+      const upperSkin = Math.min(upper, Math.max(sw * 0.09, forearmSkin * 1.3));
+      capsules.push({ a: arm.shoulder, b: arm.elbow, r: upper, skinR: upperSkin, arm: true, area: armArea });
+      if (arm.wrist) capsules.push({ a: arm.elbow, b: arm.wrist, r: (forearm ?? sw * 0.1) * 1.25, skinR: forearmSkin * 1.05, arm: true, area: armArea });
     }
   }
   if (body.legs && body.hips) {
     const hipWidth = len(sub(body.hips.right, body.hips.left));
     for (const leg of [body.legs.left, body.legs.right]) {
       if (leg.knee) {
-        capsules.push({ a: leg.hip, b: leg.knee, r: hipWidth * 0.6, arm: false, area: 4 });
-        if (leg.ankle) capsules.push({ a: leg.knee, b: leg.ankle, r: hipWidth * 0.38, arm: false, area: 4 });
+        capsules.push({ a: leg.hip, b: leg.knee, r: hipWidth * 0.6, skinR: hipWidth * 0.6, arm: false, area: 4 });
+        if (leg.ankle) capsules.push({ a: leg.knee, b: leg.ankle, r: hipWidth * 0.38, skinR: hipWidth * 0.38, arm: false, area: 4 });
       }
     }
   }
@@ -669,6 +681,7 @@ function bodyZones(body: Body, w: number, h: number, human?: Uint8Array) {
         area[q] = 3;
         round = curve(Math.min(torsoHalf, segmentDistance(p, torsoAxisTop, torsoAxisBottom)), torsoHalf * 1.15);
       }
+      let armRound = -1;
       for (const c of capsules) {
         const d = segmentDistance(p, c.a, c.b);
         if (d <= c.r) {
@@ -678,11 +691,17 @@ function bodyZones(body: Body, w: number, h: number, human?: Uint8Array) {
           if (c.arm || !area[q]) area[q] = c.area;
           round = Math.max(round, curve(d, c.r));
         }
+        if (c.arm && d <= c.skinR) {
+          armSkin[q] = 1;
+          armRound = Math.max(armRound, curve(d, c.skinR));
+        }
       }
       if (inBody[q]) roundness[q] = round;
+      // (Painted bare, an arm in front of the torso is shaded as its own, so its edges show against the body)
+      skinRoundness[q] = armRound >= 0 ? armRound : roundness[q];
     }
   }
-  return { inBody, inArm, inTorso, roundness, area };
+  return { inBody, inArm, inTorso, armSkin, roundness, skinRoundness, area };
 }
 
 // --- parts ---
@@ -1292,20 +1311,19 @@ function ankleLevel(body: Body, human: Uint8Array, w: number, h: number): number
   return lowest - body.shoulderWidth * 0.1;
 }
 
-// Paints skin where clothes came off (toSkin), blended into the person's real skin so no seam shows:
-// 1. An estimate: the colour of the person's visible body skin, a touch darker toward the edges of a limb or
-//    the torso.
-// 2. The light: how much brighter or darker the real skin is than that estimate is measured on the visible
-//    skin (well inside it: pixels at its edge are mixed with clothes or background) and spread smoothly over
-//    the painted area (the way seamless cloning works), so at its edges the painted skin matches the
-//    brightness of the skin beside it, and shadows carry across. Only brightness carries: the colour stays
-//    the skin's own.
-// 3. A faint grain, so it isn't flat paint.
+// Paints skin where clothes came off (toSkin), continuing the person's real skin so no seam shows:
+// 1. The colour: the real skin all around the painted area (well inside it: pixels at its edge are mixed with
+//    clothes or background), smoothed of its fine texture, is spread over the painted area (the way seamless
+//    cloning works), so at each edge the painted skin is the colour and light of the skin beside it (the neck
+//    above, the arms at the sides, the hands below) and blends between them across it.
+// 2. Shading: darker toward the edges of a limb or the torso, so it looks round (the real skin is measured
+//    with the same shading taken out, so the edges still match).
+// 3. The real skin's own grain (as strong as its fine variation in this photo), so it isn't flat paint.
 function paintSkin(
   out: Float32Array,
   img: LinearImage,
   human: Uint8Array,
-  zones: { inBody: Uint8Array; area: Uint8Array; roundness: Float32Array },
+  zones: { skinRoundness: Float32Array },
   toSkin: Uint8Array,
 ) {
   const { width: w, height: h } = img;
@@ -1314,56 +1332,69 @@ function paintSkin(
   for (let p = 0; p < n; p += 1) if (toSkin[p]) any = true;
   if (!any) return;
 
-  // 1. The estimate: the person's skin colour, a touch darker toward the edges of a limb or the torso
-  const colour = skinColour(img, human);
-  // (Body skin only: a face is usually lit differently)
-  const isRealSkin = (p: number) => !toSkin[p] && human[p] === HUMAN_BODY_SKIN;
-  const estimate = (p: number, c: number) => colour[c] * (0.92 + 0.08 * zones.roundness[p]);
+  const shadeAt = (p: number) => 1 - SKIN_EDGE_SHADE + SKIN_EDGE_SHADE * zones.skinRoundness[p];
+  const brightness = (r: number, g: number, b: number) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
 
-  // 2. Real skin brightness / estimated brightness, from skin at least EDGE pixels inside the skin, spread
-  // over the painted area
+  // 1. The real skin to spread from: body skin at least EDGE pixels inside the skin, leaving out pixels far
+  // less or more colourful than the skin typically is (not really skin: white fabric, a grey wall)
   const EDGE = 3;
   const realSkin = new Float32Array(n);
-  for (let p = 0; p < n; p += 1) if (isRealSkin(p)) realSkin[p] = 1;
+  for (let p = 0; p < n; p += 1) if (!toSkin[p] && human[p] === HUMAN_BODY_SKIN) realSkin[p] = 1;
   const nearNonSkin = boxSum(realSkin, w, h, EDGE);
   const full = (2 * EDGE + 1) * (2 * EDGE + 1);
-  const brightness = (r: number, g: number, b: number) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  // (Leaving out pixels far less or more colourful than the skin typically is: not really skin)
   const chromaOf = (p: number) => Math.hypot(img.lab[p * 3 + 1], img.lab[p * 3 + 2]);
   const skinChromas: number[] = [];
   for (let p = 0; p < n; p += 1) if (realSkin[p] && nearNonSkin[p] >= full) skinChromas.push(chromaOf(p));
   skinChromas.sort((a, b) => a - b);
   const typicalChroma = skinChromas[Math.floor(skinChromas.length / 2)] ?? 0;
-  const ratio = new Float32Array(n * 3);
   const known = new Float32Array(n);
   for (let p = 0; p < n; p += 1) {
     if (!realSkin[p] || nearNonSkin[p] < full) continue;
     const chroma = chromaOf(p);
     if (typicalChroma > 0 && (chroma < typicalChroma * 0.6 || chroma > typicalChroma * 1.6)) continue;
     known[p] = 1;
-    const real = brightness(img.rgb[p * 3], img.rgb[p * 3 + 1], img.rgb[p * 3 + 2]);
-    const est = brightness(estimate(p, 0), estimate(p, 1), estimate(p, 2));
-    // (Kept close to 1: the painted skin stays the colour of the arms, only a little lighter or darker)
-    ratio[p * 3] = Math.min(1.15, Math.max(0.85, real / Math.max(1e-4, est)));
   }
-  // The spread is smoothed a little first, so the skin's own fine texture at the boundary doesn't streak in
-  const ratioValues = new Float32Array(n);
-  for (let p = 0; p < n; p += 1) ratioValues[p] = ratio[p * 3];
-  const smoothed = weightedBoxBlur(ratioValues, known, w, h, 3).mean;
-  for (let p = 0; p < n; p += 1) {
-    if (!known[p]) continue;
-    ratio[p * 3] = ratio[p * 3 + 1] = ratio[p * 3 + 2] = smoothed[p];
+  // Its colour, shading taken out, smoothed a little first so the skin's own fine texture at the boundary
+  // doesn't streak in
+  const colour = new Float32Array(n * 3);
+  for (let c = 0; c < 3; c += 1) {
+    const channel = new Float32Array(n);
+    for (let p = 0; p < n; p += 1) if (known[p]) channel[p] = img.rgb[p * 3 + c] / shadeAt(p);
+    const smoothed = weightedBoxBlur(channel, known, w, h, 3).mean;
+    for (let p = 0; p < n; p += 1) if (known[p]) colour[p * 3 + c] = smoothed[p];
   }
-  const light = pushPullFill(ratio, known, w, h);
+  const spread = pushPullFill(colour, known, w, h);
 
-  // 3. Paint, with a faint grain
+  // 3. How strong the real skin's grain is: its brightness against its own surroundings' (a few pixels
+  // across), as a spread
+  const realBrightness = new Float32Array(n);
+  for (let p = 0; p < n; p += 1) realBrightness[p] = brightness(img.rgb[p * 3], img.rgb[p * 3 + 1], img.rgb[p * 3 + 2]);
+  const around = weightedBoxBlur(realBrightness, known, w, h, 2).mean;
+  let sum = 0;
+  let sumSq = 0;
+  let count = 0;
+  for (let p = 0; p < n; p += 1) {
+    if (!known[p] || !(around[p] > 1e-4)) continue;
+    const d = realBrightness[p] / around[p] - 1;
+    sum += d;
+    sumSq += d * d;
+    count += 1;
+  }
+  const grainSpread = count
+    ? Math.min(SKIN_GRAIN_MAX, Math.sqrt(Math.max(0, sumSq / count - (sum / count) ** 2)))
+    : SKIN_GRAIN_MAX / 4;
+  // (The noise below, a mean of four values in [-1, 1], spreads by 1 / (2 * sqrt(3)))
+  const grainScale = grainSpread * 2 * Math.sqrt(3);
+
+  // Paint: the spread colour, shaded, with that grain (no real skin anywhere: a typical skin tone)
   for (let p = 0; p < n; p += 1) {
     if (!toSkin[p]) continue;
     const x = p % w;
     const y = (p - x) / w;
-    const grain = 1 + 0.012 * (hashNoise(x, y) + hashNoise(x + 1, y) + hashNoise(x, y + 1) + hashNoise(x + 1, y + 1)) / 4;
-    const l = light[p * 3] || 1;
-    for (let c = 0; c < 3; c += 1) out[p * 3 + c] = estimate(p, c) * l * grain;
+    const grain = 1 + grainScale * (hashNoise(x, y) + hashNoise(x + 1, y) + hashNoise(x, y + 1) + hashNoise(x + 1, y + 1)) / 4;
+    const shade = shadeAt(p) * grain;
+    const fallback = [0.6, 0.4, 0.3];
+    for (let c = 0; c < 3; c += 1) out[p * 3 + c] = (count ? spread[p * 3 + c] : fallback[c]) * shade;
   }
 }
 
@@ -1372,43 +1403,6 @@ function hashNoise(x: number, y: number) {
   let v = Math.imul(x, 374761393) + Math.imul(y, 668265263);
   v = Math.imul(v ^ (v >>> 13), 1274126177);
   return (((v ^ (v >>> 16)) >>> 0) / 4294967295) * 2 - 1;
-}
-
-// The person's skin colour: the median of their visible body skin (edge pixels of skin, mixed with hair,
-// clothes or background, and pixels far less or more colourful than the rest, don't count)
-function skinColour(img: LinearImage, human: Uint8Array): [number, number, number] {
-  const w = img.width;
-  const n = human.length;
-  const isSkin = (q: number) => human[q] === HUMAN_BODY_SKIN;
-  const all: number[][] = [[], [], []];
-  // Skin pixels (away from the skin's edge) and how colourful each is; pixels far less (or more) colourful
-  // than skin typically is here are something else the parser took for skin (white fabric, a grey wall)
-  const candidates: number[] = [];
-  const chroma = new Float32Array(n);
-  for (let p = 0; p < n; p += 1) {
-    const x = p % w;
-    if (!isSkin(p) || x < 2 || x >= w - 2 || p < 2 * w || p + 2 * w >= n) continue;
-    if (!isSkin(p - 2) || !isSkin(p + 2) || !isSkin(p - 2 * w) || !isSkin(p + 2 * w)) continue;
-    candidates.push(p);
-    chroma[p] = Math.hypot(img.lab[p * 3 + 1], img.lab[p * 3 + 2]);
-  }
-  const chromas = candidates.map((p) => chroma[p]).sort((a, b) => a - b);
-  const typical = chromas[Math.floor(chromas.length / 2)] ?? 0;
-  for (const p of candidates) {
-    if (typical > 0 && (chroma[p] < typical * 0.6 || chroma[p] > typical * 1.6)) continue;
-    for (let c = 0; c < 3; c += 1) {
-      all[c].push(img.rgb[p * 3 + c]);
-    }
-  }
-  const median = (chans: number[][]): [number, number, number] | null => {
-    if (chans[0].length < 60) return null;
-    return chans.map((list) => {
-      list.sort((a, b) => a - b);
-      return list[Math.floor(list.length / 2)];
-    }) as [number, number, number];
-  };
-  const anySkin = median(all) ?? [0.6, 0.4, 0.3];
-  return anySkin;
 }
 
 // Closes small notches and slits in each garment part's outline (where the parser missed a sliver, like a
@@ -1735,6 +1729,9 @@ export function tryOnGarment(person: PhotoParse, garment: PhotoParse): { image: 
   // background around the body.
   const gKinds = new Set(gParts.map((p) => p.kind));
   {
+    // Where bare body goes when clothes come off: the torso, the arms as thick as they really are, the legs
+    // (the rest of a loose garment's outline was air around the body: background)
+    const isBody = (p: number) => zones.inTorso[p] === 1 || zones.armSkin[p] === 1 || zones.area[p] === 4;
     const toSkin = new Uint8Array(n);
     const toBackground = new Uint8Array(n);
     let anyBackground = false;
@@ -1747,7 +1744,7 @@ export function tryOnGarment(person: PhotoParse, garment: PhotoParse): { image: 
       if (!replaced) continue;
       for (let p = 0; p < n; p += 1) {
         if (!part.mask[p]) continue;
-        if (zones.inBody[p]) toSkin[p] = 1;
+        if (isBody(p)) toSkin[p] = 1;
         else {
           toBackground[p] = 1;
           anyBackground = true;
@@ -1770,18 +1767,23 @@ export function tryOnGarment(person: PhotoParse, garment: PhotoParse): { image: 
       for (let p = 0; p < n; p += 1) {
         // The person's sleeve, and any of their clothes over that arm (a pallu over the shoulder)
         if (sleeve?.mask[p]) {
-          if (zones.inBody[p]) toSkin[p] = 1;
+          if (isBody(p)) toSkin[p] = 1;
           else {
             toBackground[p] = 1;
             anyBackground = true;
           }
         } else if (inAnyPart[p] && zones.inArm[p] && zones.area[p] === side) {
-          toSkin[p] = 1;
+          if (isBody(p)) toSkin[p] = 1;
+          else {
+            toBackground[p] = 1;
+            anyBackground = true;
+          }
         }
       }
     }
-    // A gap with the person on both sides along its row, close by (between an arm and the body), is body
-    const reach = Math.max(2, Math.round(sw * 0.2));
+    // A sliver of a gap with the person on both sides along its row is body (a wider one, between an arm and
+    // the body, stays background, so the arm shows as an arm)
+    const reach = Math.max(2, Math.round(sw * 0.04));
     for (let y = 0; y < h; y += 1) {
       const row = y * w;
       for (let x = 0; x < w; x += 1) {
