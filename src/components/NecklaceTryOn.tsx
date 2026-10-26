@@ -2,6 +2,8 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import Script from "next/script";
+import { parsePhoto, toParseCanvas } from "../lib/photoTryOnParsing";
+import type { PhotoParse, RGBAImage, TryOnReport } from "../lib/photoTryOn";
 
 interface MetricData {
   shoulderCenterNorm: number;
@@ -172,7 +174,15 @@ type GarmentPieces = {
   // pixels), which photo mode places on the model's shoulders
   whole: HTMLCanvasElement;
   shoulders: { left: { x: number; y: number }; right: { x: number; y: number } };
-  sleeves: Array<{ canvas: HTMLCanvasElement; box: PieceBox; side: "left" | "right" }>;
+  // Left/right extent of each row of the torso piece, for cutting rows to the model's torso
+  torsoRows: RowExtents;
+  // centroid: the sleeve's centre (garment-image pixels), for pointing it down the model's arm
+  sleeves: Array<{
+    canvas: HTMLCanvasElement;
+    box: PieceBox;
+    side: "left" | "right";
+    centroid: { x: number; y: number };
+  }>;
 };
 
 type PoseLandmark = { x: number; y: number; visibility?: number };
@@ -231,6 +241,7 @@ function buildWholeGarmentPieces(garment: HTMLImageElement): GarmentPieces | nul
 
   return {
     torso: canvas,
+    torsoRows: rowExtents(w, h, (p) => alpha[p * 4 + 3] >= 16),
     whole: canvas,
     shoulders: { left: { x: edgeLeft, y: shoulderY }, right: { x: edgeRight, y: shoulderY } },
     bodyBox: box,
@@ -313,6 +324,10 @@ function buildGarmentPieces(garment: HTMLImageElement, mask: HTMLImageElement): 
   const rightBox = emptyBox();
   let leftPixels = 0;
   let rightPixels = 0;
+  let leftSumX = 0;
+  let leftSumY = 0;
+  let rightSumX = 0;
+  let rightSumY = 0;
 
   for (let i = 0, p = 0; p < labels.length; i += 4, p += 1) {
     const label = labels[p];
@@ -325,10 +340,14 @@ function buildGarmentPieces(garment: HTMLImageElement, mask: HTMLImageElement): 
         target = left;
         growBox(leftBox, x, y);
         leftPixels += 1;
+        leftSumX += x;
+        leftSumY += y;
       } else {
         target = right;
         growBox(rightBox, x, y);
         rightPixels += 1;
+        rightSumX += x;
+        rightSumY += y;
       }
     }
     target.data[i] = g[i];
@@ -350,15 +369,23 @@ function buildGarmentPieces(garment: HTMLImageElement, mask: HTMLImageElement): 
   };
 
   const sleeves: GarmentPieces["sleeves"] = [];
-  if (leftPixels >= MIN_PIECE_PIXELS) sleeves.push({ canvas: toCanvas(left), box: leftBox, side: "left" });
-  if (rightPixels >= MIN_PIECE_PIXELS) sleeves.push({ canvas: toCanvas(right), box: rightBox, side: "right" });
+  if (leftPixels >= MIN_PIECE_PIXELS) {
+    const centroid = { x: leftSumX / leftPixels, y: leftSumY / leftPixels };
+    sleeves.push({ canvas: toCanvas(left), box: leftBox, side: "left", centroid });
+  }
+  if (rightPixels >= MIN_PIECE_PIXELS) {
+    const centroid = { x: rightSumX / rightPixels, y: rightSumY / rightPixels };
+    sleeves.push({ canvas: toCanvas(right), box: rightBox, side: "right", centroid });
+  }
 
-  // A sleeve's shoulder point: the top of its seam, i.e. its highest pixel touching the body
-  // (else its inner top corner)
+  // A sleeve's shoulder point: the top of its seam, i.e. its highest pixel touching the body, taking the
+  // outer end when the seam's top row touches along a stretch (else its inner top corner). Each row is
+  // scanned from the garment's outer edge inward so both sides pick their outer end.
   const sleeveShoulder = (side: "left" | "right", box: PieceBox) => {
     const onThisSide = (x: number) => (side === "left" ? x < centerX : x >= centerX);
+    const step = side === "left" ? 1 : -1;
     for (let y = box.minY; y <= box.maxY; y += 1) {
-      for (let x = box.minX; x <= box.maxX; x += 1) {
+      for (let x = side === "left" ? box.minX : box.maxX; x >= box.minX && x <= box.maxX; x += step) {
         const p = y * w + x;
         if (labels[p] !== 2 || !onThisSide(x)) continue;
         const touchesTorso =
@@ -382,9 +409,22 @@ function buildGarmentPieces(garment: HTMLImageElement, mask: HTMLImageElement): 
           right:
             rightPixels >= MIN_PIECE_PIXELS ? sleeveShoulder("right", rightBox) : { x: bodyBox.maxX, y: bodyBox.minY },
         };
+  // Vertically a shoulder point sits on the garment's top edge directly above it. A sleeve seam can join the
+  // body well below the shoulder line (batwing/dolman sleeves); lining that low point up with the model's
+  // shoulder pushed the whole top of the garment up to the chin.
+  const onTopEdge = (point: { x: number; y: number }) => {
+    const x = Math.min(w - 1, Math.max(0, Math.round(point.x)));
+    for (let y = 0; y < h; y += 1) {
+      if (wholeData.data[(y * w + x) * 4 + 3] >= 16) return { x: point.x, y: Math.min(point.y, y) };
+    }
+    return point;
+  };
+  shoulders.left = onTopEdge(shoulders.left);
+  shoulders.right = onTopEdge(shoulders.right);
 
   return {
     torso: toCanvas(torso),
+    torsoRows: rowExtents(w, h, (p) => torso.data[p * 4 + 3] >= 16),
     bodyBox,
     shoulderLineY:
       shoulderPixels >= MIN_PIECE_PIXELS ? (shoulderBox.minY + shoulderBox.maxY) / 2 : bodyBox.minY,
@@ -490,16 +530,17 @@ function drawGarmentPieces(
 // lines found on the silhouette: horizontally the shoulder tips; vertically the top of the shoulder a
 // quarter of the way out from the neck. Shoulders slope down to the tips, so putting the garment's (nearly
 // flat) shoulder line at the tips' height left a gap above it; at this height the garment's shoulders
-// rest on the model's and cover the slope out to the tips. Without shoulder lines (always, on the webcam),
-// the pose's shoulder joints, moved out toward the tips and up to the top of the shoulder.
+// rest on the model's and cover the slope out to the tips. The shoulder lines come from the photo's body
+// analysis, or on the webcam from the live person mask each frame. Without them, the pose's shoulder joints,
+// moved out toward the tips and up toward the top of the shoulder.
 function modelShoulderPoints(
-  body: BodyAnalysis | null,
+  shoulderLines: Array<Array<{ x: number; y: number }>> | null | undefined,
   lm: PoseLandmark[] | null | undefined,
   w: number,
   h: number,
 ): { left: { x: number; y: number }; right: { x: number; y: number }; source: string } | null {
-  if (body && body.shoulderLines.length >= 2) {
-    const [leftLine, rightLine] = [...body.shoulderLines].sort((a, b) => a[0].x - b[0].x);
+  if (shoulderLines && shoulderLines.length >= 2) {
+    const [leftLine, rightLine] = [...shoulderLines].sort((a, b) => a[0].x - b[0].x);
     const point = (line: Array<{ x: number; y: number }>) => ({
       x: line[line.length - 1].x,
       y: line[Math.round((line.length - 1) * 0.25)].y,
@@ -511,16 +552,182 @@ function modelShoulderPoints(
     const ay = lm[11].y * h;
     const bx = lm[12].x * w;
     const by = lm[12].y * h;
-    // The joints sit inside the body: push each out toward its shoulder tip (15% wider in total) and up
-    // to the top of the shoulder (a tenth of the shoulder width)
+    // The joints sit inside the body, well below the top of the shoulder near the neck: push each out
+    // toward its shoulder tip (15% wider in total) and up by a fifth of the shoulder width
     const outward = 0.075;
-    const lift = Math.hypot(bx - ax, by - ay) * 0.1;
+    const lift = Math.hypot(bx - ax, by - ay) * 0.2;
     const a = { x: ax + (ax - bx) * outward, y: ay + (ay - by) * outward - lift };
     const b = { x: bx + (bx - ax) * outward, y: by + (by - ay) * outward - lift };
     const source = "pose shoulder joints";
     return a.x <= b.x ? { left: a, right: b, source } : { left: b, right: a, source };
   }
   return null;
+}
+
+// Webcam: the shoulder lines traced straight from the live person mask each frame, the same way as on a
+// photo (the full body analysis only runs on photos, and would lag live video). One canvas is reused for
+// reading the mask.
+let liveMaskCanvas: HTMLCanvasElement | null = null;
+
+function liveShoulderLines(
+  mask: CanvasImageSource,
+  lm: PoseLandmark[] | null | undefined,
+  face: PoseLandmark[] | null | undefined,
+  w: number,
+  h: number,
+): Array<Array<{ x: number; y: number }>> {
+  if (!liveMaskCanvas) liveMaskCanvas = document.createElement("canvas");
+  if (liveMaskCanvas.width !== w) liveMaskCanvas.width = w;
+  if (liveMaskCanvas.height !== h) liveMaskCanvas.height = h;
+  const maskCtx = liveMaskCanvas.getContext("2d", { willReadFrequently: true });
+  if (!maskCtx) return [];
+  maskCtx.clearRect(0, 0, w, h);
+  maskCtx.drawImage(mask, 0, 0, w, h);
+  const alpha = maskCtx.getImageData(0, 0, w, h).data;
+  const inside = new Uint8Array(w * h);
+  for (let p = 0; p < inside.length; p += 1) inside[p] = alpha[p * 4 + 3] > 128 ? 1 : 0;
+  return traceShoulderLines(inside, lm, face, w, h);
+}
+
+// How far each sleeve is turned and moved from its flat-lay position toward lying along the model's arm:
+// 1 = straight down the arm, 0 = exactly as in the garment photo. Partway keeps the sleeves held out from
+// the body, so the garment keeps its T-shirt shape.
+const SLEEVE_TOWARD_ARM = 0.4;
+
+// How much of one row of the garment's torso was cut off because it was wider than the model's torso there:
+// on the left and right, in photo pixels and in garment-image pixels
+type TorsoTruncation = {
+  photoY: number;
+  garmentY: number;
+  left: number;
+  right: number;
+  leftGarment: number;
+  rightGarment: number;
+};
+
+// The garment placed exactly like drawGarmentWhole (upright, its shoulders spanning the model's), with:
+// - its torso drawn row by row; given the model's torso rows (photo mode), each row wider than the model's
+//   torso there has the part outside it cut off. Rows above or below the model's torso, rows that fit, and
+//   every row when there are no torso rows (webcam), are drawn whole.
+// - each sleeve turned about its shoulder point partway (SLEEVE_TOWARD_ARM) toward pointing down that arm
+//   (shoulder joint -> elbow), and moved partway toward the arm's centre line: the sleeves go over the
+//   model's arms but stay held out from the body like a T-shirt's.
+// Returns how much was cut on each cut row, or null (so the whole garment is drawn instead) when the garment
+// has no shoulder points or torso rows.
+function drawGarmentTruncated(
+  ctx: CanvasRenderingContext2D,
+  pieces: GarmentPieces,
+  modelTorsoRows: RowExtents | null | undefined,
+  arms: ArmPolyline[],
+  modelLeft: { x: number; y: number },
+  modelRight: { x: number; y: number },
+  manualScale: number,
+  offsetX: number,
+  offsetY: number,
+): TorsoTruncation[] | null {
+  // Also rejects data built by older code that survived a hot reload
+  const shoulders = pieces.shoulders as GarmentPieces["shoulders"] | undefined;
+  const garmentRows = pieces.torsoRows as RowExtents | undefined;
+  if (!shoulders || !garmentRows) return null;
+  const garmentSpan = Math.abs(shoulders.right.x - shoulders.left.x);
+  const modelSpan = Math.abs(modelRight.x - modelLeft.x);
+  if (garmentSpan < 1 || modelSpan < 1) return null;
+
+  // Same placement as drawGarmentWhole
+  const scale = (modelSpan / garmentSpan) * manualScale;
+  const garmentMidX = (shoulders.left.x + shoulders.right.x) / 2;
+  const garmentMidY = (shoulders.left.y + shoulders.right.y) / 2;
+  const modelMidX = (modelLeft.x + modelRight.x) / 2 + offsetX;
+  const modelMidY = (modelLeft.y + modelRight.y) / 2 + offsetY;
+  const toPhotoX = (x: number) => modelMidX + (x - garmentMidX) * scale;
+  const toPhotoY = (y: number) => modelMidY + (y - garmentMidY) * scale;
+
+  const cuts: TorsoTruncation[] = [];
+  const rowHeight = Math.max(1, scale) + 0.5; // a little overlap so rows leave no hairline gaps
+  ctx.save();
+  // Off while drawing 1-pixel source rows: with it on each row blends with the empty rows around it (stripes)
+  ctx.imageSmoothingEnabled = false;
+  for (let gy = 0; gy < garmentRows.minX.length; gy += 1) {
+    const gL = garmentRows.minX[gy];
+    const gR = garmentRows.maxX[gy];
+    if (gR < gL) continue;
+    const photoY = toPhotoY(gy + 0.5);
+    const rowLeft = toPhotoX(gL);
+    const rowRight = toPhotoX(gR + 1);
+
+    // The model's torso on this photo row (it doesn't move with the manual offset; the garment does)
+    let cutLeft = 0;
+    let cutRight = 0;
+    const my = Math.round(photoY);
+    if (modelTorsoRows && my >= 0 && my < modelTorsoRows.minX.length && modelTorsoRows.maxX[my] >= modelTorsoRows.minX[my]) {
+      cutLeft = Math.max(0, modelTorsoRows.minX[my] - rowLeft);
+      cutRight = Math.max(0, rowRight - (modelTorsoRows.maxX[my] + 1));
+      if (cutLeft > 0 || cutRight > 0) {
+        cuts.push({
+          photoY: my,
+          garmentY: gy,
+          left: cutLeft,
+          right: cutRight,
+          leftGarment: cutLeft / scale,
+          rightGarment: cutRight / scale,
+        });
+      }
+    }
+
+    const drawLeft = rowLeft + cutLeft;
+    const drawRight = rowRight - cutRight;
+    if (drawRight <= drawLeft) continue; // the whole row was outside the model's torso
+    ctx.drawImage(
+      pieces.torso,
+      gL + cutLeft / scale,
+      gy,
+      (drawRight - drawLeft) / scale,
+      1,
+      drawLeft,
+      photoY - rowHeight / 2,
+      drawRight - drawLeft,
+      rowHeight,
+    );
+  }
+  ctx.restore();
+
+  // Sleeves over the arms: each keeps its size and shape, turned about its shoulder point to point down the
+  // arm and slid sideways onto the arm's centre line (the shoulder point is at the shoulder tip, a little
+  // outside the arm's joint). The arm line moves with the manual offset so sleeves stay with the garment.
+  for (const sleeve of pieces.sleeves) {
+    const shoulder = sleeve.side === "left" ? shoulders.left : shoulders.right;
+    const pivot = { x: toPhotoX(shoulder.x), y: toPhotoY(shoulder.y) };
+    let turn = 0;
+    let shiftX = 0;
+    let shiftY = 0;
+    const arm = arms.find((candidate) => candidate.label === (sleeve.side === "left" ? 1 : 2));
+    if (arm && sleeve.centroid) {
+      const centre = { x: toPhotoX(sleeve.centroid.x), y: toPhotoY(sleeve.centroid.y) };
+      const joint = { x: arm.segments[0].a.x + offsetX, y: arm.segments[0].a.y + offsetY };
+      const elbow = { x: arm.segments[0].b.x + offsetX, y: arm.segments[0].b.y + offsetY };
+      const armAngle = Math.atan2(elbow.y - joint.y, elbow.x - joint.x);
+      const sleeveAngle = Math.atan2(centre.y - pivot.y, centre.x - pivot.x);
+      turn = SLEEVE_TOWARD_ARM * Math.atan2(Math.sin(armAngle - sleeveAngle), Math.cos(armAngle - sleeveAngle));
+      // Where the sleeve's centre lands after turning, then partway toward the nearest point on the arm's line
+      const cos = Math.cos(turn);
+      const sin = Math.sin(turn);
+      const turnedX = pivot.x + (centre.x - pivot.x) * cos - (centre.y - pivot.y) * sin;
+      const turnedY = pivot.y + (centre.x - pivot.x) * sin + (centre.y - pivot.y) * cos;
+      const alongX = Math.cos(armAngle);
+      const alongY = Math.sin(armAngle);
+      const t = (turnedX - joint.x) * alongX + (turnedY - joint.y) * alongY;
+      shiftX = SLEEVE_TOWARD_ARM * (joint.x + alongX * t - turnedX);
+      shiftY = SLEEVE_TOWARD_ARM * (joint.y + alongY * t - turnedY);
+    }
+    ctx.save();
+    ctx.translate(pivot.x + shiftX, pivot.y + shiftY);
+    ctx.rotate(turn);
+    ctx.scale(scale, scale);
+    ctx.translate(-shoulder.x, -shoulder.y);
+    ctx.drawImage(sleeve.canvas, 0, 0);
+    ctx.restore();
+  }
+  return cuts;
 }
 
 // Photo and webcam: places the whole garment in one piece, upright, so its shoulders span the model's shoulder
@@ -975,6 +1182,7 @@ type BodyAnalysis = {
   inside: Uint8Array; // 1 = person, from MediaPipe's segmentation mask
   armLabels: Uint8Array; // 1 / 2 = arm on the image-left / right
   torsoLabels: Uint8Array; // 1 = torso
+  torsoFillRows: RowExtents; // the torso's left/right extent on each row, from the base of the neck to the hips
   shoulderLines: Array<Array<{ x: number; y: number }>>; // each from the neck outward to the shoulder tip
 };
 
@@ -1030,6 +1238,15 @@ function analyzeBody(
       while (left > 0 && isBody(y * w + left - 1)) left -= 1;
       let right = center;
       while (right < w - 1 && isBody(y * w + right + 1)) right += 1;
+      // Where an arm hangs in front of the torso's side, the side continues behind it: extend the edge
+      // into the arm by half the arm's width on this row (about to its middle)
+      const isArm = (x: number) => x >= 0 && x < w && inside[y * w + x] === 1 && arms[y * w + x] !== 0;
+      let armRun = 0;
+      while (isArm(left - 1 - armRun)) armRun += 1;
+      left -= Math.floor(armRun / 2);
+      armRun = 0;
+      while (isArm(right + 1 + armRun)) armRun += 1;
+      right += Math.floor(armRun / 2);
       torsoFillRows.minX[y] = left;
       torsoFillRows.maxX[y] = right;
     }
@@ -1046,6 +1263,7 @@ function analyzeBody(
     inside,
     armLabels,
     torsoLabels: torsoFillLabels,
+    torsoFillRows,
     shoulderLines,
   };
 }
@@ -1125,6 +1343,40 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
+// The person photo wearing the garment photo's garment (photoTryOn.ts, run in a worker: it takes a few
+// seconds of number crunching)
+async function fitGarmentOnPhoto(
+  person: HTMLCanvasElement,
+  garmentSrc: string,
+): Promise<{ canvas: HTMLCanvasElement; report: TryOnReport }> {
+  const personParse = await parsePhoto(person);
+  const garmentParse = await parsePhoto(toParseCanvas(await loadImage(garmentSrc)));
+  const { image, report } = await new Promise<{ image: RGBAImage; report: TryOnReport }>((resolve, reject) => {
+    const worker = new Worker(new URL("../lib/photoTryOn.worker.ts", import.meta.url), { type: "module" });
+    worker.onmessage = (e: MessageEvent<{ image?: RGBAImage; report?: TryOnReport; error?: string }>) => {
+      worker.terminate();
+      if (e.data.error || !e.data.image || !e.data.report) reject(new Error(e.data.error ?? "Try-on failed"));
+      else resolve({ image: e.data.image, report: e.data.report });
+    };
+    worker.onerror = (e) => {
+      worker.terminate();
+      reject(new Error(e.message));
+    };
+    const message: { person: PhotoParse; garment: PhotoParse } = { person: personParse, garment: garmentParse };
+    worker.postMessage(message);
+  });
+  const out = document.createElement("canvas");
+  out.width = image.width;
+  out.height = image.height;
+  const outCtx = out.getContext("2d");
+  if (outCtx) {
+    const imageData = outCtx.createImageData(image.width, image.height);
+    imageData.data.set(image.data);
+    outCtx.putImageData(imageData, 0, 0);
+  }
+  return { canvas: out, report };
+}
+
 declare global {
   interface Window {
     Camera: any;
@@ -1152,12 +1404,30 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
   const necklaceAnchorsRef = useRef<NecklaceAnchorPoints | null>(null);
   const earringAssetsRef = useRef<EarringAssetSet | null>(null);
   const garmentPiecesRef = useRef<GarmentPieces | null>(null);
+  // Photo mode: how much of each row of the garment's torso was cut off to fit the model's torso (last frame)
+  const torsoTruncationRef = useRef<TorsoTruncation[]>([]);
   // Debug checkbox; mirrored into a ref so the render loop sees changes without restarting
   const [showBodyOutlines, setShowBodyOutlines] = useState(false);
   const showBodyOutlinesRef = useRef(false);
   // Exact arm shapes from BodyPix for the uploaded photo (the pose-based estimate shows until then)
   const bodyPixPartsRef = useRef<{ source: HTMLCanvasElement; parts: BodyPixPartSegmentation } | null>(null);
   const [armDetectionStatus, setArmDetectionStatus] = useState<"idle" | "loading" | "ready" | "failed">("idle");
+  // Garment fitted onto the photo (photo mode): the uploaded photo at parsing size, and the result
+  const [photoOriginal, setPhotoOriginal] = useState<HTMLCanvasElement | null>(null);
+  const [fittedResultUrl, setFittedResultUrl] = useState<string | null>(null);
+  const [fitStatus, setFitStatus] = useState<"idle" | "working" | "done" | "failed">("idle");
+  const [fitError, setFitError] = useState<string | null>(null);
+  const [showFitted, setShowFitted] = useState(false);
+  // Bumped whenever the photo or garment changes, so a drape still running for the old ones is dropped
+  const fitRequestRef = useRef(0);
+
+  // A different garment needs a new drape
+  useEffect(() => {
+    fitRequestRef.current += 1;
+    setFittedResultUrl(null);
+    setFitStatus("idle");
+    setShowFitted(false);
+  }, [selectedImageSrc]);
 
   // Engines stored as refs so they can be explicitly destroyed on close
   const activeCameraRef = useRef<any>(null);
@@ -1486,6 +1756,9 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
     // Photo mode: body analysis (silhouette, shoulder lines, arms, torso), rebuilt when MediaPipe's mask
     // changes (at most every 250ms); the debug overlay is drawn from it on demand
     let lastFitPath = ""; // logged when it changes, to show which garment placement is in use
+    // The model's shoulder points the garment was last placed on: logged when they move, marked in debug view
+    let lastModelShoulders: ReturnType<typeof modelShoulderPoints> = null;
+    let lastModelShouldersKey = "";
     let bodyCache: {
       mask: unknown;
       builtAt: number;
@@ -1640,21 +1913,56 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
               // the pose on the webcam (the analysis only rebuilds every 250ms, which would lag live video).
               const garmentPieces = garmentPiecesRef.current;
               piecesCtx.clearRect(0, 0, w, h);
-              const modelShoulders = modelShoulderPoints(bodyAnalysis, lm, w, h);
+              // Shoulder lines from the photo's body analysis, or traced from the live person mask on the webcam
+              const shoulderLines =
+                bodyAnalysis?.shoulderLines ??
+                (currentCamMask ? liveShoulderLines(currentCamMask, lm, faceLandmarks, w, h) : null);
+              const modelShoulders = modelShoulderPoints(shoulderLines, lm, w, h);
+              lastModelShoulders = modelShoulders;
+              const shouldersKey = modelShoulders
+                ? `(${Math.round(modelShoulders.left.x)}, ${Math.round(modelShoulders.left.y)}) / ` +
+                  `(${Math.round(modelShoulders.right.x)}, ${Math.round(modelShoulders.right.y)}) from the ${modelShoulders.source}`
+                : "none";
+              if (shouldersKey !== lastModelShouldersKey) {
+                console.info(`[Try-on] model shoulder points (${w}x${h} canvas): ${shouldersKey}`);
+                lastModelShouldersKey = shouldersKey;
+              }
+              // The garment's sleeves go over the model's arms. On a photo, rows of the garment's torso wider
+              // than the model's torso are also cut to it, and how much was cut on each row is kept in
+              // torsoTruncationRef; on the webcam (no body analysis) the torso is drawn whole.
+              const cuts =
+                modelShoulders !== null
+                  ? drawGarmentTruncated(
+                      piecesCtx,
+                      garmentPieces,
+                      bodyAnalysis?.torsoFillRows ?? null,
+                      armPolylines(lm, w, h),
+                      modelShoulders.left,
+                      modelShoulders.right,
+                      manualScaleRef.current,
+                      manualOffsetXRef.current,
+                      manualOffsetYRef.current,
+                    )
+                  : null;
+              torsoTruncationRef.current = cuts ?? [];
               const placed =
-                modelShoulders !== null &&
-                drawGarmentWhole(
-                  piecesCtx,
-                  garmentPieces,
-                  modelShoulders.left,
-                  modelShoulders.right,
-                  manualScaleRef.current,
-                  manualOffsetXRef.current,
-                  manualOffsetYRef.current,
-                );
-              const fitPath = placed
-                ? `whole garment on top, shoulders aligned to the model's ${modelShoulders?.source}`
-                : "pose-only fallback (no shoulder points)";
+                cuts !== null ||
+                (modelShoulders !== null &&
+                  drawGarmentWhole(
+                    piecesCtx,
+                    garmentPieces,
+                    modelShoulders.left,
+                    modelShoulders.right,
+                    manualScaleRef.current,
+                    manualOffsetXRef.current,
+                    manualOffsetYRef.current,
+                  ));
+              const fitPath =
+                cuts !== null
+                  ? `whole garment on top, torso cut to the model's torso on ${cuts.length} rows, shoulders aligned to the model's ${modelShoulders?.source}`
+                  : placed
+                    ? `whole garment on top, shoulders aligned to the model's ${modelShoulders?.source}`
+                    : "pose-only fallback (no shoulder points)";
               if (fitPath !== lastFitPath) {
                 console.info(`[Try-on] garment placement: ${fitPath}`);
                 lastFitPath = fitPath;
@@ -1754,6 +2062,20 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
             bodyCache.overlay = buildSilhouetteOverlay(bodyCache.analysis, targetWidth, targetHeight);
           }
           canvasCtx.drawImage(bodyCache.overlay, 0, 0, targetWidth, targetHeight);
+        }
+        // Debug: cyan dots on the model's shoulder points, where the garment's shoulders were placed
+        if (isPhoto && showBodyOutlinesRef.current && lastModelShoulders) {
+          canvasCtx.save();
+          for (const point of [lastModelShoulders.left, lastModelShoulders.right]) {
+            canvasCtx.beginPath();
+            canvasCtx.arc(point.x, point.y, 6, 0, 2 * Math.PI);
+            canvasCtx.fillStyle = "#00e5ff";
+            canvasCtx.fill();
+            canvasCtx.lineWidth = 2;
+            canvasCtx.strokeStyle = "#000000";
+            canvasCtx.stroke();
+          }
+          canvasCtx.restore();
         }
       }
       requestFrameId = requestAnimationFrame(renderLoop);
@@ -1926,10 +2248,56 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
       }
       URL.revokeObjectURL(url);
       setPhotoCanvas(letterboxed);
+      setPhotoOriginal(toParseCanvas(img));
+      fitRequestRef.current += 1;
+      setFittedResultUrl(null);
+      setFitStatus("idle");
+      setShowFitted(false);
     };
     img.onerror = () => URL.revokeObjectURL(url);
     img.src = url;
   };
+
+  // Fits the garment onto the uploaded photo (once per photo and garment; the result is kept)
+  const startFit = () => {
+    if (fittedResultUrl || fitStatus === "working" || !photoOriginal || !selectedImageSrc) return;
+    setFitStatus("working");
+    setFitError(null);
+    const request = fitRequestRef.current;
+    fitGarmentOnPhoto(photoOriginal, selectedImageSrc)
+      .then(({ canvas, report }) => {
+        if (request !== fitRequestRef.current) return;
+        console.info("[Fit garment]", report);
+        setFittedResultUrl(canvas.toDataURL("image/jpeg", 0.92));
+        setFitStatus("done");
+      })
+      .catch((err) => {
+        console.warn("[Fit garment] failed", err);
+        if (request !== fitRequestRef.current) return;
+        setFitError(err instanceof Error ? err.message : String(err));
+        setFitStatus("failed");
+      });
+  };
+
+  // The button switches between the fitted photo and the live overlay
+  const handleFitGarment = () => {
+    if (showFitted) {
+      setShowFitted(false);
+      return;
+    }
+    setShowFitted(true);
+    startFit();
+  };
+
+  // In photo mode a garment is fitted as soon as there's a photo (and again for each new photo or garment)
+  useEffect(() => {
+    if (inputSource !== "photo" || mode !== "garment" || !photoOriginal || !selectedImageSrc) return;
+    if (fitStatus !== "idle") return;
+    setShowFitted(true);
+    startFit();
+    // startFit reads the state listed here
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputSource, mode, photoOriginal, selectedImageSrc, fitStatus]);
 
   const handleCloseFittingRoom = () => {
     setIsMinimized(false);
@@ -2038,7 +2406,12 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
             top: 0, 
             left: 0, 
             width: "100vw", 
-            height: "100vh", 
+            // dvh, not vh: with vh the overlay is taller than the visible viewport on mobile
+            // browsers, pushing the header controls out of reach with nothing to scroll.
+            height: "100dvh",
+            maxHeight: "100dvh",
+            overflow: "hidden",
+            overscrollBehavior: "none",
             background: "#111", 
             display: "flex", 
             flexDirection: "column", 
@@ -2104,7 +2477,7 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
                       padding: "8px",
                       minWidth: "180px",
                       maxWidth: "calc(100vw - 24px)",
-                      maxHeight: "calc(100vh - 140px)",
+                      maxHeight: "calc(100dvh - 140px)",
                       overflowY: "auto",
                       boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
                       zIndex: 10000
@@ -2440,6 +2813,20 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
                           : "BodyPix unavailable — showing estimated arms"}
                       </span>
                     )}
+                    {mode === "garment" && (
+                      <button
+                        onClick={handleFitGarment}
+                        title="Fit this garment onto your photo, shaped to your body"
+                        style={mobileControlActionButtonStyle}
+                      >
+                        {showFitted ? "↩ Back to overlay" : "✨ Fit to my photo"}
+                      </button>
+                    )}
+                    {showFitted && (fitStatus === "working" || fitStatus === "failed") && (
+                      <span style={{ ...mobileControlActionButtonStyle, fontWeight: "normal" }}>
+                        {fitStatus === "working" ? "Fitting the garment…" : `Couldn't fit the garment: ${fitError}`}
+                      </span>
+                    )}
                   </div>
                 ) : (
                   <button
@@ -2462,14 +2849,45 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
                 )}
               </>
             )}
+            {showFitted && fitStatus === "working" && (
+              <div
+                style={{
+                  position: "absolute",
+                  zIndex: 3,
+                  background: "rgba(17, 24, 39, 0.85)",
+                  color: "#fff",
+                  borderRadius: "10px",
+                  padding: "12px 20px",
+                  fontSize: "14px",
+                  fontWeight: "bold",
+                }}
+              >
+                Fitting the garment to your photo… (the first time also downloads the models)
+              </div>
+            )}
+            {showFitted && fittedResultUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={fittedResultUrl}
+                alt="Your photo wearing the garment"
+                style={{
+                  maxWidth: isMobile ? "96vw" : "100%",
+                  maxHeight: isMobile ? "calc(100dvh - 160px)" : "90%",
+                  objectFit: "contain",
+                  borderRadius: isMobile ? "8px" : "12px",
+                  boxShadow: "0 12px 36px rgba(0,0,0,0.5)"
+                }}
+              />
+            )}
             <canvas
               ref={canvasRef}
               width={targetWidth}
               height={targetHeight}
-              style={{ 
+              style={{
+                display: showFitted && fittedResultUrl ? "none" : undefined,
                 width: isMobile ? "96vw" : "auto",
                 height: isMobile ? "auto" : "90%", 
-                maxHeight: isMobile ? "calc(100vh - 160px)" : "none",
+                maxHeight: isMobile ? "calc(100dvh - 160px)" : "none",
                 aspectRatio: "4/3",
                 // Mirror the webcam like a selfie view; a photo is shown as-is
                 transform: inputSource === "photo" ? "none" : "rotateY(180deg)", 

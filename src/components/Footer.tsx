@@ -1,8 +1,20 @@
+"use client";
+
 import React from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { whisperingSignature } from "../lib/fonts";
 
 export default function Footer() {
+  const pathname = usePathname();
+
+  // The studio and admin screens are exactly one viewport tall. Adding a footer below them
+  // makes the page scrollable, so a swipe scrolls their toolbars off-screen — and since the
+  // canvas consumes touch events, there is nothing left to swipe back up with.
+  if (pathname.startsWith("/studio") || pathname.startsWith("/admin")) {
+    return null;
+  }
+
   return (
     <footer className="relative overflow-hidden border-t border-[#ead8dc] bg-[radial-gradient(circle_at_top,rgba(223,246,232,0.45),transparent_34%),linear-gradient(180deg,#fffaf2_0%,#f9e8ee_48%,#fff4ed_100%)] px-6 py-12 text-stone-900 shadow-[0_-4px_20px_rgba(143,106,136,0.14)]">
       <div className="absolute inset-0 bg-white/30 mix-blend-overlay pointer-events-none opacity-30"></div>

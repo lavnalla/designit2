@@ -11,7 +11,13 @@
   --line: #ead8dc;
 }
 
+html {
+  /* Stops the mobile rubber-band/pull-to-refresh gesture from dragging fixed UI out of view */
+  overscroll-behavior-y: none;
+}
+
 body {
+  overscroll-behavior-y: none;
   background: linear-gradient(180deg, #fffaf2 0%, #f9e8ee 100%);
   color: var(--foreground);
   font-family: var(--font-quicksand), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
