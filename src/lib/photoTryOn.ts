@@ -68,6 +68,10 @@ const FAMILY_OF_CLASS: Record<number, Family> = {
 // Garment details (hood, collar, lapel, epaulette, pocket, neckline, buckle, zipper, applique, bead, bow,
 // flower, fringe, ribbon, rivet, ruffle, sequin, tassel): part of whichever garment they're on
 const DETAIL_CLASSES = new Set([28, 29, 30, 31, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46]);
+// Whether a fashion class is a garment itself (not a detail on one, and not an accessory)
+export function isGarmentClass(cls: number): boolean {
+  return FAMILY_OF_CLASS[cls] !== undefined;
+}
 const FAMILIES: Family[] = ["upper", "dress", "jumpsuit", "pants", "shorts", "skirt", "drape", "sleeve"];
 
 // --- tuning ---

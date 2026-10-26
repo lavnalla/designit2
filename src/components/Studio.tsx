@@ -14,6 +14,11 @@ import type { NextConfig } from "next";
 import ImageTracer from "imagetracerjs";
 import { removeBackground, preload } from "@imgly/background-removal";
 import { SubmissionModal } from "./SubmissionModal";
+import { pickFabricSwatch, synthesizeFabricImage } from "../lib/fabricSynthesis";
+import { renderSketch } from "../lib/sketchRender";
+import { parseFashionClasses } from "../lib/garmentSegmenter";
+import { toParseCanvas } from "../lib/photoTryOnParsing";
+import { isGarmentClass } from "../lib/photoTryOn";
 import BodySilhouetteView from "./BodySilhouetteView";
 
 const MOBILE_BREAKPOINT = 1024;
@@ -207,7 +212,30 @@ interface RecordedTutorialStep {
 interface FabricLayer {
   src: string;
   area: { x: number; y: number; width: number; height: number };
+  // The fabric's own size (drawn at it, centred on the area); absent: stretched over the whole item
+  naturalWidth?: number;
+  naturalHeight?: number;
 }
+// Where pasted fabric is drawn over an area: filling it, with its own proportions kept (scaled evenly until it
+// covers the area, centred, the overflow cropped off by the area's clip: never stretched or tiled); without a
+// known size (fabric pasted before), stretched over it
+const fabricImageRect = (
+  area: { x: number; y: number; width: number; height: number },
+  naturalWidth?: number,
+  naturalHeight?: number,
+) => {
+  if (!naturalWidth || !naturalHeight) return area;
+  const cover = Math.max(area.width / naturalWidth, area.height / naturalHeight);
+  const width = naturalWidth * cover;
+  const height = naturalHeight * cover;
+  return {
+    x: area.x + (area.width - width) / 2,
+    y: area.y + (area.height - height) / 2,
+    width,
+    height,
+  };
+};
+
 interface DistortableShape {
   id: string;
   img: string;
@@ -306,48 +334,11 @@ const DEFAULT_MESH_PATTERN = {
   verticalLines: 4,
 } as const;
 
-const REFINE_POSITIVE_PROMPTS: Record<string, string> = {
-  silk: "high quality, professional fashion design render, macro shot of liquid silk fabric, soft glossy sheen, realistic draping and folds, subtle reflections, studio lighting, photorealistic, 8k resolution",
-  satin:
-    "high quality, professional fashion design render, macro shot of liquid silk fabric, soft glossy sheen, realistic draping and folds, subtle reflections, studio lighting, photorealistic, 8k resolution",
-  wool: "high quality, professional fashion design render, macro shot of heavy tweed wool fabric, intricate woven texture, visible yarn details, realistic garment structure, studio lighting, photorealistic",
-  tweed:
-    "high quality, professional fashion design render, macro shot of heavy tweed wool fabric, intricate woven texture, visible yarn details, realistic garment structure, studio lighting, photorealistic",
-  denim:
-    "high quality, professional fashion design render, macro shot of raw denim fabric, distinct twill weave, contrast stitching texture, realistic stiffness and folds, studio lighting, photorealistic",
-  organza:
-    "high quality, professional fashion design render, macro shot of sheer lightweight chiffon fabric, translucent layers, soft airy drape, delicate texture, studio lighting, photorealistic",
-  orgaza:
-    "high quality, professional fashion design render, macro shot of sheer lightweight chiffon fabric, translucent layers, soft airy drape, delicate texture, studio lighting, photorealistic",
-  chiffon:
-    "high quality, professional fashion design render, macro shot of sheer lightweight chiffon fabric, translucent layers, soft airy drape, delicate texture, studio lighting, photorealistic",
-};
-
-const REFINE_NEGATIVE_PROMPT =
-  "deformed, distorted, disfigured, poorly drawn, bad anatomy, wrong anatomy, extra limbs, missing limbs, floating limbs, disconnected limbs, mutation, mutated, ugly, disgusting, blurry, amputation, watercolour, painting, illustration, cartoon, 3d render, low quality, sketch, lines, outlines, changing shape, altering silhouette, altering neckline, changing collar shape, reshaping garment, distorted collar, asymmetric neckline, expanding neckline";
-
-type RefineControlMode =
-  | "Balanced"
-  | "My prompt is more important"
-  | "ControlNet is more important";
-
 export function Studio({ onBack }: { onBack: () => void }) {
-  const [refineError, setRefineError] = useState<string | null>(null);
   const [showSourceWindow, setShowSourceWindow] = useState(false);
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
   const [showTopPanelMenu, setShowTopPanelMenu] = useState(false);
   const isProcessingRef = useRef(false);
-  // Refine image state
-  const [showRefineControls, setShowRefineControls] = useState(false);
-  const [positivePrompt, setPositivePrompt] = useState("");
-  const [negativePrompt, setNegativePrompt] = useState("");
-  const [selectedRefineFabric, setSelectedRefineFabric] = useState("silk");
-  const [selectedRefineControlMode, setSelectedRefineControlMode] =
-    useState<RefineControlMode>("My prompt is more important");
-  const [refineResultImage, setRefineResultImage] = useState<string | null>(
-    null,
-  );
-  const [isRefiningImage, setIsRefiningImage] = useState(false);
   // ...existing state hooks...
   // All shape state hooks...
   const [workspaceShapes, setWorkspaceShapes] = useState<DistortableShape[]>(
@@ -356,90 +347,16 @@ export function Studio({ onBack }: { onBack: () => void }) {
   // ...other state hooks...
   // Place after workspaceShapes is defined:
   const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
+  // The item last clicked on the workspace, an image or a drawn stroke (null after clicking empty canvas)
+  const [lastClickedItem, setLastClickedItem] = useState<{
+    type: "shape" | "stroke";
+    id: string;
+  } | null>(null);
   const selectedShape = selectedShapeId
     ? workspaceShapes?.find((s) => s.id === selectedShapeId)
     : null;
 
-  const openRefineControls = useCallback(async () => {
-    const normalizedFabric = selectedRefineFabric.toLowerCase();
-    setPositivePrompt(
-      REFINE_POSITIVE_PROMPTS[normalizedFabric] || REFINE_POSITIVE_PROMPTS.silk,
-    );
-    setNegativePrompt(REFINE_NEGATIVE_PROMPT);
-    setRefineError(null);
-    setRefineResultImage(null);
-
-    let latestWorkspaceImage: string | null = null;
-    for (let attempt = 0; attempt < 3 && !latestWorkspaceImage; attempt++) {
-      latestWorkspaceImage = await syncWorkspaceToTryOn();
-      if (!latestWorkspaceImage) {
-        await new Promise<void>((resolve) =>
-          requestAnimationFrame(() => resolve()),
-        );
-      }
-    }
-
-    if (latestWorkspaceImage) {
-      setRenderedWorkspaceImg(latestWorkspaceImage);
-    }
-
-    setShowRefineControls(true);
-  }, [selectedRefineFabric]);
-
-  const downloadRefineResult = useCallback(() => {
-    if (!refineResultImage) {
-      return;
-    }
-
-    const link = document.createElement("a");
-    link.href = refineResultImage;
-    link.download = `refined-design-${Date.now()}.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }, [refineResultImage]);
-
-  const applyRefineResultToWorkspace = useCallback(() => {
-    if (!refineResultImage || !selectedShapeId) {
-      return;
-    }
-
-    const baseShape = workspaceShapes.find(
-      (shape) => shape.id === selectedShapeId,
-    );
-    if (!baseShape) {
-      return;
-    }
-
-    const newShape: DistortableShape = {
-      ...baseShape,
-      id: `refined-${Date.now()}`,
-      img: refineResultImage,
-      dots: baseShape.dots.map((dot) => ({ ...dot })),
-      dims: { ...baseShape.dims },
-      position: {
-        x: baseShape.position.x + 24,
-        y: baseShape.position.y + 24,
-      },
-      showDots: true,
-    };
-
-    setWorkspaceShapes((prev) => [...prev, newShape]);
-    setSelectedShapeId(newShape.id);
-    setRenderedWorkspaceImg(refineResultImage);
-    setShowRefineControls(false);
-  }, [refineResultImage, selectedShapeId, workspaceShapes]);
-
   // Helper: convert dataURL to File
-  function dataURLtoFile(dataurl: string, filename: string) {
-    const arr = dataurl.split(","),
-      mime = arr[0].match(/:(.*?);/)[1],
-      bstr = atob(arr[1]),
-      n = bstr.length,
-      u8arr = new Uint8Array(n);
-    for (let i = 0; i < n; i++) u8arr[i] = bstr.charCodeAt(i);
-    return new File([u8arr], filename, { type: mime });
-  }
 
   const closeActiveLoops = useCallback(() => {
     setStrokes((prevStrokes) =>
@@ -773,72 +690,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
     });
   };
 
-  // Refine handler
-  const handleRefineImage = async () => {
-    setRefineError(null);
-    setRefineResultImage(null);
-    const refineSourceImage =
-      renderedWorkspaceImg || selectedShape?.img || null;
-    if (!refineSourceImage) {
-      setRefineError("No shape or image selected.");
-      console.warn("Refine: No selected shape or image.", {
-        selectedShape,
-        renderedWorkspaceImg,
-      });
-      return;
-    }
-    setIsRefiningImage(true);
-    try {
-      // Convert base64 or dataURL to File
-      let file: File;
-      if (refineSourceImage.startsWith("data:")) {
-        file = dataURLtoFile(refineSourceImage, "selected.png");
-      } else {
-        // fallback: fetch as blob
-        const res = await fetch(refineSourceImage);
-        const blob = await res.blob();
-        file = new File([blob], "selected.png", { type: blob.type });
-      }
-      const formData = new FormData();
-      formData.append("image", file);
-      formData.append("positivePrompt", positivePrompt);
-      formData.append("negativePrompt", negativePrompt);
-      formData.append("fabric", selectedRefineFabric);
-      formData.append("controlMode", selectedRefineControlMode);
-      formData.append("image_strength", "0.7");
-      formData.append("cfg_scale", "7");
-      formData.append("steps", "30");
-      const response = await fetch("/api/refine-image", {
-        method: "POST",
-        body: formData,
-      });
-      let data;
-      try {
-        data = await response.json();
-      } catch (err) {
-        setRefineError("Failed to parse response from server.");
-        console.error("Refine: Failed to parse response", err);
-        return;
-      }
-      console.log("Refine: API response", data);
-      if (data.resultImage) {
-        setRefineResultImage(data.resultImage);
-      } else if (data.error) {
-        setRefineError(
-          data.details
-            ? `${data.error}: ${data.details}`
-            : `API error: ${data.error}`,
-        );
-      } else {
-        setRefineError("No image returned from API.");
-      }
-    } catch (err: any) {
-      setRefineError("Network or server error: " + (err?.message || err));
-      console.error("Refine: Network/server error", err);
-    } finally {
-      setIsRefiningImage(false);
-    }
-  };
   // helper: convert hex color + alpha (0..1) to rgba() string
   const hexToRgba = (hex: string, alpha = 1) => {
     if (!hex) return `rgba(0,0,0,${alpha})`;
@@ -1470,6 +1321,9 @@ export function Studio({ onBack }: { onBack: () => void }) {
     shapes: ClipboardShape[];
     strokes: Stroke[];
   } | null>(null);
+  // How big the copied fabric's pixels were on screen (screen pixels per fabric pixel), so it's pasted at the
+  // size it was seen at
+  const [fabricClipboardScale, setFabricClipboardScale] = useState(1);
   const [fabricClipboardSrc, setFabricClipboardSrc] = useState<string | null>(
     null,
   );
@@ -4593,10 +4447,12 @@ export function Studio({ onBack }: { onBack: () => void }) {
     setContextMenu(null);
   }, [selectionRect, saveForUndo, workspaceShapes, strokes]);
 
+  // (only: just these items, instead of everything inside the rectangle)
   const buildSelectionClone = useCallback(
     (
       svgEl: SVGSVGElement,
       rect: { x: number; y: number; width: number; height: number },
+      only?: { shapes: Set<string>; strokes: Set<string> },
     ) => {
       const clone = svgEl.cloneNode(true) as SVGSVGElement;
       const selectionBounds = {
@@ -4605,20 +4461,24 @@ export function Studio({ onBack }: { onBack: () => void }) {
         x2: rect.x + rect.width,
         y2: rect.y + rect.height,
       };
-      const selectedShapeIds = new Set(
-        workspaceShapes
-          .filter((shape) =>
-            isItemInRect(getBoundingBox(shape), selectionBounds),
-          )
-          .map((shape) => shape.id),
-      );
-      const selectedStrokeIds = new Set(
-        strokes
-          .filter((stroke) =>
-            isItemInRect(getBoundingBox(stroke), selectionBounds),
-          )
-          .map((stroke) => stroke.id),
-      );
+      const selectedShapeIds =
+        only?.shapes ??
+        new Set(
+          workspaceShapes
+            .filter((shape) =>
+              isItemInRect(getBoundingBox(shape), selectionBounds),
+            )
+            .map((shape) => shape.id),
+        );
+      const selectedStrokeIds =
+        only?.strokes ??
+        new Set(
+          strokes
+            .filter((stroke) =>
+              isItemInRect(getBoundingBox(stroke), selectionBounds),
+            )
+            .map((stroke) => stroke.id),
+        );
 
       clone
         .querySelectorAll("circle[data-control-dot]")
@@ -4792,6 +4652,79 @@ export function Studio({ onBack }: { onBack: () => void }) {
           }
         }
 
+        // From a garment's image, only its cleanest piece of fabric: inside its outline and where the garment
+        // is (a photo may have the person and the room in it too), away from seams, folds and edges. Kept at
+        // the image's own pixels, so its scale on screen below still holds.
+        let fabricImageWidth = 0;
+        if (fabricSrc && targetShape && fabricSrc === targetShape.img) {
+          try {
+            const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+              const el = new window.Image();
+              el.crossOrigin = "anonymous";
+              el.onload = () => resolve(el);
+              el.onerror = () => reject(new Error("Failed to load the garment image"));
+              el.src = targetShape.img as string;
+            });
+            fabricImageWidth = img.naturalWidth || img.width;
+            let garment: { mask: Uint8Array; width: number; height: number } | undefined;
+            try {
+              const parseCanvas = toParseCanvas(img);
+              const fashion = await parseFashionClasses(parseCanvas);
+              const mask = new Uint8Array(fashion.length);
+              let count = 0;
+              for (let p = 0; p < fashion.length; p += 1) {
+                if (isGarmentClass(fashion[p])) {
+                  mask[p] = 1;
+                  count += 1;
+                }
+              }
+              // (Too little garment found: the parse missed it, so the whole image counts)
+              if (count > fashion.length * 0.05) {
+                garment = { mask, width: parseCanvas.width, height: parseCanvas.height };
+              }
+            } catch (parseError) {
+              console.warn("Garment parse for copying fabric failed; using the whole image.", parseError);
+            }
+            const swatch = pickFabricSwatch(img, {
+              outline:
+                targetShape.dots && targetShape.dots.length > 2
+                  ? {
+                      path: generatePathData(targetShape.dots, true),
+                      width: targetShape.dims.width,
+                    }
+                  : undefined,
+              garment,
+            });
+            if (swatch) fabricSrc = swatch;
+          } catch (swatchError) {
+            console.warn("Picking the fabric failed; copying the whole image.", swatchError);
+          }
+        }
+
+        // A shape's own image (or fabric) is shown scaled: its width on screen per image pixel
+        let fabricScale = 1;
+        if (fabricImageWidth > 0 && targetShape) {
+          fabricScale =
+            (targetShape.dims.width * Math.max(0.1, targetShape.scale)) /
+            fabricImageWidth;
+        } else if (
+          fabricSrc &&
+          targetShape &&
+          fabricSrc === targetShape.fabricFillSrc
+        ) {
+          const naturalWidth = await new Promise<number>((resolve) => {
+            const img = new window.Image();
+            img.onload = () => resolve(img.naturalWidth || img.width || 0);
+            img.onerror = () => resolve(0);
+            img.src = fabricSrc as string;
+          });
+          if (naturalWidth > 0) {
+            fabricScale =
+              (targetShape.dims.width * Math.max(0.1, targetShape.scale)) /
+              naturalWidth;
+          }
+        }
+
         if (!fabricSrc) {
           const sourceClothType =
             targetShape?.clothType ||
@@ -4806,6 +4739,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
         }
 
         setFabricClipboardSrc(fabricSrc);
+        setFabricClipboardScale(fabricScale > 0 ? fabricScale : 1);
 
         try {
           await navigator.clipboard.writeText(fabricSrc);
@@ -4985,129 +4919,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
           img.src = src;
         });
 
-      const createSharpStretchedTexture = (
-        img: HTMLImageElement,
-        width: number,
-        height: number,
-      ) => {
-        const targetW = Math.max(96, Math.round(width));
-        const targetH = Math.max(96, Math.round(height));
-
-        const srcW = Math.max(1, img.naturalWidth || img.width || 1);
-        const srcH = Math.max(1, img.naturalHeight || img.height || 1);
-        const minUpscale = Math.max(targetW / srcW, targetH / srcH);
-        const oversample = Math.min(
-          3,
-          Math.max(1.5, minUpscale > 1 ? minUpscale : 2),
-        );
-
-        const workingW = Math.max(targetW, Math.round(targetW * oversample));
-        const workingH = Math.max(targetH, Math.round(targetH * oversample));
-
-        const workingCanvas = document.createElement("canvas");
-        workingCanvas.width = workingW;
-        workingCanvas.height = workingH;
-        const workingCtx = workingCanvas.getContext("2d", {
-          willReadFrequently: true,
-        });
-        if (!workingCtx) return null;
-
-        workingCtx.clearRect(0, 0, workingW, workingH);
-        workingCtx.imageSmoothingEnabled = true;
-        workingCtx.imageSmoothingQuality = "high";
-        workingCtx.filter = "contrast(1.04) saturate(1.02)";
-        // Stretch to target bounds intentionally, based on user preference.
-        workingCtx.drawImage(img, 0, 0, workingW, workingH);
-        workingCtx.filter = "none";
-
-        // Mild unsharp pass to recover edge crispness after upscale stretch.
-        try {
-          const data = workingCtx.getImageData(0, 0, workingW, workingH);
-          const src = data.data;
-          const out = new Uint8ClampedArray(src);
-          const amount = 0.2;
-          const idx = (x: number, y: number) => (y * workingW + x) * 4;
-          for (let y = 1; y < workingH - 1; y++) {
-            for (let x = 1; x < workingW - 1; x++) {
-              const i = idx(x, y);
-              for (let c = 0; c < 3; c++) {
-                const center = src[i + c];
-                const blur =
-                  (src[idx(x - 1, y) + c] +
-                    src[idx(x + 1, y) + c] +
-                    src[idx(x, y - 1) + c] +
-                    src[idx(x, y + 1) + c]) *
-                  0.25;
-                const sharpened = center + (center - blur) * amount;
-                out[i + c] = Math.max(0, Math.min(255, sharpened));
-              }
-            }
-          }
-          data.data.set(out);
-          workingCtx.putImageData(data, 0, 0);
-        } catch (sharpenError) {
-          console.warn("Sharp stretch post-process skipped:", sharpenError);
-        }
-
-        const finalCanvas = document.createElement("canvas");
-        finalCanvas.width = targetW;
-        finalCanvas.height = targetH;
-        const finalCtx = finalCanvas.getContext("2d");
-        if (!finalCtx) return null;
-        finalCtx.imageSmoothingEnabled = true;
-        finalCtx.imageSmoothingQuality = "high";
-        finalCtx.drawImage(workingCanvas, 0, 0, targetW, targetH);
-
-        return {
-          src: finalCanvas.toDataURL("image/png"),
-          width: targetW,
-          height: targetH,
-        };
-      };
-
-      const createPythonSharpStretchedTexture = async (
-        imageDataUrl: string,
-        width: number,
-        height: number,
-      ) => {
-        try {
-          const response = await fetch("/api/python-resize", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              imageDataUrl,
-              width,
-              height,
-              mode: "stretch",
-            }),
-          });
-
-          if (!response.ok) {
-            const message = await response
-              .text()
-              .catch(() => "Python resize request failed");
-            throw new Error(message || "Python resize request failed");
-          }
-
-          const data = await response.json();
-          if (!data?.imageDataUrl) {
-            throw new Error("Python resize response missing imageDataUrl");
-          }
-
-          return {
-            src: data.imageDataUrl as string,
-            width: Number(data.width) || Math.max(96, Math.round(width)),
-            height: Number(data.height) || Math.max(96, Math.round(height)),
-          };
-        } catch (pythonError) {
-          console.warn(
-            "Python sharp stretch unavailable; using browser fallback.",
-            pythonError,
-          );
-          return null;
-        }
-      };
-
       try {
         const copiedFabricDims = await new Promise<{
           width: number;
@@ -5134,7 +4945,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
           sourceImage = await loadImage(fabricClipboardSrc);
         } catch (loadError) {
           console.warn(
-            "Sharp stretch source image load failed; falling back to plain paste.",
+            "Fabric source image load failed; using its reported size.",
             loadError,
           );
         }
@@ -5158,168 +4969,150 @@ export function Studio({ onBack }: { onBack: () => void }) {
           ),
         );
 
-        let processedSwatchSrc: string | null = null;
-        if (sourceImage) {
-          const pythonSwatch = await createPythonSharpStretchedTexture(
-            fabricClipboardSrc,
-            swatchWidth,
-            swatchHeight,
-          );
-          if (pythonSwatch?.src) {
-            processedSwatchSrc = pythonSwatch.src;
-          } else {
-            const fallbackSwatch = createSharpStretchedTexture(
-              sourceImage,
-              swatchWidth,
-              swatchHeight,
-            );
-            if (fallbackSwatch?.src) {
-              processedSwatchSrc = fallbackSwatch.src;
-            }
-          }
-        }
-
         saveForUndo();
         const targetIds = new Set(targetShapes.map((shape) => shape.id));
         const targetStrokeIds = new Set(
           targetStrokes.map((stroke) => stroke.id),
         );
 
-        const originalShapeGeometry = new Map(
-          targetShapes.map((shape) => [
-            shape.id,
-            {
-              scale: shape.scale,
-              position: { ...shape.position },
-            },
-          ]),
-        );
-        const originalStrokeGeometry = new Map(
-          targetStrokes.map((st) => [
-            st.id,
-            {
-              points: st.points.map((p) => ({ ...p })),
-            },
-          ]),
-        );
-
-        const waitNextFrame = () =>
-          new Promise<void>((resolve) => {
-            if (
-              typeof window !== "undefined" &&
-              typeof window.requestAnimationFrame === "function"
-            ) {
-              window.requestAnimationFrame(() => resolve());
-            } else {
-              setTimeout(() => resolve(), 0);
-            }
-          });
-
         const isAreaPaste = !!selectionBounds;
 
-        // 1) Resize target object to copied fabric size.
-        if (!isAreaPaste) {
-          setWorkspaceShapes((prev) =>
-            prev.map((shape) => {
-              if (!targetIds.has(shape.id)) return shape;
-              const renderW = Math.max(
-                1,
-                shape.dims.width * Math.max(0.1, shape.scale),
-              );
-              const renderH = Math.max(
-                1,
-                shape.dims.height * Math.max(0.1, shape.scale),
-              );
-              const widthRatio = swatchWidth / renderW;
-              const heightRatio = swatchHeight / renderH;
-              const scaleFactor = Math.max(0.1, (widthRatio + heightRatio) / 2);
-              const nextScale = Math.max(0.1, shape.scale * scaleFactor);
-              const oldRenderW = shape.dims.width * shape.scale;
-              const oldRenderH = shape.dims.height * shape.scale;
-              const newRenderW = shape.dims.width * nextScale;
-              const newRenderH = shape.dims.height * nextScale;
-              return {
-                ...shape,
-                scale: nextScale,
-                position: {
-                  x: shape.position.x + (oldRenderW - newRenderW) / 2,
-                  y: shape.position.y + (oldRenderH - newRenderH) / 2,
-                },
-              };
-            }),
-          );
+        // Where on each item the fabric goes (in its own units): the selected area's part of it, else all of it
+        const shapePasteAreaOf = (shape: DistortableShape) => {
+          let fabricPasteArea:
+            | { x: number; y: number; width: number; height: number }
+            | undefined;
+          if (selectionBounds) {
+            const renderW = Math.max(
+              1,
+              shape.dims.width * Math.max(0.1, shape.scale),
+            );
+            const renderH = Math.max(
+              1,
+              shape.dims.height * Math.max(0.1, shape.scale),
+            );
+            const shapeX = shape.position.x;
+            const shapeY = shape.position.y;
+            const ix = Math.max(shapeX, selectionBounds.x);
+            const iy = Math.max(shapeY, selectionBounds.y);
+            const ix2 = Math.min(
+              shapeX + renderW,
+              selectionBounds.x + selectionBounds.width,
+            );
+            const iy2 = Math.min(
+              shapeY + renderH,
+              selectionBounds.y + selectionBounds.height,
+            );
 
-          setStrokes((prev) =>
-            prev.map((st) => {
-              if (!targetStrokeIds.has(st.id)) return st;
-              const xs = st.points.map((p) => p.x);
-              const ys = st.points.map((p) => p.y);
-              const minX = xs.length > 0 ? Math.min(...xs) : 0;
-              const maxX = xs.length > 0 ? Math.max(...xs) : swatchWidth;
-              const minY = ys.length > 0 ? Math.min(...ys) : 0;
-              const maxY = ys.length > 0 ? Math.max(...ys) : swatchHeight;
-              const oldW = Math.max(1, maxX - minX);
-              const oldH = Math.max(1, maxY - minY);
-              const centerX = (minX + maxX) / 2;
-              const centerY = (minY + maxY) / 2;
-              const widthRatio = swatchWidth / oldW;
-              const heightRatio = swatchHeight / oldH;
-              const scaleFactor = Math.max(0.1, (widthRatio + heightRatio) / 2);
-              return {
-                ...st,
-                points: st.points.map((p) => ({
-                  ...p,
-                  x: centerX + (p.x - centerX) * scaleFactor,
-                  y: centerY + (p.y - centerY) * scaleFactor,
-                })),
+            if (ix2 - ix > 1 && iy2 - iy > 1) {
+              const invScale = 1 / Math.max(0.1, shape.scale);
+              fabricPasteArea = {
+                x: Math.max(0, (ix - shapeX) * invScale),
+                y: Math.max(0, (iy - shapeY) * invScale),
+                width: Math.min(shape.dims.width, (ix2 - ix) * invScale),
+                height: Math.min(shape.dims.height, (iy2 - iy) * invScale),
               };
-            }),
-          );
+            }
+          }
 
-          await waitNextFrame();
+          return fabricPasteArea;
+        };
+        const strokePasteAreaOf = (st: Stroke) => {
+          const xs = st.points.map((p) => p.x);
+          const ys = st.points.map((p) => p.y);
+          const minX = xs.length > 0 ? Math.min(...xs) : 0;
+          const maxX = xs.length > 0 ? Math.max(...xs) : 0;
+          const minY = ys.length > 0 ? Math.min(...ys) : 0;
+          const maxY = ys.length > 0 ? Math.max(...ys) : 0;
+          let fabricPasteArea:
+            | { x: number; y: number; width: number; height: number }
+            | undefined;
+          if (selectionBounds && st.points.length > 0) {
+            const ix = Math.max(minX, selectionBounds.x);
+            const iy = Math.max(minY, selectionBounds.y);
+            const ix2 = Math.min(
+              maxX,
+              selectionBounds.x + selectionBounds.width,
+            );
+            const iy2 = Math.min(
+              maxY,
+              selectionBounds.y + selectionBounds.height,
+            );
+            if (ix2 - ix > 1 && iy2 - iy > 1) {
+              fabricPasteArea = {
+                x: ix,
+                y: iy,
+                width: ix2 - ix,
+                height: iy2 - iy,
+              };
+            }
+          }
+
+          return fabricPasteArea;
+        };
+        const shapePasteAreas = new Map(
+          targetShapes.map((shape) => [shape.id, shapePasteAreaOf(shape)]),
+        );
+        const strokePasteAreas = new Map(
+          targetStrokes.map((st) => [st.id, strokePasteAreaOf(st)]),
+        );
+
+        // The fabric grown to each item's size on screen, from the copied swatch at its own scale (same
+        // weave, print and colours: not stretched, not tiled)
+        const MAX_FABRIC_SIDE = 2400;
+        const fallbackFabric = {
+          src: fabricClipboardSrc,
+          width: swatchWidth,
+          height: swatchHeight,
+        };
+        const grownFabric = new Map<
+          string,
+          { src: string; width: number; height: number }
+        >();
+        const growFabric = (id: string, screenW: number, screenH: number) => {
+          if (!sourceImage) return;
+          // (In the copied fabric's own pixels: each is shown as big as it was where it was copied)
+          const fabricW = screenW / fabricClipboardScale;
+          const fabricH = screenH / fabricClipboardScale;
+          const fit = Math.min(1, MAX_FABRIC_SIDE / Math.max(fabricW, fabricH));
+          const width = Math.max(1, Math.round(fabricW * fit));
+          const height = Math.max(1, Math.round(fabricH * fit));
+          try {
+            const src = synthesizeFabricImage(sourceImage, width, height, grownFabric.size + 1);
+            if (src) grownFabric.set(id, { src, width, height });
+          } catch (growError) {
+            console.warn("Growing the fabric failed; pasting the swatch as it is.", growError);
+          }
+        };
+        for (const shape of targetShapes) {
+          const area = shapePasteAreas.get(shape.id);
+          if (isAreaPaste && !area) continue;
+          const scale = Math.max(0.1, shape.scale);
+          growFabric(
+            shape.id,
+            (area?.width ?? shape.dims.width) * scale,
+            (area?.height ?? shape.dims.height) * scale,
+          );
+        }
+        for (const st of targetStrokes) {
+          const area = strokePasteAreas.get(st.id);
+          if (isAreaPaste && !area) continue;
+          const xs = st.points.map((p) => p.x);
+          const ys = st.points.map((p) => p.y);
+          if (!xs.length) continue;
+          growFabric(
+            st.id,
+            area?.width ?? Math.max(1, Math.max(...xs) - Math.min(...xs)),
+            area?.height ?? Math.max(1, Math.max(...ys) - Math.min(...ys)),
+          );
         }
 
-        // 2) Paste fabric.
-        const appliedFabricSrc = processedSwatchSrc || fabricClipboardSrc;
         setWorkspaceShapes((prev) =>
           prev.map((shape) => {
             if (!targetIds.has(shape.id)) return shape;
 
-            let fabricPasteArea:
-              | { x: number; y: number; width: number; height: number }
-              | undefined;
-            if (selectionBounds) {
-              const renderW = Math.max(
-                1,
-                shape.dims.width * Math.max(0.1, shape.scale),
-              );
-              const renderH = Math.max(
-                1,
-                shape.dims.height * Math.max(0.1, shape.scale),
-              );
-              const shapeX = shape.position.x;
-              const shapeY = shape.position.y;
-              const ix = Math.max(shapeX, selectionBounds.x);
-              const iy = Math.max(shapeY, selectionBounds.y);
-              const ix2 = Math.min(
-                shapeX + renderW,
-                selectionBounds.x + selectionBounds.width,
-              );
-              const iy2 = Math.min(
-                shapeY + renderH,
-                selectionBounds.y + selectionBounds.height,
-              );
-
-              if (ix2 - ix > 1 && iy2 - iy > 1) {
-                const invScale = 1 / Math.max(0.1, shape.scale);
-                fabricPasteArea = {
-                  x: Math.max(0, (ix - shapeX) * invScale),
-                  y: Math.max(0, (iy - shapeY) * invScale),
-                  width: Math.min(shape.dims.width, (ix2 - ix) * invScale),
-                  height: Math.min(shape.dims.height, (iy2 - iy) * invScale),
-                };
-              }
-            }
+            const fabricPasteArea = shapePasteAreas.get(shape.id);
+            const fabric = grownFabric.get(shape.id) ?? fallbackFabric;
 
             if (isAreaPaste && !fabricPasteArea) {
               return shape;
@@ -5351,6 +5144,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
                           width: shape.dims.width,
                           height: shape.dims.height,
                         },
+                        naturalWidth: shape.fabricFillWidth,
+                        naturalHeight: shape.fabricFillHeight,
                       },
                     ]
                   : [];
@@ -5358,15 +5153,20 @@ export function Studio({ onBack }: { onBack: () => void }) {
               selectionBounds && fabricPasteArea
                 ? [
                     ...existingLayers,
-                    { src: appliedFabricSrc, area: fabricPasteArea },
+                    {
+                      src: fabric.src,
+                      area: fabricPasteArea,
+                      naturalWidth: fabric.width,
+                      naturalHeight: fabric.height,
+                    },
                   ]
                 : undefined;
 
             return {
               ...shape,
-              fabricFillSrc: appliedFabricSrc,
-              fabricFillWidth: swatchWidth,
-              fabricFillHeight: swatchHeight,
+              fabricFillSrc: fabric.src,
+              fabricFillWidth: fabric.width,
+              fabricFillHeight: fabric.height,
               fabricPasteArea,
               fabricPasteAreas: selectionBounds ? nextAreas : undefined,
               fabricLayers: selectionBounds ? nextLayers : undefined,
@@ -5389,29 +5189,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
             const minY = ys.length > 0 ? Math.min(...ys) : 0;
             const maxY = ys.length > 0 ? Math.max(...ys) : 0;
 
-            let fabricPasteArea:
-              | { x: number; y: number; width: number; height: number }
-              | undefined;
-            if (selectionBounds && st.points.length > 0) {
-              const ix = Math.max(minX, selectionBounds.x);
-              const iy = Math.max(minY, selectionBounds.y);
-              const ix2 = Math.min(
-                maxX,
-                selectionBounds.x + selectionBounds.width,
-              );
-              const iy2 = Math.min(
-                maxY,
-                selectionBounds.y + selectionBounds.height,
-              );
-              if (ix2 - ix > 1 && iy2 - iy > 1) {
-                fabricPasteArea = {
-                  x: ix,
-                  y: iy,
-                  width: ix2 - ix,
-                  height: iy2 - iy,
-                };
-              }
-            }
+            const fabricPasteArea = strokePasteAreas.get(st.id);
+            const fabric = grownFabric.get(st.id) ?? fallbackFabric;
 
             if (isAreaPaste && !fabricPasteArea) {
               return st;
@@ -5442,6 +5221,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
                           width: Math.max(1, maxX - minX),
                           height: Math.max(1, maxY - minY),
                         },
+                        naturalWidth: st.fabricFillWidth,
+                        naturalHeight: st.fabricFillHeight,
                       },
                     ]
                   : [];
@@ -5449,15 +5230,20 @@ export function Studio({ onBack }: { onBack: () => void }) {
               selectionBounds && fabricPasteArea
                 ? [
                     ...existingLayers,
-                    { src: appliedFabricSrc, area: fabricPasteArea },
+                    {
+                      src: fabric.src,
+                      area: fabricPasteArea,
+                      naturalWidth: fabric.width,
+                      naturalHeight: fabric.height,
+                    },
                   ]
                 : undefined;
 
             return {
               ...st,
-              fabricFillSrc: appliedFabricSrc,
-              fabricFillWidth: swatchWidth,
-              fabricFillHeight: swatchHeight,
+              fabricFillSrc: fabric.src,
+              fabricFillWidth: fabric.width,
+              fabricFillHeight: fabric.height,
               fabricPasteArea,
               fabricPasteAreas: selectionBounds ? nextAreas : undefined,
               fabricLayers: selectionBounds ? nextLayers : undefined,
@@ -5468,35 +5254,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
           }),
         );
 
-        await waitNextFrame();
-
-        // 3) Resize target object back to original size.
-        if (!isAreaPaste) {
-          setWorkspaceShapes((prev) =>
-            prev.map((shape) => {
-              if (!targetIds.has(shape.id)) return shape;
-              const original = originalShapeGeometry.get(shape.id);
-              if (!original) return shape;
-              return {
-                ...shape,
-                scale: original.scale,
-                position: { ...original.position },
-              };
-            }),
-          );
-
-          setStrokes((prev) =>
-            prev.map((st) => {
-              if (!targetStrokeIds.has(st.id)) return st;
-              const original = originalStrokeGeometry.get(st.id);
-              if (!original) return st;
-              return {
-                ...st,
-                points: original.points.map((p) => ({ ...p })),
-              };
-            }),
-          );
-        }
       } catch (error) {
         console.error("Paste fabric failed:", error);
       }
@@ -5506,12 +5263,225 @@ export function Studio({ onBack }: { onBack: () => void }) {
     },
     [
       fabricClipboardSrc,
+      fabricClipboardScale,
       workspaceShapes,
       strokes,
       selectedShapeId,
       selectionRect,
       getBoundingBox,
       isItemInRect,
+      saveForUndo,
+    ],
+  );
+
+  // The workspace inside a rectangle as pixels (one per workspace unit), on white
+  const rasterizeWorkspaceRect = useCallback(
+    async (
+      rect: { x: number; y: number; width: number; height: number },
+      only?: { shapes: Set<string>; strokes: Set<string> },
+      withoutOutlines = false,
+    ) => {
+      const svgEl = workspaceRef.current;
+      if (!svgEl) return null;
+      const width = Math.max(1, Math.round(rect.width));
+      const height = Math.max(1, Math.round(rect.height));
+      const clone = buildSelectionClone(svgEl, rect, only);
+      if (withoutOutlines) {
+        clone.querySelectorAll("[data-stroke-id]").forEach((node) => {
+          const stroke = strokes.find((st) => st.id === node.getAttribute("data-stroke-id"));
+          if (!stroke || !(stroke.fabricFillSrc || stroke.baseFill || stroke.fillColor)) return;
+          node.querySelectorAll("[stroke]").forEach((el) => el.setAttribute("stroke", "none"));
+        });
+      }
+      // Images inlined, so the SVG can be drawn on a canvas
+      const images = Array.from(clone.querySelectorAll("image")) as SVGImageElement[];
+      for (const imgEl of images) {
+        const href =
+          imgEl.getAttribute("href") ||
+          imgEl.getAttributeNS("http://www.w3.org/1999/xlink", "href") ||
+          "";
+        if (!href || href.startsWith("data:")) continue;
+        try {
+          const blob = await (await fetch(href, { mode: "cors" })).blob();
+          const dataUrl: string = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          imgEl.setAttribute("href", dataUrl);
+        } catch (e) {
+          console.warn("[rasterizeWorkspaceRect] failed to inline", href, e);
+        }
+      }
+      clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      clone.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+      const source = new XMLSerializer().serializeToString(clone);
+      const url = URL.createObjectURL(new Blob([source], { type: "image/svg+xml;charset=utf-8" }));
+      try {
+        const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const el = new window.Image();
+          el.crossOrigin = "anonymous";
+          el.onload = () => resolve(el);
+          el.onerror = () => reject(new Error("Failed to draw the workspace"));
+          el.src = url;
+        });
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        if (!ctx) return null;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        return ctx.getImageData(0, 0, width, height);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    },
+    [buildSelectionClone, strokes],
+  );
+
+  // Turns a rough garment sketch (the selected area, or an image or stroke) into a finished-looking garment
+  // (sketchRender.ts), added over the sketch as a new image.
+  // "selected": the clicked image or stroke (and anything grouped with it) alone, else the selected area,
+  // else everything on the workspace. The sketch's own colours and fabrics are kept.
+  const renderSketchFromWorkspace = useCallback(
+    async (target?: { type: "shape" | "stroke"; id: string } | "selected") => {
+      const selectionBox = selectionRect
+        ? {
+            x: Math.min(selectionRect.x1, selectionRect.x2),
+            y: Math.min(selectionRect.y1, selectionRect.y2),
+            width: Math.abs(selectionRect.x2 - selectionRect.x1),
+            height: Math.abs(selectionRect.y2 - selectionRect.y1),
+          }
+        : null;
+      let box: { x: number; y: number; width: number; height: number } | null = null;
+      let only: { shapes: Set<string>; strokes: Set<string> } | undefined;
+      // Just these items (and those grouped with them), over their combined bounds
+      const onlyItems = (items: Array<DistortableShape | Stroke>) => {
+        const groups = new Set(items.map((item) => item.groupId).filter(Boolean));
+        const members = [...workspaceShapes, ...strokes].filter(
+          (item) => items.includes(item) || (item.groupId && groups.has(item.groupId)),
+        );
+        only = {
+          shapes: new Set(members.filter((item) => "dots" in item).map((item) => item.id)),
+          strokes: new Set(members.filter((item) => !("dots" in item)).map((item) => item.id)),
+        };
+        const boxes = members.map((item) => getBoundingBox(item));
+        const x = Math.min(...boxes.map((b) => b.x));
+        const y = Math.min(...boxes.map((b) => b.y));
+        box = {
+          x,
+          y,
+          width: Math.max(...boxes.map((b) => b.x + b.width)) - x,
+          height: Math.max(...boxes.map((b) => b.y + b.height)) - y,
+        };
+      };
+      if (target === "selected") {
+        const clicked = lastClickedItem
+          ? lastClickedItem.type === "shape"
+            ? workspaceShapes.find((shape) => shape.id === lastClickedItem.id)
+            : strokes.find((stroke) => stroke.id === lastClickedItem.id)
+          : null;
+        const selected =
+          clicked ??
+          (selectedShapeId
+            ? workspaceShapes.find((shape) => shape.id === selectedShapeId)
+            : null);
+        if (selected) onlyItems([selected]);
+        else if (selectionBox && selectionBox.width > 10 && selectionBox.height > 10) box = selectionBox;
+        else {
+          const boxes = [...workspaceShapes, ...strokes]
+            .filter((item) => ("dots" in item ? item.dots.length : item.points.length) > 0)
+            .map((item) => getBoundingBox(item));
+          if (boxes.length) {
+            const x = Math.min(...boxes.map((b) => b.x));
+            const y = Math.min(...boxes.map((b) => b.y));
+            box = {
+              x,
+              y,
+              width: Math.max(...boxes.map((b) => b.x + b.width)) - x,
+              height: Math.max(...boxes.map((b) => b.y + b.height)) - y,
+            };
+          }
+        }
+      } else if (target) {
+        const item =
+          target.type === "shape"
+            ? workspaceShapes.find((shape) => shape.id === target.id)
+            : strokes.find((stroke) => stroke.id === target.id);
+        if (item) onlyItems([item]);
+      } else {
+        box = selectionBox;
+      }
+      setContextMenu(null);
+      if (!box || box.width < 10 || box.height < 10) {
+        alert("Select the sketch first (draw a box around it, or right-click it).");
+        return;
+      }
+      // (A little paper around the sketch, so its outline doesn't touch the edge)
+      const pad = Math.round(Math.max(box.width, box.height) * 0.06) + 4;
+      const rect = {
+        x: box.x - pad,
+        y: box.y - pad,
+        width: box.width + pad * 2,
+        height: box.height + pad * 2,
+      };
+      try {
+        const sketch = await rasterizeWorkspaceRect(rect, only, true);
+        if (!sketch) return;
+        const result = renderSketch(sketch);
+        if ("error" in result) {
+          alert(result.error);
+          return;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = result.width;
+        canvas.height = result.height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        const imageData = ctx.createImageData(result.width, result.height);
+        imageData.data.set(result.data);
+        ctx.putImageData(imageData, 0, 0);
+        saveForUndo();
+        const topZ = Math.max(
+          0,
+          ...workspaceShapes.map((shape) => shape.zIndex || 0),
+          ...strokes.map((stroke) => stroke.zIndex || 0),
+        );
+        const newShape: DistortableShape = {
+          id: `rendered-sketch-${Date.now()}`,
+          img: canvas.toDataURL("image/png"),
+          dots: [
+            { id: "tl", x: 0, y: 0 },
+            { id: "tr", x: rect.width, y: 0 },
+            { id: "br", x: rect.width, y: rect.height },
+            { id: "bl", x: 0, y: rect.height },
+          ],
+          dims: { width: rect.width, height: rect.height },
+          position: { x: rect.x, y: rect.y },
+          scale: 1,
+          showDots: true,
+          fillColor: undefined,
+          erasedPaths: [],
+          zIndex: topZ + 1,
+        };
+        setWorkspaceShapes((prev) => [...prev, newShape]);
+        setSelectionRect(null);
+      } catch (error) {
+        console.error("Render sketch failed:", error);
+        alert("Rendering the sketch failed. See the console for details.");
+      }
+    },
+    [
+      workspaceShapes,
+      strokes,
+      selectionRect,
+      selectedShapeId,
+      getBoundingBox,
+      rasterizeWorkspaceRect,
+      lastClickedItem,
       saveForUndo,
     ],
   );
@@ -7674,7 +7644,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                       <button
                         type="button"
                         onClick={() => {
-                          openRefineControls();
+                          renderSketchFromWorkspace("selected");
                           setShowTopPanelMenu(false);
                         }}
                         className={`${toolbarButtonBaseClass} min-w-0 w-full`}
@@ -7791,7 +7761,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
 
               <button
                 type="button"
-                onClick={openRefineControls}
+                onClick={() => renderSketchFromWorkspace("selected")}
                 className={`${toolbarButtonBaseClass} hidden md:flex`}
                 style={{
                   backgroundColor: "#fcd34d",
@@ -7801,150 +7771,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
               >
                 Refine Image
               </button>
-
-              {showRefineControls && (
-                <div
-                  className="fixed inset-0 z-[700] flex items-center justify-center bg-slate-950/40 px-4 py-6 backdrop-blur-[2px]"
-                  onClick={() => setShowRefineControls(false)}
-                >
-                  <div
-                    className="flex h-[min(88vh,56rem)] w-full max-w-[56rem] flex-col overflow-hidden rounded-3xl border border-slate-300 bg-[#fffdfa] shadow-[0_24px_60px_rgba(15,23,42,0.28)]"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200 bg-[#fffdfa] px-5 py-4 sm:px-6">
-                      <div>
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                          Refine Image
-                        </div>
-                        <p className="mt-1 text-xs text-slate-600">
-                          Adjust the prompts, then run refine on the selected
-                          workspace image.
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowRefineControls(false)}
-                        className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50"
-                      >
-                        Close
-                      </button>
-                    </div>
-                    <div className="flex-1 overflow-y-auto px-5 py-4 sm:px-6">
-                      <div className="flex flex-col gap-3">
-                        <label className="flex flex-col gap-1 text-[11px] font-medium text-slate-700">
-                          Positive prompt
-                          <textarea
-                            value={positivePrompt}
-                            onChange={(e) => setPositivePrompt(e.target.value)}
-                            rows={5}
-                            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200"
-                            placeholder="Describe the refined result you want"
-                          />
-                        </label>
-                        <label className="flex flex-col gap-1 text-[11px] font-medium text-slate-700">
-                          Negative prompt
-                          <textarea
-                            value={negativePrompt}
-                            onChange={(e) => setNegativePrompt(e.target.value)}
-                            rows={6}
-                            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200"
-                            placeholder="Describe what to avoid"
-                          />
-                        </label>
-                        <label className="flex flex-col gap-1 text-[11px] font-medium text-slate-700">
-                          Fabric
-                          <select
-                            value={selectedRefineFabric}
-                            onChange={(e) => {
-                              const nextFabric = e.target.value;
-                              setSelectedRefineFabric(nextFabric);
-                              const normalizedFabric = nextFabric.toLowerCase();
-                              setPositivePrompt(
-                                REFINE_POSITIVE_PROMPTS[normalizedFabric] ||
-                                  REFINE_POSITIVE_PROMPTS.silk,
-                              );
-                            }}
-                            className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-xs text-slate-900 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200"
-                          >
-                            <option value="silk">Silk</option>
-                            <option value="orgaza">Chiffon / Organza</option>
-                            <option value="wool">Wool</option>
-                            <option value="denim">Denim</option>
-                          </select>
-                        </label>
-                        <label className="flex flex-col gap-1 text-[11px] font-medium text-slate-700">
-                          ControlNet priority
-                          <select
-                            value={selectedRefineControlMode}
-                            onChange={(e) =>
-                              setSelectedRefineControlMode(
-                                e.target.value as RefineControlMode,
-                              )
-                            }
-                            className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-xs text-slate-900 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200"
-                          >
-                            <option value="Balanced">Balanced</option>
-                            <option value="My prompt is more important">
-                              My prompt is more important
-                            </option>
-                            <option value="ControlNet is more important">
-                              ControlNet is more important
-                            </option>
-                          </select>
-                        </label>
-                        {refineError && (
-                          <p className="text-xs text-red-600">{refineError}</p>
-                        )}
-                        {refineResultImage && (
-                          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                              Refined Output
-                            </div>
-                            <img
-                              src={refineResultImage}
-                              alt="Refined output preview"
-                              className="max-h-[20rem] w-full rounded-xl border border-slate-200 object-contain bg-white"
-                            />
-                            <div className="mt-3 flex items-center justify-end gap-2">
-                              <button
-                                type="button"
-                                onClick={downloadRefineResult}
-                                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
-                              >
-                                Download
-                              </button>
-                              <button
-                                type="button"
-                                onClick={applyRefineResultToWorkspace}
-                                className="rounded-xl border border-emerald-400 bg-emerald-300 px-3 py-2 text-xs font-semibold text-slate-900 transition-colors hover:bg-emerald-200"
-                              >
-                                Use In Workspace
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-200 bg-[#fffdfa] px-5 py-4 sm:px-6">
-                      <button
-                        type="button"
-                        onClick={() => setShowRefineControls(false)}
-                        className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleRefineImage}
-                        disabled={isRefiningImage}
-                        className="rounded-xl border border-amber-400 bg-amber-300 px-4 py-2 text-xs font-semibold text-slate-900 transition-colors hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {isRefiningImage ? "Refining..." : "Run Refine"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
 
               <button
                 id="download-btn"
@@ -10362,6 +10188,20 @@ export function Studio({ onBack }: { onBack: () => void }) {
             <svg
               id="workspace-svg"
               ref={workspaceRef}
+              onPointerDownCapture={(e) => {
+                const item = (e.target as Element).closest?.(
+                  "[data-shape-id], [data-stroke-id]",
+                );
+                const shapeId = item?.getAttribute("data-shape-id");
+                const strokeId = item?.getAttribute("data-stroke-id");
+                setLastClickedItem(
+                  shapeId
+                    ? { type: "shape", id: shapeId }
+                    : strokeId
+                      ? { type: "stroke", id: strokeId }
+                      : null,
+                );
+              }}
               className={`w-full h-full shadow-2xl rounded-[3rem] lg:rounded-[3rem] rounded-2xl ${getWorkspaceBgClasses()}`}
               onContextMenu={(e) => {
                 e.preventDefault();
@@ -10420,10 +10260,16 @@ export function Studio({ onBack }: { onBack: () => void }) {
                         : shape.fabricPasteArea
                           ? [shape.fabricPasteArea]
                           : [];
-                    const fabricWidth = Math.max(1, shape.dims.width);
-                    const fabricHeight = Math.max(1, shape.dims.height);
-                    const fabricX = 0;
-                    const fabricY = 0;
+                    const fabricRect = fabricImageRect(
+                      {
+                        x: 0,
+                        y: 0,
+                        width: Math.max(1, shape.dims.width),
+                        height: Math.max(1, shape.dims.height),
+                      },
+                      shape.fabricFillWidth,
+                      shape.fabricFillHeight,
+                    );
                     const transform = `translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale}) rotate(${shape.rotation || 0} ${shape.dims.width / 2} ${shape.dims.height / 2})`;
                     return (
                       <g
@@ -10831,10 +10677,10 @@ export function Studio({ onBack }: { onBack: () => void }) {
                                   <image
                                     key={`fabric-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`}
                                     href={shape.fabricFillSrc}
-                                    x={fabricX}
-                                    y={fabricY}
-                                    width={fabricWidth}
-                                    height={fabricHeight}
+                                    x={fabricRect.x}
+                                    y={fabricRect.y}
+                                    width={fabricRect.width}
+                                    height={fabricRect.height}
                                     preserveAspectRatio="none"
                                     imageRendering="optimizeQuality"
                                     clipPath={
@@ -10891,14 +10737,27 @@ export function Studio({ onBack }: { onBack: () => void }) {
                                     </mask>
                                   ))}
                                 </defs>
-                                {shapeFabricLayers.map((layer, i) => (
+                                {shapeFabricLayers.map((layer, i) => {
+                                  const layerRect = layer.naturalWidth
+                                    ? fabricImageRect(
+                                        layer.area,
+                                        layer.naturalWidth,
+                                        layer.naturalHeight,
+                                      )
+                                    : {
+                                        x: 0,
+                                        y: 0,
+                                        width: Math.max(1, shape.dims.width),
+                                        height: Math.max(1, shape.dims.height),
+                                      };
+                                  return (
                                   <image
                                     key={`fabric-layer-${shape.id}-${i}-${(shape as any).clipUpdate || shape.dots.length}`}
                                     href={layer.src}
-                                    x={fabricX}
-                                    y={fabricY}
-                                    width={fabricWidth}
-                                    height={fabricHeight}
+                                    x={layerRect.x}
+                                    y={layerRect.y}
+                                    width={layerRect.width}
+                                    height={layerRect.height}
                                     preserveAspectRatio="none"
                                     imageRendering="optimizeQuality"
                                     clipPath={
@@ -10909,7 +10768,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
                                     mask={`url(#ms-fabric-layer-${shape.id}-${i})`}
                                     pointerEvents="none"
                                   />
-                                ))}
+                                  );
+                                })}
                               </>
                             )}
                             {shape.baseFill && (
@@ -11132,6 +10992,11 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     );
                     const strokeW = Math.max(1, maxX - minX);
                     const strokeH = Math.max(1, maxY - minY);
+                    const strokeFabricRect = fabricImageRect(
+                      { x: minX, y: minY, width: strokeW, height: strokeH },
+                      s.fabricFillWidth,
+                      s.fabricFillHeight,
+                    );
                     const transform = `rotate(${s.rotation || 0} ${centerX} ${centerY})`;
                     const meshPattern = getMeshPattern(s);
                     const meshStrokeInset = Math.max(6, s.width * 1.5);
@@ -11200,10 +11065,10 @@ export function Studio({ onBack }: { onBack: () => void }) {
                               <g clipPath={`url(#cl-st-fabric-area-${s.id})`}>
                                 <image
                                   href={s.fabricFillSrc}
-                                  x={minX}
-                                  y={minY}
-                                  width={strokeW}
-                                  height={strokeH}
+                                  x={strokeFabricRect.x}
+                                  y={strokeFabricRect.y}
+                                  width={strokeFabricRect.width}
+                                  height={strokeFabricRect.height}
                                   preserveAspectRatio="none"
                                   imageRendering="optimizeQuality"
                                   clipPath={`url(#cl-st-fabric-${s.id})`}
@@ -11213,10 +11078,10 @@ export function Studio({ onBack }: { onBack: () => void }) {
                             ) : (
                               <image
                                 href={s.fabricFillSrc}
-                                x={minX}
-                                y={minY}
-                                width={strokeW}
-                                height={strokeH}
+                                x={strokeFabricRect.x}
+                                y={strokeFabricRect.y}
+                                width={strokeFabricRect.width}
+                                height={strokeFabricRect.height}
                                 preserveAspectRatio="none"
                                 imageRendering="optimizeQuality"
                                 clipPath={`url(#cl-st-fabric-${s.id})`}
@@ -11252,10 +11117,18 @@ export function Studio({ onBack }: { onBack: () => void }) {
                               >
                                 <image
                                   href={layer.src}
-                                  x={minX}
-                                  y={minY}
-                                  width={strokeW}
-                                  height={strokeH}
+                                  {...(layer.naturalWidth
+                                    ? fabricImageRect(
+                                        layer.area,
+                                        layer.naturalWidth,
+                                        layer.naturalHeight,
+                                      )
+                                    : {
+                                        x: minX,
+                                        y: minY,
+                                        width: strokeW,
+                                        height: strokeH,
+                                      })}
                                   preserveAspectRatio="none"
                                   imageRendering="optimizeQuality"
                                   clipPath={`url(#cl-st-fabric-${s.id})`}
