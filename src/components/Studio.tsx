@@ -14,7 +14,10 @@ import type { NextConfig } from "next";
 import ImageTracer from "imagetracerjs";
 import { removeBackground, preload } from "@imgly/background-removal";
 import { SubmissionModal } from "./SubmissionModal";
-import { synthesizeFabricImage } from "../lib/fabricSynthesis";
+import { pickFabricSwatch, synthesizeFabricImage } from "../lib/fabricSynthesis";
+import { parseFashionClasses } from "../lib/garmentSegmenter";
+import { toParseCanvas } from "../lib/photoTryOnParsing";
+import { isGarmentClass } from "../lib/photoTryOn";
 import BodySilhouetteView from "./BodySilhouetteView";
 
 const MOBILE_BREAKPOINT = 1024;
@@ -4819,13 +4822,65 @@ export function Studio({ onBack }: { onBack: () => void }) {
           }
         }
 
+        // From a garment's image, only its cleanest piece of fabric: inside its outline and where the garment
+        // is (a photo may have the person and the room in it too), away from seams, folds and edges. Kept at
+        // the image's own pixels, so its scale on screen below still holds.
+        let fabricImageWidth = 0;
+        if (fabricSrc && targetShape && fabricSrc === targetShape.img) {
+          try {
+            const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+              const el = new window.Image();
+              el.crossOrigin = "anonymous";
+              el.onload = () => resolve(el);
+              el.onerror = () => reject(new Error("Failed to load the garment image"));
+              el.src = targetShape.img as string;
+            });
+            fabricImageWidth = img.naturalWidth || img.width;
+            let garment: { mask: Uint8Array; width: number; height: number } | undefined;
+            try {
+              const parseCanvas = toParseCanvas(img);
+              const fashion = await parseFashionClasses(parseCanvas);
+              const mask = new Uint8Array(fashion.length);
+              let count = 0;
+              for (let p = 0; p < fashion.length; p += 1) {
+                if (isGarmentClass(fashion[p])) {
+                  mask[p] = 1;
+                  count += 1;
+                }
+              }
+              // (Too little garment found: the parse missed it, so the whole image counts)
+              if (count > fashion.length * 0.05) {
+                garment = { mask, width: parseCanvas.width, height: parseCanvas.height };
+              }
+            } catch (parseError) {
+              console.warn("Garment parse for copying fabric failed; using the whole image.", parseError);
+            }
+            const swatch = pickFabricSwatch(img, {
+              outline:
+                targetShape.dots && targetShape.dots.length > 2
+                  ? {
+                      path: generatePathData(targetShape.dots, true),
+                      width: targetShape.dims.width,
+                    }
+                  : undefined,
+              garment,
+            });
+            if (swatch) fabricSrc = swatch;
+          } catch (swatchError) {
+            console.warn("Picking the fabric failed; copying the whole image.", swatchError);
+          }
+        }
+
         // A shape's own image (or fabric) is shown scaled: its width on screen per image pixel
         let fabricScale = 1;
-        if (
+        if (fabricImageWidth > 0 && targetShape) {
+          fabricScale =
+            (targetShape.dims.width * Math.max(0.1, targetShape.scale)) /
+            fabricImageWidth;
+        } else if (
           fabricSrc &&
           targetShape &&
-          (fabricSrc === targetShape.img ||
-            fabricSrc === targetShape.fabricFillSrc)
+          fabricSrc === targetShape.fabricFillSrc
         ) {
           const naturalWidth = await new Promise<number>((resolve) => {
             const img = new window.Image();
