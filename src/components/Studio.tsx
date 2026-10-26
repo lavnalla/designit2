@@ -15,6 +15,7 @@ import ImageTracer from "imagetracerjs";
 import { removeBackground, preload } from "@imgly/background-removal";
 import { SubmissionModal } from "./SubmissionModal";
 import { pickFabricSwatch, synthesizeFabricImage } from "../lib/fabricSynthesis";
+import { renderSketch } from "../lib/sketchRender";
 import { parseFashionClasses } from "../lib/garmentSegmenter";
 import { toParseCanvas } from "../lib/photoTryOnParsing";
 import { isGarmentClass } from "../lib/photoTryOn";
@@ -333,48 +334,11 @@ const DEFAULT_MESH_PATTERN = {
   verticalLines: 4,
 } as const;
 
-const REFINE_POSITIVE_PROMPTS: Record<string, string> = {
-  silk: "high quality, professional fashion design render, macro shot of liquid silk fabric, soft glossy sheen, realistic draping and folds, subtle reflections, studio lighting, photorealistic, 8k resolution",
-  satin:
-    "high quality, professional fashion design render, macro shot of liquid silk fabric, soft glossy sheen, realistic draping and folds, subtle reflections, studio lighting, photorealistic, 8k resolution",
-  wool: "high quality, professional fashion design render, macro shot of heavy tweed wool fabric, intricate woven texture, visible yarn details, realistic garment structure, studio lighting, photorealistic",
-  tweed:
-    "high quality, professional fashion design render, macro shot of heavy tweed wool fabric, intricate woven texture, visible yarn details, realistic garment structure, studio lighting, photorealistic",
-  denim:
-    "high quality, professional fashion design render, macro shot of raw denim fabric, distinct twill weave, contrast stitching texture, realistic stiffness and folds, studio lighting, photorealistic",
-  organza:
-    "high quality, professional fashion design render, macro shot of sheer lightweight chiffon fabric, translucent layers, soft airy drape, delicate texture, studio lighting, photorealistic",
-  orgaza:
-    "high quality, professional fashion design render, macro shot of sheer lightweight chiffon fabric, translucent layers, soft airy drape, delicate texture, studio lighting, photorealistic",
-  chiffon:
-    "high quality, professional fashion design render, macro shot of sheer lightweight chiffon fabric, translucent layers, soft airy drape, delicate texture, studio lighting, photorealistic",
-};
-
-const REFINE_NEGATIVE_PROMPT =
-  "deformed, distorted, disfigured, poorly drawn, bad anatomy, wrong anatomy, extra limbs, missing limbs, floating limbs, disconnected limbs, mutation, mutated, ugly, disgusting, blurry, amputation, watercolour, painting, illustration, cartoon, 3d render, low quality, sketch, lines, outlines, changing shape, altering silhouette, altering neckline, changing collar shape, reshaping garment, distorted collar, asymmetric neckline, expanding neckline";
-
-type RefineControlMode =
-  | "Balanced"
-  | "My prompt is more important"
-  | "ControlNet is more important";
-
 export function Studio({ onBack }: { onBack: () => void }) {
-  const [refineError, setRefineError] = useState<string | null>(null);
   const [showSourceWindow, setShowSourceWindow] = useState(false);
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
   const [showTopPanelMenu, setShowTopPanelMenu] = useState(false);
   const isProcessingRef = useRef(false);
-  // Refine image state
-  const [showRefineControls, setShowRefineControls] = useState(false);
-  const [positivePrompt, setPositivePrompt] = useState("");
-  const [negativePrompt, setNegativePrompt] = useState("");
-  const [selectedRefineFabric, setSelectedRefineFabric] = useState("silk");
-  const [selectedRefineControlMode, setSelectedRefineControlMode] =
-    useState<RefineControlMode>("My prompt is more important");
-  const [refineResultImage, setRefineResultImage] = useState<string | null>(
-    null,
-  );
-  const [isRefiningImage, setIsRefiningImage] = useState(false);
   // ...existing state hooks...
   // All shape state hooks...
   const [workspaceShapes, setWorkspaceShapes] = useState<DistortableShape[]>(
@@ -387,86 +351,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
     ? workspaceShapes?.find((s) => s.id === selectedShapeId)
     : null;
 
-  const openRefineControls = useCallback(async () => {
-    const normalizedFabric = selectedRefineFabric.toLowerCase();
-    setPositivePrompt(
-      REFINE_POSITIVE_PROMPTS[normalizedFabric] || REFINE_POSITIVE_PROMPTS.silk,
-    );
-    setNegativePrompt(REFINE_NEGATIVE_PROMPT);
-    setRefineError(null);
-    setRefineResultImage(null);
-
-    let latestWorkspaceImage: string | null = null;
-    for (let attempt = 0; attempt < 3 && !latestWorkspaceImage; attempt++) {
-      latestWorkspaceImage = await syncWorkspaceToTryOn();
-      if (!latestWorkspaceImage) {
-        await new Promise<void>((resolve) =>
-          requestAnimationFrame(() => resolve()),
-        );
-      }
-    }
-
-    if (latestWorkspaceImage) {
-      setRenderedWorkspaceImg(latestWorkspaceImage);
-    }
-
-    setShowRefineControls(true);
-  }, [selectedRefineFabric]);
-
-  const downloadRefineResult = useCallback(() => {
-    if (!refineResultImage) {
-      return;
-    }
-
-    const link = document.createElement("a");
-    link.href = refineResultImage;
-    link.download = `refined-design-${Date.now()}.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }, [refineResultImage]);
-
-  const applyRefineResultToWorkspace = useCallback(() => {
-    if (!refineResultImage || !selectedShapeId) {
-      return;
-    }
-
-    const baseShape = workspaceShapes.find(
-      (shape) => shape.id === selectedShapeId,
-    );
-    if (!baseShape) {
-      return;
-    }
-
-    const newShape: DistortableShape = {
-      ...baseShape,
-      id: `refined-${Date.now()}`,
-      img: refineResultImage,
-      dots: baseShape.dots.map((dot) => ({ ...dot })),
-      dims: { ...baseShape.dims },
-      position: {
-        x: baseShape.position.x + 24,
-        y: baseShape.position.y + 24,
-      },
-      showDots: true,
-    };
-
-    setWorkspaceShapes((prev) => [...prev, newShape]);
-    setSelectedShapeId(newShape.id);
-    setRenderedWorkspaceImg(refineResultImage);
-    setShowRefineControls(false);
-  }, [refineResultImage, selectedShapeId, workspaceShapes]);
-
   // Helper: convert dataURL to File
-  function dataURLtoFile(dataurl: string, filename: string) {
-    const arr = dataurl.split(","),
-      mime = arr[0].match(/:(.*?);/)[1],
-      bstr = atob(arr[1]),
-      n = bstr.length,
-      u8arr = new Uint8Array(n);
-    for (let i = 0; i < n; i++) u8arr[i] = bstr.charCodeAt(i);
-    return new File([u8arr], filename, { type: mime });
-  }
 
   const closeActiveLoops = useCallback(() => {
     setStrokes((prevStrokes) =>
@@ -800,72 +685,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
     });
   };
 
-  // Refine handler
-  const handleRefineImage = async () => {
-    setRefineError(null);
-    setRefineResultImage(null);
-    const refineSourceImage =
-      renderedWorkspaceImg || selectedShape?.img || null;
-    if (!refineSourceImage) {
-      setRefineError("No shape or image selected.");
-      console.warn("Refine: No selected shape or image.", {
-        selectedShape,
-        renderedWorkspaceImg,
-      });
-      return;
-    }
-    setIsRefiningImage(true);
-    try {
-      // Convert base64 or dataURL to File
-      let file: File;
-      if (refineSourceImage.startsWith("data:")) {
-        file = dataURLtoFile(refineSourceImage, "selected.png");
-      } else {
-        // fallback: fetch as blob
-        const res = await fetch(refineSourceImage);
-        const blob = await res.blob();
-        file = new File([blob], "selected.png", { type: blob.type });
-      }
-      const formData = new FormData();
-      formData.append("image", file);
-      formData.append("positivePrompt", positivePrompt);
-      formData.append("negativePrompt", negativePrompt);
-      formData.append("fabric", selectedRefineFabric);
-      formData.append("controlMode", selectedRefineControlMode);
-      formData.append("image_strength", "0.7");
-      formData.append("cfg_scale", "7");
-      formData.append("steps", "30");
-      const response = await fetch("/api/refine-image", {
-        method: "POST",
-        body: formData,
-      });
-      let data;
-      try {
-        data = await response.json();
-      } catch (err) {
-        setRefineError("Failed to parse response from server.");
-        console.error("Refine: Failed to parse response", err);
-        return;
-      }
-      console.log("Refine: API response", data);
-      if (data.resultImage) {
-        setRefineResultImage(data.resultImage);
-      } else if (data.error) {
-        setRefineError(
-          data.details
-            ? `${data.error}: ${data.details}`
-            : `API error: ${data.error}`,
-        );
-      } else {
-        setRefineError("No image returned from API.");
-      }
-    } catch (err: any) {
-      setRefineError("Network or server error: " + (err?.message || err));
-      console.error("Refine: Network/server error", err);
-    } finally {
-      setIsRefiningImage(false);
-    }
-  };
   // helper: convert hex color + alpha (0..1) to rgba() string
   const hexToRgba = (hex: string, alpha = 1) => {
     if (!hex) return `rgba(0,0,0,${alpha})`;
@@ -5444,6 +5263,199 @@ export function Studio({ onBack }: { onBack: () => void }) {
     ],
   );
 
+  // The workspace inside a rectangle as pixels (one per workspace unit), on white
+  const rasterizeWorkspaceRect = useCallback(
+    async (rect: { x: number; y: number; width: number; height: number }) => {
+      const svgEl = workspaceRef.current;
+      if (!svgEl) return null;
+      const width = Math.max(1, Math.round(rect.width));
+      const height = Math.max(1, Math.round(rect.height));
+      const clone = buildSelectionClone(svgEl, rect);
+      // Images inlined, so the SVG can be drawn on a canvas
+      const images = Array.from(clone.querySelectorAll("image")) as SVGImageElement[];
+      for (const imgEl of images) {
+        const href =
+          imgEl.getAttribute("href") ||
+          imgEl.getAttributeNS("http://www.w3.org/1999/xlink", "href") ||
+          "";
+        if (!href || href.startsWith("data:")) continue;
+        try {
+          const blob = await (await fetch(href, { mode: "cors" })).blob();
+          const dataUrl: string = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          imgEl.setAttribute("href", dataUrl);
+        } catch (e) {
+          console.warn("[rasterizeWorkspaceRect] failed to inline", href, e);
+        }
+      }
+      clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      clone.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+      const source = new XMLSerializer().serializeToString(clone);
+      const url = URL.createObjectURL(new Blob([source], { type: "image/svg+xml;charset=utf-8" }));
+      try {
+        const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const el = new window.Image();
+          el.crossOrigin = "anonymous";
+          el.onload = () => resolve(el);
+          el.onerror = () => reject(new Error("Failed to draw the workspace"));
+          el.src = url;
+        });
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        if (!ctx) return null;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        return ctx.getImageData(0, 0, width, height);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    },
+    [buildSelectionClone],
+  );
+
+  // Turns a rough garment sketch (the selected area, or an image or stroke) into a finished-looking garment
+  // (sketchRender.ts), in the copied fabric if there is one, added over the sketch as a new image.
+  // "selected": the selected area, else the selected image, else everything on the workspace.
+  const renderSketchFromWorkspace = useCallback(
+    async (target?: { type: "shape" | "stroke"; id: string } | "selected") => {
+      const selectionBox = selectionRect
+        ? {
+            x: Math.min(selectionRect.x1, selectionRect.x2),
+            y: Math.min(selectionRect.y1, selectionRect.y2),
+            width: Math.abs(selectionRect.x2 - selectionRect.x1),
+            height: Math.abs(selectionRect.y2 - selectionRect.y1),
+          }
+        : null;
+      let box: { x: number; y: number; width: number; height: number } | null = null;
+      if (target === "selected") {
+        const selected = selectedShapeId
+          ? workspaceShapes.find((shape) => shape.id === selectedShapeId)
+          : null;
+        if (selectionBox && selectionBox.width > 10 && selectionBox.height > 10) box = selectionBox;
+        else if (selected) box = getBoundingBox(selected);
+        else {
+          const boxes = [...workspaceShapes, ...strokes]
+            .filter((item) => ("dots" in item ? item.dots.length : item.points.length) > 0)
+            .map((item) => getBoundingBox(item));
+          if (boxes.length) {
+            const x = Math.min(...boxes.map((b) => b.x));
+            const y = Math.min(...boxes.map((b) => b.y));
+            box = {
+              x,
+              y,
+              width: Math.max(...boxes.map((b) => b.x + b.width)) - x,
+              height: Math.max(...boxes.map((b) => b.y + b.height)) - y,
+            };
+          }
+        }
+      } else if (target) {
+        const item =
+          target.type === "shape"
+            ? workspaceShapes.find((shape) => shape.id === target.id)
+            : strokes.find((stroke) => stroke.id === target.id);
+        if (item) box = getBoundingBox(item);
+      } else {
+        box = selectionBox;
+      }
+      setContextMenu(null);
+      if (!box || box.width < 10 || box.height < 10) {
+        alert("Select the sketch first (draw a box around it, or right-click it).");
+        return;
+      }
+      // (A little paper around the sketch, so its outline doesn't touch the edge)
+      const pad = Math.round(Math.max(box.width, box.height) * 0.06) + 4;
+      const rect = {
+        x: box.x - pad,
+        y: box.y - pad,
+        width: box.width + pad * 2,
+        height: box.height + pad * 2,
+      };
+      try {
+        const sketch = await rasterizeWorkspaceRect(rect);
+        if (!sketch) return;
+        let fabric: ImageData | null = null;
+        if (fabricClipboardSrc) {
+          const img = await new Promise<HTMLImageElement | null>((resolve) => {
+            const el = new window.Image();
+            el.crossOrigin = "anonymous";
+            el.onload = () => resolve(el);
+            el.onerror = () => resolve(null);
+            el.src = fabricClipboardSrc;
+          });
+          if (img) {
+            const canvas = document.createElement("canvas");
+            canvas.width = img.naturalWidth || img.width;
+            canvas.height = img.naturalHeight || img.height;
+            const ctx = canvas.getContext("2d", { willReadFrequently: true });
+            if (ctx && canvas.width && canvas.height) {
+              ctx.drawImage(img, 0, 0);
+              fabric = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            }
+          }
+        }
+        const result = renderSketch(sketch, fabric, fabricClipboardScale);
+        if ("error" in result) {
+          alert(result.error);
+          return;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = result.width;
+        canvas.height = result.height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        const imageData = ctx.createImageData(result.width, result.height);
+        imageData.data.set(result.data);
+        ctx.putImageData(imageData, 0, 0);
+        saveForUndo();
+        const topZ = Math.max(
+          0,
+          ...workspaceShapes.map((shape) => shape.zIndex || 0),
+          ...strokes.map((stroke) => stroke.zIndex || 0),
+        );
+        const newShape: DistortableShape = {
+          id: `rendered-sketch-${Date.now()}`,
+          img: canvas.toDataURL("image/png"),
+          dots: [
+            { id: "tl", x: 0, y: 0 },
+            { id: "tr", x: rect.width, y: 0 },
+            { id: "br", x: rect.width, y: rect.height },
+            { id: "bl", x: 0, y: rect.height },
+          ],
+          dims: { width: rect.width, height: rect.height },
+          position: { x: rect.x, y: rect.y },
+          scale: 1,
+          showDots: true,
+          fillColor: undefined,
+          erasedPaths: [],
+          zIndex: topZ + 1,
+        };
+        setWorkspaceShapes((prev) => [...prev, newShape]);
+        setSelectionRect(null);
+      } catch (error) {
+        console.error("Render sketch failed:", error);
+        alert("Rendering the sketch failed. See the console for details.");
+      }
+    },
+    [
+      workspaceShapes,
+      strokes,
+      selectionRect,
+      selectedShapeId,
+      getBoundingBox,
+      rasterizeWorkspaceRect,
+      fabricClipboardSrc,
+      fabricClipboardScale,
+      saveForUndo,
+    ],
+  );
+
   const extractSelection = useCallback(
     async (asJpeg = false) => {
       if (!selectionRect) return;
@@ -7602,7 +7614,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                       <button
                         type="button"
                         onClick={() => {
-                          openRefineControls();
+                          renderSketchFromWorkspace("selected");
                           setShowTopPanelMenu(false);
                         }}
                         className={`${toolbarButtonBaseClass} min-w-0 w-full`}
@@ -7719,7 +7731,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
 
               <button
                 type="button"
-                onClick={openRefineControls}
+                onClick={() => renderSketchFromWorkspace("selected")}
                 className={`${toolbarButtonBaseClass} hidden md:flex`}
                 style={{
                   backgroundColor: "#fcd34d",
@@ -7729,150 +7741,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
               >
                 Refine Image
               </button>
-
-              {showRefineControls && (
-                <div
-                  className="fixed inset-0 z-[700] flex items-center justify-center bg-slate-950/40 px-4 py-6 backdrop-blur-[2px]"
-                  onClick={() => setShowRefineControls(false)}
-                >
-                  <div
-                    className="flex h-[min(88vh,56rem)] w-full max-w-[56rem] flex-col overflow-hidden rounded-3xl border border-slate-300 bg-[#fffdfa] shadow-[0_24px_60px_rgba(15,23,42,0.28)]"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200 bg-[#fffdfa] px-5 py-4 sm:px-6">
-                      <div>
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                          Refine Image
-                        </div>
-                        <p className="mt-1 text-xs text-slate-600">
-                          Adjust the prompts, then run refine on the selected
-                          workspace image.
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowRefineControls(false)}
-                        className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50"
-                      >
-                        Close
-                      </button>
-                    </div>
-                    <div className="flex-1 overflow-y-auto px-5 py-4 sm:px-6">
-                      <div className="flex flex-col gap-3">
-                        <label className="flex flex-col gap-1 text-[11px] font-medium text-slate-700">
-                          Positive prompt
-                          <textarea
-                            value={positivePrompt}
-                            onChange={(e) => setPositivePrompt(e.target.value)}
-                            rows={5}
-                            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200"
-                            placeholder="Describe the refined result you want"
-                          />
-                        </label>
-                        <label className="flex flex-col gap-1 text-[11px] font-medium text-slate-700">
-                          Negative prompt
-                          <textarea
-                            value={negativePrompt}
-                            onChange={(e) => setNegativePrompt(e.target.value)}
-                            rows={6}
-                            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200"
-                            placeholder="Describe what to avoid"
-                          />
-                        </label>
-                        <label className="flex flex-col gap-1 text-[11px] font-medium text-slate-700">
-                          Fabric
-                          <select
-                            value={selectedRefineFabric}
-                            onChange={(e) => {
-                              const nextFabric = e.target.value;
-                              setSelectedRefineFabric(nextFabric);
-                              const normalizedFabric = nextFabric.toLowerCase();
-                              setPositivePrompt(
-                                REFINE_POSITIVE_PROMPTS[normalizedFabric] ||
-                                  REFINE_POSITIVE_PROMPTS.silk,
-                              );
-                            }}
-                            className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-xs text-slate-900 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200"
-                          >
-                            <option value="silk">Silk</option>
-                            <option value="orgaza">Chiffon / Organza</option>
-                            <option value="wool">Wool</option>
-                            <option value="denim">Denim</option>
-                          </select>
-                        </label>
-                        <label className="flex flex-col gap-1 text-[11px] font-medium text-slate-700">
-                          ControlNet priority
-                          <select
-                            value={selectedRefineControlMode}
-                            onChange={(e) =>
-                              setSelectedRefineControlMode(
-                                e.target.value as RefineControlMode,
-                              )
-                            }
-                            className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-xs text-slate-900 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200"
-                          >
-                            <option value="Balanced">Balanced</option>
-                            <option value="My prompt is more important">
-                              My prompt is more important
-                            </option>
-                            <option value="ControlNet is more important">
-                              ControlNet is more important
-                            </option>
-                          </select>
-                        </label>
-                        {refineError && (
-                          <p className="text-xs text-red-600">{refineError}</p>
-                        )}
-                        {refineResultImage && (
-                          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                              Refined Output
-                            </div>
-                            <img
-                              src={refineResultImage}
-                              alt="Refined output preview"
-                              className="max-h-[20rem] w-full rounded-xl border border-slate-200 object-contain bg-white"
-                            />
-                            <div className="mt-3 flex items-center justify-end gap-2">
-                              <button
-                                type="button"
-                                onClick={downloadRefineResult}
-                                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
-                              >
-                                Download
-                              </button>
-                              <button
-                                type="button"
-                                onClick={applyRefineResultToWorkspace}
-                                className="rounded-xl border border-emerald-400 bg-emerald-300 px-3 py-2 text-xs font-semibold text-slate-900 transition-colors hover:bg-emerald-200"
-                              >
-                                Use In Workspace
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-200 bg-[#fffdfa] px-5 py-4 sm:px-6">
-                      <button
-                        type="button"
-                        onClick={() => setShowRefineControls(false)}
-                        className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleRefineImage}
-                        disabled={isRefiningImage}
-                        className="rounded-xl border border-amber-400 bg-amber-300 px-4 py-2 text-xs font-semibold text-slate-900 transition-colors hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {isRefiningImage ? "Refining..." : "Run Refine"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
 
               <button
                 id="download-btn"
