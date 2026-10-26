@@ -14,6 +14,7 @@ import type { NextConfig } from "next";
 import ImageTracer from "imagetracerjs";
 import { removeBackground, preload } from "@imgly/background-removal";
 import { SubmissionModal } from "./SubmissionModal";
+import { synthesizeFabricImage } from "../lib/fabricSynthesis";
 import BodySilhouetteView from "./BodySilhouetteView";
 
 const MOBILE_BREAKPOINT = 1024;
@@ -207,7 +208,30 @@ interface RecordedTutorialStep {
 interface FabricLayer {
   src: string;
   area: { x: number; y: number; width: number; height: number };
+  // The fabric's own size (drawn at it, centred on the area); absent: stretched over the whole item
+  naturalWidth?: number;
+  naturalHeight?: number;
 }
+// Where pasted fabric is drawn over an area: filling it, with its own proportions kept (scaled evenly until it
+// covers the area, centred, the overflow cropped off by the area's clip: never stretched or tiled); without a
+// known size (fabric pasted before), stretched over it
+const fabricImageRect = (
+  area: { x: number; y: number; width: number; height: number },
+  naturalWidth?: number,
+  naturalHeight?: number,
+) => {
+  if (!naturalWidth || !naturalHeight) return area;
+  const cover = Math.max(area.width / naturalWidth, area.height / naturalHeight);
+  const width = naturalWidth * cover;
+  const height = naturalHeight * cover;
+  return {
+    x: area.x + (area.width - width) / 2,
+    y: area.y + (area.height - height) / 2,
+    width,
+    height,
+  };
+};
+
 interface DistortableShape {
   id: string;
   img: string;
@@ -1470,6 +1494,9 @@ export function Studio({ onBack }: { onBack: () => void }) {
     shapes: ClipboardShape[];
     strokes: Stroke[];
   } | null>(null);
+  // How big the copied fabric's pixels were on screen (screen pixels per fabric pixel), so it's pasted at the
+  // size it was seen at
+  const [fabricClipboardScale, setFabricClipboardScale] = useState(1);
   const [fabricClipboardSrc, setFabricClipboardSrc] = useState<string | null>(
     null,
   );
@@ -4792,6 +4819,27 @@ export function Studio({ onBack }: { onBack: () => void }) {
           }
         }
 
+        // A shape's own image (or fabric) is shown scaled: its width on screen per image pixel
+        let fabricScale = 1;
+        if (
+          fabricSrc &&
+          targetShape &&
+          (fabricSrc === targetShape.img ||
+            fabricSrc === targetShape.fabricFillSrc)
+        ) {
+          const naturalWidth = await new Promise<number>((resolve) => {
+            const img = new window.Image();
+            img.onload = () => resolve(img.naturalWidth || img.width || 0);
+            img.onerror = () => resolve(0);
+            img.src = fabricSrc as string;
+          });
+          if (naturalWidth > 0) {
+            fabricScale =
+              (targetShape.dims.width * Math.max(0.1, targetShape.scale)) /
+              naturalWidth;
+          }
+        }
+
         if (!fabricSrc) {
           const sourceClothType =
             targetShape?.clothType ||
@@ -4806,6 +4854,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
         }
 
         setFabricClipboardSrc(fabricSrc);
+        setFabricClipboardScale(fabricScale > 0 ? fabricScale : 1);
 
         try {
           await navigator.clipboard.writeText(fabricSrc);
@@ -4985,129 +5034,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
           img.src = src;
         });
 
-      const createSharpStretchedTexture = (
-        img: HTMLImageElement,
-        width: number,
-        height: number,
-      ) => {
-        const targetW = Math.max(96, Math.round(width));
-        const targetH = Math.max(96, Math.round(height));
-
-        const srcW = Math.max(1, img.naturalWidth || img.width || 1);
-        const srcH = Math.max(1, img.naturalHeight || img.height || 1);
-        const minUpscale = Math.max(targetW / srcW, targetH / srcH);
-        const oversample = Math.min(
-          3,
-          Math.max(1.5, minUpscale > 1 ? minUpscale : 2),
-        );
-
-        const workingW = Math.max(targetW, Math.round(targetW * oversample));
-        const workingH = Math.max(targetH, Math.round(targetH * oversample));
-
-        const workingCanvas = document.createElement("canvas");
-        workingCanvas.width = workingW;
-        workingCanvas.height = workingH;
-        const workingCtx = workingCanvas.getContext("2d", {
-          willReadFrequently: true,
-        });
-        if (!workingCtx) return null;
-
-        workingCtx.clearRect(0, 0, workingW, workingH);
-        workingCtx.imageSmoothingEnabled = true;
-        workingCtx.imageSmoothingQuality = "high";
-        workingCtx.filter = "contrast(1.04) saturate(1.02)";
-        // Stretch to target bounds intentionally, based on user preference.
-        workingCtx.drawImage(img, 0, 0, workingW, workingH);
-        workingCtx.filter = "none";
-
-        // Mild unsharp pass to recover edge crispness after upscale stretch.
-        try {
-          const data = workingCtx.getImageData(0, 0, workingW, workingH);
-          const src = data.data;
-          const out = new Uint8ClampedArray(src);
-          const amount = 0.2;
-          const idx = (x: number, y: number) => (y * workingW + x) * 4;
-          for (let y = 1; y < workingH - 1; y++) {
-            for (let x = 1; x < workingW - 1; x++) {
-              const i = idx(x, y);
-              for (let c = 0; c < 3; c++) {
-                const center = src[i + c];
-                const blur =
-                  (src[idx(x - 1, y) + c] +
-                    src[idx(x + 1, y) + c] +
-                    src[idx(x, y - 1) + c] +
-                    src[idx(x, y + 1) + c]) *
-                  0.25;
-                const sharpened = center + (center - blur) * amount;
-                out[i + c] = Math.max(0, Math.min(255, sharpened));
-              }
-            }
-          }
-          data.data.set(out);
-          workingCtx.putImageData(data, 0, 0);
-        } catch (sharpenError) {
-          console.warn("Sharp stretch post-process skipped:", sharpenError);
-        }
-
-        const finalCanvas = document.createElement("canvas");
-        finalCanvas.width = targetW;
-        finalCanvas.height = targetH;
-        const finalCtx = finalCanvas.getContext("2d");
-        if (!finalCtx) return null;
-        finalCtx.imageSmoothingEnabled = true;
-        finalCtx.imageSmoothingQuality = "high";
-        finalCtx.drawImage(workingCanvas, 0, 0, targetW, targetH);
-
-        return {
-          src: finalCanvas.toDataURL("image/png"),
-          width: targetW,
-          height: targetH,
-        };
-      };
-
-      const createPythonSharpStretchedTexture = async (
-        imageDataUrl: string,
-        width: number,
-        height: number,
-      ) => {
-        try {
-          const response = await fetch("/api/python-resize", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              imageDataUrl,
-              width,
-              height,
-              mode: "stretch",
-            }),
-          });
-
-          if (!response.ok) {
-            const message = await response
-              .text()
-              .catch(() => "Python resize request failed");
-            throw new Error(message || "Python resize request failed");
-          }
-
-          const data = await response.json();
-          if (!data?.imageDataUrl) {
-            throw new Error("Python resize response missing imageDataUrl");
-          }
-
-          return {
-            src: data.imageDataUrl as string,
-            width: Number(data.width) || Math.max(96, Math.round(width)),
-            height: Number(data.height) || Math.max(96, Math.round(height)),
-          };
-        } catch (pythonError) {
-          console.warn(
-            "Python sharp stretch unavailable; using browser fallback.",
-            pythonError,
-          );
-          return null;
-        }
-      };
-
       try {
         const copiedFabricDims = await new Promise<{
           width: number;
@@ -5134,7 +5060,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
           sourceImage = await loadImage(fabricClipboardSrc);
         } catch (loadError) {
           console.warn(
-            "Sharp stretch source image load failed; falling back to plain paste.",
+            "Fabric source image load failed; using its reported size.",
             loadError,
           );
         }
@@ -5158,168 +5084,150 @@ export function Studio({ onBack }: { onBack: () => void }) {
           ),
         );
 
-        let processedSwatchSrc: string | null = null;
-        if (sourceImage) {
-          const pythonSwatch = await createPythonSharpStretchedTexture(
-            fabricClipboardSrc,
-            swatchWidth,
-            swatchHeight,
-          );
-          if (pythonSwatch?.src) {
-            processedSwatchSrc = pythonSwatch.src;
-          } else {
-            const fallbackSwatch = createSharpStretchedTexture(
-              sourceImage,
-              swatchWidth,
-              swatchHeight,
-            );
-            if (fallbackSwatch?.src) {
-              processedSwatchSrc = fallbackSwatch.src;
-            }
-          }
-        }
-
         saveForUndo();
         const targetIds = new Set(targetShapes.map((shape) => shape.id));
         const targetStrokeIds = new Set(
           targetStrokes.map((stroke) => stroke.id),
         );
 
-        const originalShapeGeometry = new Map(
-          targetShapes.map((shape) => [
-            shape.id,
-            {
-              scale: shape.scale,
-              position: { ...shape.position },
-            },
-          ]),
-        );
-        const originalStrokeGeometry = new Map(
-          targetStrokes.map((st) => [
-            st.id,
-            {
-              points: st.points.map((p) => ({ ...p })),
-            },
-          ]),
-        );
-
-        const waitNextFrame = () =>
-          new Promise<void>((resolve) => {
-            if (
-              typeof window !== "undefined" &&
-              typeof window.requestAnimationFrame === "function"
-            ) {
-              window.requestAnimationFrame(() => resolve());
-            } else {
-              setTimeout(() => resolve(), 0);
-            }
-          });
-
         const isAreaPaste = !!selectionBounds;
 
-        // 1) Resize target object to copied fabric size.
-        if (!isAreaPaste) {
-          setWorkspaceShapes((prev) =>
-            prev.map((shape) => {
-              if (!targetIds.has(shape.id)) return shape;
-              const renderW = Math.max(
-                1,
-                shape.dims.width * Math.max(0.1, shape.scale),
-              );
-              const renderH = Math.max(
-                1,
-                shape.dims.height * Math.max(0.1, shape.scale),
-              );
-              const widthRatio = swatchWidth / renderW;
-              const heightRatio = swatchHeight / renderH;
-              const scaleFactor = Math.max(0.1, (widthRatio + heightRatio) / 2);
-              const nextScale = Math.max(0.1, shape.scale * scaleFactor);
-              const oldRenderW = shape.dims.width * shape.scale;
-              const oldRenderH = shape.dims.height * shape.scale;
-              const newRenderW = shape.dims.width * nextScale;
-              const newRenderH = shape.dims.height * nextScale;
-              return {
-                ...shape,
-                scale: nextScale,
-                position: {
-                  x: shape.position.x + (oldRenderW - newRenderW) / 2,
-                  y: shape.position.y + (oldRenderH - newRenderH) / 2,
-                },
-              };
-            }),
-          );
+        // Where on each item the fabric goes (in its own units): the selected area's part of it, else all of it
+        const shapePasteAreaOf = (shape: DistortableShape) => {
+          let fabricPasteArea:
+            | { x: number; y: number; width: number; height: number }
+            | undefined;
+          if (selectionBounds) {
+            const renderW = Math.max(
+              1,
+              shape.dims.width * Math.max(0.1, shape.scale),
+            );
+            const renderH = Math.max(
+              1,
+              shape.dims.height * Math.max(0.1, shape.scale),
+            );
+            const shapeX = shape.position.x;
+            const shapeY = shape.position.y;
+            const ix = Math.max(shapeX, selectionBounds.x);
+            const iy = Math.max(shapeY, selectionBounds.y);
+            const ix2 = Math.min(
+              shapeX + renderW,
+              selectionBounds.x + selectionBounds.width,
+            );
+            const iy2 = Math.min(
+              shapeY + renderH,
+              selectionBounds.y + selectionBounds.height,
+            );
 
-          setStrokes((prev) =>
-            prev.map((st) => {
-              if (!targetStrokeIds.has(st.id)) return st;
-              const xs = st.points.map((p) => p.x);
-              const ys = st.points.map((p) => p.y);
-              const minX = xs.length > 0 ? Math.min(...xs) : 0;
-              const maxX = xs.length > 0 ? Math.max(...xs) : swatchWidth;
-              const minY = ys.length > 0 ? Math.min(...ys) : 0;
-              const maxY = ys.length > 0 ? Math.max(...ys) : swatchHeight;
-              const oldW = Math.max(1, maxX - minX);
-              const oldH = Math.max(1, maxY - minY);
-              const centerX = (minX + maxX) / 2;
-              const centerY = (minY + maxY) / 2;
-              const widthRatio = swatchWidth / oldW;
-              const heightRatio = swatchHeight / oldH;
-              const scaleFactor = Math.max(0.1, (widthRatio + heightRatio) / 2);
-              return {
-                ...st,
-                points: st.points.map((p) => ({
-                  ...p,
-                  x: centerX + (p.x - centerX) * scaleFactor,
-                  y: centerY + (p.y - centerY) * scaleFactor,
-                })),
+            if (ix2 - ix > 1 && iy2 - iy > 1) {
+              const invScale = 1 / Math.max(0.1, shape.scale);
+              fabricPasteArea = {
+                x: Math.max(0, (ix - shapeX) * invScale),
+                y: Math.max(0, (iy - shapeY) * invScale),
+                width: Math.min(shape.dims.width, (ix2 - ix) * invScale),
+                height: Math.min(shape.dims.height, (iy2 - iy) * invScale),
               };
-            }),
-          );
+            }
+          }
 
-          await waitNextFrame();
+          return fabricPasteArea;
+        };
+        const strokePasteAreaOf = (st: Stroke) => {
+          const xs = st.points.map((p) => p.x);
+          const ys = st.points.map((p) => p.y);
+          const minX = xs.length > 0 ? Math.min(...xs) : 0;
+          const maxX = xs.length > 0 ? Math.max(...xs) : 0;
+          const minY = ys.length > 0 ? Math.min(...ys) : 0;
+          const maxY = ys.length > 0 ? Math.max(...ys) : 0;
+          let fabricPasteArea:
+            | { x: number; y: number; width: number; height: number }
+            | undefined;
+          if (selectionBounds && st.points.length > 0) {
+            const ix = Math.max(minX, selectionBounds.x);
+            const iy = Math.max(minY, selectionBounds.y);
+            const ix2 = Math.min(
+              maxX,
+              selectionBounds.x + selectionBounds.width,
+            );
+            const iy2 = Math.min(
+              maxY,
+              selectionBounds.y + selectionBounds.height,
+            );
+            if (ix2 - ix > 1 && iy2 - iy > 1) {
+              fabricPasteArea = {
+                x: ix,
+                y: iy,
+                width: ix2 - ix,
+                height: iy2 - iy,
+              };
+            }
+          }
+
+          return fabricPasteArea;
+        };
+        const shapePasteAreas = new Map(
+          targetShapes.map((shape) => [shape.id, shapePasteAreaOf(shape)]),
+        );
+        const strokePasteAreas = new Map(
+          targetStrokes.map((st) => [st.id, strokePasteAreaOf(st)]),
+        );
+
+        // The fabric grown to each item's size on screen, from the copied swatch at its own scale (same
+        // weave, print and colours: not stretched, not tiled)
+        const MAX_FABRIC_SIDE = 2400;
+        const fallbackFabric = {
+          src: fabricClipboardSrc,
+          width: swatchWidth,
+          height: swatchHeight,
+        };
+        const grownFabric = new Map<
+          string,
+          { src: string; width: number; height: number }
+        >();
+        const growFabric = (id: string, screenW: number, screenH: number) => {
+          if (!sourceImage) return;
+          // (In the copied fabric's own pixels: each is shown as big as it was where it was copied)
+          const fabricW = screenW / fabricClipboardScale;
+          const fabricH = screenH / fabricClipboardScale;
+          const fit = Math.min(1, MAX_FABRIC_SIDE / Math.max(fabricW, fabricH));
+          const width = Math.max(1, Math.round(fabricW * fit));
+          const height = Math.max(1, Math.round(fabricH * fit));
+          try {
+            const src = synthesizeFabricImage(sourceImage, width, height, grownFabric.size + 1);
+            if (src) grownFabric.set(id, { src, width, height });
+          } catch (growError) {
+            console.warn("Growing the fabric failed; pasting the swatch as it is.", growError);
+          }
+        };
+        for (const shape of targetShapes) {
+          const area = shapePasteAreas.get(shape.id);
+          if (isAreaPaste && !area) continue;
+          const scale = Math.max(0.1, shape.scale);
+          growFabric(
+            shape.id,
+            (area?.width ?? shape.dims.width) * scale,
+            (area?.height ?? shape.dims.height) * scale,
+          );
+        }
+        for (const st of targetStrokes) {
+          const area = strokePasteAreas.get(st.id);
+          if (isAreaPaste && !area) continue;
+          const xs = st.points.map((p) => p.x);
+          const ys = st.points.map((p) => p.y);
+          if (!xs.length) continue;
+          growFabric(
+            st.id,
+            area?.width ?? Math.max(1, Math.max(...xs) - Math.min(...xs)),
+            area?.height ?? Math.max(1, Math.max(...ys) - Math.min(...ys)),
+          );
         }
 
-        // 2) Paste fabric.
-        const appliedFabricSrc = processedSwatchSrc || fabricClipboardSrc;
         setWorkspaceShapes((prev) =>
           prev.map((shape) => {
             if (!targetIds.has(shape.id)) return shape;
 
-            let fabricPasteArea:
-              | { x: number; y: number; width: number; height: number }
-              | undefined;
-            if (selectionBounds) {
-              const renderW = Math.max(
-                1,
-                shape.dims.width * Math.max(0.1, shape.scale),
-              );
-              const renderH = Math.max(
-                1,
-                shape.dims.height * Math.max(0.1, shape.scale),
-              );
-              const shapeX = shape.position.x;
-              const shapeY = shape.position.y;
-              const ix = Math.max(shapeX, selectionBounds.x);
-              const iy = Math.max(shapeY, selectionBounds.y);
-              const ix2 = Math.min(
-                shapeX + renderW,
-                selectionBounds.x + selectionBounds.width,
-              );
-              const iy2 = Math.min(
-                shapeY + renderH,
-                selectionBounds.y + selectionBounds.height,
-              );
-
-              if (ix2 - ix > 1 && iy2 - iy > 1) {
-                const invScale = 1 / Math.max(0.1, shape.scale);
-                fabricPasteArea = {
-                  x: Math.max(0, (ix - shapeX) * invScale),
-                  y: Math.max(0, (iy - shapeY) * invScale),
-                  width: Math.min(shape.dims.width, (ix2 - ix) * invScale),
-                  height: Math.min(shape.dims.height, (iy2 - iy) * invScale),
-                };
-              }
-            }
+            const fabricPasteArea = shapePasteAreas.get(shape.id);
+            const fabric = grownFabric.get(shape.id) ?? fallbackFabric;
 
             if (isAreaPaste && !fabricPasteArea) {
               return shape;
@@ -5351,6 +5259,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
                           width: shape.dims.width,
                           height: shape.dims.height,
                         },
+                        naturalWidth: shape.fabricFillWidth,
+                        naturalHeight: shape.fabricFillHeight,
                       },
                     ]
                   : [];
@@ -5358,15 +5268,20 @@ export function Studio({ onBack }: { onBack: () => void }) {
               selectionBounds && fabricPasteArea
                 ? [
                     ...existingLayers,
-                    { src: appliedFabricSrc, area: fabricPasteArea },
+                    {
+                      src: fabric.src,
+                      area: fabricPasteArea,
+                      naturalWidth: fabric.width,
+                      naturalHeight: fabric.height,
+                    },
                   ]
                 : undefined;
 
             return {
               ...shape,
-              fabricFillSrc: appliedFabricSrc,
-              fabricFillWidth: swatchWidth,
-              fabricFillHeight: swatchHeight,
+              fabricFillSrc: fabric.src,
+              fabricFillWidth: fabric.width,
+              fabricFillHeight: fabric.height,
               fabricPasteArea,
               fabricPasteAreas: selectionBounds ? nextAreas : undefined,
               fabricLayers: selectionBounds ? nextLayers : undefined,
@@ -5389,29 +5304,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
             const minY = ys.length > 0 ? Math.min(...ys) : 0;
             const maxY = ys.length > 0 ? Math.max(...ys) : 0;
 
-            let fabricPasteArea:
-              | { x: number; y: number; width: number; height: number }
-              | undefined;
-            if (selectionBounds && st.points.length > 0) {
-              const ix = Math.max(minX, selectionBounds.x);
-              const iy = Math.max(minY, selectionBounds.y);
-              const ix2 = Math.min(
-                maxX,
-                selectionBounds.x + selectionBounds.width,
-              );
-              const iy2 = Math.min(
-                maxY,
-                selectionBounds.y + selectionBounds.height,
-              );
-              if (ix2 - ix > 1 && iy2 - iy > 1) {
-                fabricPasteArea = {
-                  x: ix,
-                  y: iy,
-                  width: ix2 - ix,
-                  height: iy2 - iy,
-                };
-              }
-            }
+            const fabricPasteArea = strokePasteAreas.get(st.id);
+            const fabric = grownFabric.get(st.id) ?? fallbackFabric;
 
             if (isAreaPaste && !fabricPasteArea) {
               return st;
@@ -5442,6 +5336,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
                           width: Math.max(1, maxX - minX),
                           height: Math.max(1, maxY - minY),
                         },
+                        naturalWidth: st.fabricFillWidth,
+                        naturalHeight: st.fabricFillHeight,
                       },
                     ]
                   : [];
@@ -5449,15 +5345,20 @@ export function Studio({ onBack }: { onBack: () => void }) {
               selectionBounds && fabricPasteArea
                 ? [
                     ...existingLayers,
-                    { src: appliedFabricSrc, area: fabricPasteArea },
+                    {
+                      src: fabric.src,
+                      area: fabricPasteArea,
+                      naturalWidth: fabric.width,
+                      naturalHeight: fabric.height,
+                    },
                   ]
                 : undefined;
 
             return {
               ...st,
-              fabricFillSrc: appliedFabricSrc,
-              fabricFillWidth: swatchWidth,
-              fabricFillHeight: swatchHeight,
+              fabricFillSrc: fabric.src,
+              fabricFillWidth: fabric.width,
+              fabricFillHeight: fabric.height,
               fabricPasteArea,
               fabricPasteAreas: selectionBounds ? nextAreas : undefined,
               fabricLayers: selectionBounds ? nextLayers : undefined,
@@ -5468,35 +5369,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
           }),
         );
 
-        await waitNextFrame();
-
-        // 3) Resize target object back to original size.
-        if (!isAreaPaste) {
-          setWorkspaceShapes((prev) =>
-            prev.map((shape) => {
-              if (!targetIds.has(shape.id)) return shape;
-              const original = originalShapeGeometry.get(shape.id);
-              if (!original) return shape;
-              return {
-                ...shape,
-                scale: original.scale,
-                position: { ...original.position },
-              };
-            }),
-          );
-
-          setStrokes((prev) =>
-            prev.map((st) => {
-              if (!targetStrokeIds.has(st.id)) return st;
-              const original = originalStrokeGeometry.get(st.id);
-              if (!original) return st;
-              return {
-                ...st,
-                points: original.points.map((p) => ({ ...p })),
-              };
-            }),
-          );
-        }
       } catch (error) {
         console.error("Paste fabric failed:", error);
       }
@@ -5506,6 +5378,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
     },
     [
       fabricClipboardSrc,
+      fabricClipboardScale,
       workspaceShapes,
       strokes,
       selectedShapeId,
@@ -10420,10 +10293,16 @@ export function Studio({ onBack }: { onBack: () => void }) {
                         : shape.fabricPasteArea
                           ? [shape.fabricPasteArea]
                           : [];
-                    const fabricWidth = Math.max(1, shape.dims.width);
-                    const fabricHeight = Math.max(1, shape.dims.height);
-                    const fabricX = 0;
-                    const fabricY = 0;
+                    const fabricRect = fabricImageRect(
+                      {
+                        x: 0,
+                        y: 0,
+                        width: Math.max(1, shape.dims.width),
+                        height: Math.max(1, shape.dims.height),
+                      },
+                      shape.fabricFillWidth,
+                      shape.fabricFillHeight,
+                    );
                     const transform = `translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale}) rotate(${shape.rotation || 0} ${shape.dims.width / 2} ${shape.dims.height / 2})`;
                     return (
                       <g
@@ -10831,10 +10710,10 @@ export function Studio({ onBack }: { onBack: () => void }) {
                                   <image
                                     key={`fabric-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`}
                                     href={shape.fabricFillSrc}
-                                    x={fabricX}
-                                    y={fabricY}
-                                    width={fabricWidth}
-                                    height={fabricHeight}
+                                    x={fabricRect.x}
+                                    y={fabricRect.y}
+                                    width={fabricRect.width}
+                                    height={fabricRect.height}
                                     preserveAspectRatio="none"
                                     imageRendering="optimizeQuality"
                                     clipPath={
@@ -10891,14 +10770,27 @@ export function Studio({ onBack }: { onBack: () => void }) {
                                     </mask>
                                   ))}
                                 </defs>
-                                {shapeFabricLayers.map((layer, i) => (
+                                {shapeFabricLayers.map((layer, i) => {
+                                  const layerRect = layer.naturalWidth
+                                    ? fabricImageRect(
+                                        layer.area,
+                                        layer.naturalWidth,
+                                        layer.naturalHeight,
+                                      )
+                                    : {
+                                        x: 0,
+                                        y: 0,
+                                        width: Math.max(1, shape.dims.width),
+                                        height: Math.max(1, shape.dims.height),
+                                      };
+                                  return (
                                   <image
                                     key={`fabric-layer-${shape.id}-${i}-${(shape as any).clipUpdate || shape.dots.length}`}
                                     href={layer.src}
-                                    x={fabricX}
-                                    y={fabricY}
-                                    width={fabricWidth}
-                                    height={fabricHeight}
+                                    x={layerRect.x}
+                                    y={layerRect.y}
+                                    width={layerRect.width}
+                                    height={layerRect.height}
                                     preserveAspectRatio="none"
                                     imageRendering="optimizeQuality"
                                     clipPath={
@@ -10909,7 +10801,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
                                     mask={`url(#ms-fabric-layer-${shape.id}-${i})`}
                                     pointerEvents="none"
                                   />
-                                ))}
+                                  );
+                                })}
                               </>
                             )}
                             {shape.baseFill && (
@@ -11132,6 +11025,11 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     );
                     const strokeW = Math.max(1, maxX - minX);
                     const strokeH = Math.max(1, maxY - minY);
+                    const strokeFabricRect = fabricImageRect(
+                      { x: minX, y: minY, width: strokeW, height: strokeH },
+                      s.fabricFillWidth,
+                      s.fabricFillHeight,
+                    );
                     const transform = `rotate(${s.rotation || 0} ${centerX} ${centerY})`;
                     const meshPattern = getMeshPattern(s);
                     const meshStrokeInset = Math.max(6, s.width * 1.5);
@@ -11200,10 +11098,10 @@ export function Studio({ onBack }: { onBack: () => void }) {
                               <g clipPath={`url(#cl-st-fabric-area-${s.id})`}>
                                 <image
                                   href={s.fabricFillSrc}
-                                  x={minX}
-                                  y={minY}
-                                  width={strokeW}
-                                  height={strokeH}
+                                  x={strokeFabricRect.x}
+                                  y={strokeFabricRect.y}
+                                  width={strokeFabricRect.width}
+                                  height={strokeFabricRect.height}
                                   preserveAspectRatio="none"
                                   imageRendering="optimizeQuality"
                                   clipPath={`url(#cl-st-fabric-${s.id})`}
@@ -11213,10 +11111,10 @@ export function Studio({ onBack }: { onBack: () => void }) {
                             ) : (
                               <image
                                 href={s.fabricFillSrc}
-                                x={minX}
-                                y={minY}
-                                width={strokeW}
-                                height={strokeH}
+                                x={strokeFabricRect.x}
+                                y={strokeFabricRect.y}
+                                width={strokeFabricRect.width}
+                                height={strokeFabricRect.height}
                                 preserveAspectRatio="none"
                                 imageRendering="optimizeQuality"
                                 clipPath={`url(#cl-st-fabric-${s.id})`}
@@ -11252,10 +11150,18 @@ export function Studio({ onBack }: { onBack: () => void }) {
                               >
                                 <image
                                   href={layer.src}
-                                  x={minX}
-                                  y={minY}
-                                  width={strokeW}
-                                  height={strokeH}
+                                  {...(layer.naturalWidth
+                                    ? fabricImageRect(
+                                        layer.area,
+                                        layer.naturalWidth,
+                                        layer.naturalHeight,
+                                      )
+                                    : {
+                                        x: minX,
+                                        y: minY,
+                                        width: strokeW,
+                                        height: strokeH,
+                                      })}
                                   preserveAspectRatio="none"
                                   imageRendering="optimizeQuality"
                                   clipPath={`url(#cl-st-fabric-${s.id})`}
