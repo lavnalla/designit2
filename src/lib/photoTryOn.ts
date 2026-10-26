@@ -93,6 +93,10 @@ const NECK_SCALE_RANGE = [0.6, 1.05];
 // How far each sleeve is turned from its angle in the garment photo toward hanging along the arm: 0 keeps the
 // garment photo's angle, 1 lines it up with the upper arm
 const SLEEVE_TOWARD_ARM = 0.5;
+// How far (radians, about 45 degrees) a sleeve may be lifted further outward to cover the top of the arm, tried
+// in steps of about 3 degrees
+const SLEEVE_MAX_LIFT = 0.8;
+const SLEEVE_LIFT_STEP = 0.05;
 // A body (or garment) tilted less than this (radians, about 8 degrees) is treated as upright
 const UPRIGHT_TOLERANCE = 0.14;
 
@@ -1289,8 +1293,8 @@ function ankleLevel(body: Body, human: Uint8Array, w: number, h: number): number
 }
 
 // Paints skin where clothes came off (toSkin), blended into the person's real skin so no seam shows:
-// 1. An estimate: the colour of the person's arms' skin (each arm its own; the torso and legs both arms'),
-//    blended softly across the areas' boundaries, a touch darker toward the edges of a limb or the torso.
+// 1. An estimate: the colour of the person's visible body skin, a touch darker toward the edges of a limb or
+//    the torso.
 // 2. The light: how much brighter or darker the real skin is than that estimate is measured on the visible
 //    skin (well inside it: pixels at its edge are mixed with clothes or background) and spread smoothly over
 //    the painted area (the way seamless cloning works), so at its edges the painted skin matches the
@@ -1303,7 +1307,6 @@ function paintSkin(
   human: Uint8Array,
   zones: { inBody: Uint8Array; area: Uint8Array; roundness: Float32Array },
   toSkin: Uint8Array,
-  shoulderWidth: number,
 ) {
   const { width: w, height: h } = img;
   const n = w * h;
@@ -1311,24 +1314,11 @@ function paintSkin(
   for (let p = 0; p < n; p += 1) if (toSkin[p]) any = true;
   if (!any) return;
 
-  // 1. The estimate, per area and blended across areas (over the body and the visible skin)
-  const byArea = areaSkinColours(img, human, zones.area);
-  const isRealSkin = (p: number) => !toSkin[p] && (human[p] === HUMAN_BODY_SKIN || human[p] === HUMAN_FACE_SKIN);
-  const weights = new Float32Array(n);
-  const channels = [new Float32Array(n), new Float32Array(n), new Float32Array(n)];
-  for (let p = 0; p < n; p += 1) {
-    if (!zones.inBody[p] && !isRealSkin(p)) continue;
-    weights[p] = 1;
-    const colour = byArea[zones.area[p]];
-    for (let c = 0; c < 3; c += 1) channels[c][p] = colour[c];
-  }
-  const radius = Math.max(2, Math.round(shoulderWidth * 0.06));
-  const blended = channels.map((ch) => weightedBoxBlur(ch, weights, w, h, radius).mean);
-  const estimate = (p: number, c: number) => {
-    const v = blended[c][p];
-    const base = Number.isNaN(v) ? byArea[0][c] : v;
-    return base * (0.92 + 0.08 * zones.roundness[p]);
-  };
+  // 1. The estimate: the person's skin colour, a touch darker toward the edges of a limb or the torso
+  const colour = skinColour(img, human);
+  // (Body skin only: a face is usually lit differently)
+  const isRealSkin = (p: number) => !toSkin[p] && human[p] === HUMAN_BODY_SKIN;
+  const estimate = (p: number, c: number) => colour[c] * (0.92 + 0.08 * zones.roundness[p]);
 
   // 2. Real skin brightness / estimated brightness, from skin at least EDGE pixels inside the skin, spread
   // over the painted area
@@ -1353,7 +1343,8 @@ function paintSkin(
     known[p] = 1;
     const real = brightness(img.rgb[p * 3], img.rgb[p * 3 + 1], img.rgb[p * 3 + 2]);
     const est = brightness(estimate(p, 0), estimate(p, 1), estimate(p, 2));
-    ratio[p * 3] = Math.min(1.5, Math.max(0.6, real / Math.max(1e-4, est)));
+    // (Kept close to 1: the painted skin stays the colour of the arms, only a little lighter or darker)
+    ratio[p * 3] = Math.min(1.15, Math.max(0.85, real / Math.max(1e-4, est)));
   }
   // The spread is smoothed a little first, so the skin's own fine texture at the boundary doesn't streak in
   const ratioValues = new Float32Array(n);
@@ -1383,14 +1374,12 @@ function hashNoise(x: number, y: number) {
   return (((v ^ (v >>> 16)) >>> 0) / 4294967295) * 2 - 1;
 }
 
-// The colour to paint skin in each body area (index by area: 1, 2 arms, 3 torso, 4 legs, 0 none): each arm's
-// visible skin's median colour, and both arms' for everything else (falling back to all visible skin). Edge pixels of skin (mixed with hair, clothes or
-// background) don't count.
-function areaSkinColours(img: LinearImage, human: Uint8Array, area: Uint8Array): Array<[number, number, number]> {
+// The person's skin colour: the median of their visible body skin (edge pixels of skin, mixed with hair,
+// clothes or background, and pixels far less or more colourful than the rest, don't count)
+function skinColour(img: LinearImage, human: Uint8Array): [number, number, number] {
   const w = img.width;
   const n = human.length;
   const isSkin = (q: number) => human[q] === HUMAN_BODY_SKIN;
-  const lists: number[][][] = Array.from({ length: 5 }, () => [[], [], []]);
   const all: number[][] = [[], [], []];
   // Skin pixels (away from the skin's edge) and how colourful each is; pixels far less (or more) colourful
   // than skin typically is here are something else the parser took for skin (white fabric, a grey wall)
@@ -1409,7 +1398,6 @@ function areaSkinColours(img: LinearImage, human: Uint8Array, area: Uint8Array):
     if (typical > 0 && (chroma[p] < typical * 0.6 || chroma[p] > typical * 1.6)) continue;
     for (let c = 0; c < 3; c += 1) {
       all[c].push(img.rgb[p * 3 + c]);
-      lists[area[p]][c].push(img.rgb[p * 3 + c]);
     }
   }
   const median = (chans: number[][]): [number, number, number] | null => {
@@ -1420,10 +1408,7 @@ function areaSkinColours(img: LinearImage, human: Uint8Array, area: Uint8Array):
     }) as [number, number, number];
   };
   const anySkin = median(all) ?? [0.6, 0.4, 0.3];
-  const arms = median([0, 1, 2].map((c) => [...lists[1][c], ...lists[2][c]])) ?? anySkin;
-  // Arms keep their own colour; the torso and legs take the arms' (their shown skin, around a neckline or a
-  // hem, is often lit differently)
-  return [arms, median(lists[1]) ?? arms, median(lists[2]) ?? arms, arms, arms];
+  return anySkin;
 }
 
 // Closes small notches and slits in each garment part's outline (where the parser missed a sliver, like a
@@ -1795,7 +1780,26 @@ export function tryOnGarment(person: PhotoParse, garment: PhotoParse): { image: 
         }
       }
     }
-    paintSkin(out, P, person.human, zones, toSkin, sw);
+    // A gap with the person on both sides along its row, close by (between an arm and the body), is body
+    const reach = Math.max(2, Math.round(sw * 0.2));
+    for (let y = 0; y < h; y += 1) {
+      const row = y * w;
+      for (let x = 0; x < w; x += 1) {
+        const p = row + x;
+        if (!toBackground[p]) continue;
+        let left = false;
+        let right = false;
+        for (let d = 1; d <= reach && !(left && right); d += 1) {
+          if (!left && x - d >= 0 && person.human[row + x - d] !== HUMAN_BACKGROUND && !toBackground[row + x - d]) left = true;
+          if (!right && x + d < w && person.human[row + x + d] !== HUMAN_BACKGROUND && !toBackground[row + x + d]) right = true;
+        }
+        if (left && right) {
+          toBackground[p] = 0;
+          toSkin[p] = 1;
+        }
+      }
+    }
+    paintSkin(out, P, person.human, zones, toSkin);
     if (anyBackground) {
       // Known: background pixels, not anything being replaced
       const known = new Float32Array(n);
@@ -1888,10 +1892,61 @@ export function tryOnGarment(person: PhotoParse, garment: PhotoParse): { image: 
     const hinge = seamTop(gSleeve.mask, gTorso, gw) ?? gShape.origin;
     const placedHinge = torsoTransform.forward(hinge);
     const placedDirection = unit(sub(torsoTransform.forward(add(hinge, gShape.axis)), placedHinge));
-    const direction = unit(
-      add(scaleVec(placedDirection, 1 - SLEEVE_TOWARD_ARM), scaleVec(armDirection, SLEEVE_TOWARD_ARM)),
-    );
-    return similarity(hinge, gShape.axis, placedHinge, direction, scaleUpper);
+    // An arm held further out from the body than the sleeve hangs lifts the sleeve all the way onto it (else
+    // the arm shows beneath the sleeve's outer edge); one held in only turns the sleeve partway
+    const outward = unit(sub(arm.shoulder, mid(body.shoulders.left, body.shoulders.right)));
+    const toward = dot(armDirection, outward) > dot(placedDirection, outward) ? 1 : SLEEVE_TOWARD_ARM;
+    const direction = unit(add(scaleVec(placedDirection, 1 - toward), scaleVec(armDirection, toward)));
+    // Then lifted further out (up to SLEEVE_MAX_LIFT) while that covers more of the upper arm: where the arm's
+    // top shows above the sleeve's outer edge (the pose's shoulder point sits inside the arm's outline)
+    const side = kind === "sleeveLeft" ? 1 : 2;
+    const reachAlong = arm.elbow ? len(sub(arm.elbow, arm.shoulder)) : sw;
+    const upperArm: Vec[] = [];
+    for (let p = 0; p < n; p += 1) {
+      if (person.human[p] === HUMAN_BACKGROUND) continue;
+      const x = p % w;
+      const point = { x, y: (p - x) / w };
+      // The arm, and the person just outside its estimate (the outer edge of a broad shoulder or upper arm)
+      const nearArm =
+        zones.area[p] === side ||
+        (zones.area[p] === 0 && segmentDistance(point, arm.shoulder, arm.elbow ?? add(arm.shoulder, scaleVec(armDirection, sw))) <= sw * 0.3);
+      if (!nearArm) continue;
+      const t = dot(sub(point, arm.shoulder), armDirection);
+      if (t > reachAlong) continue;
+      // (Arm the garment's torso already covers, by the armpit, doesn't need the sleeve)
+      if (gTorso) {
+        const g = torsoTransform.inverse(point);
+        const gx = Math.round(g.x);
+        const gy = Math.round(g.y);
+        if (gx >= 0 && gy >= 0 && gx < gw && gy < gh && gTorso[gy * gw + gx]) continue;
+      }
+      upperArm.push(point);
+    }
+    const rotate = (v: Vec, a: number) => ({ x: v.x * Math.cos(a) - v.y * Math.sin(a), y: v.x * Math.sin(a) + v.y * Math.cos(a) });
+    const liftSign = dot(rotate(direction, 0.01), outward) > dot(direction, outward) ? 1 : -1;
+    const covered = (xf: ReturnType<typeof similarity>) => {
+      let count = 0;
+      for (const point of upperArm) {
+        const g = xf.inverse(point);
+        const gx = Math.round(g.x);
+        const gy = Math.round(g.y);
+        if (gx >= 0 && gy >= 0 && gx < gw && gy < gh && gSleeve.mask[gy * gw + gx]) count += 1;
+      }
+      return count;
+    };
+    let best = similarity(hinge, gShape.axis, placedHinge, direction, scaleUpper);
+    let bestCovered = covered(best);
+    const minGain = Math.max(3, Math.round(sw * sw * 0.001));
+    for (let lift = SLEEVE_LIFT_STEP; lift <= SLEEVE_MAX_LIFT + 1e-6; lift += SLEEVE_LIFT_STEP) {
+      const xf = similarity(hinge, gShape.axis, placedHinge, rotate(direction, liftSign * lift), scaleUpper);
+      const c = covered(xf);
+      // (Only a real gain lifts it further, so a sleeve already over the arm stays put)
+      if (c >= bestCovered + minGain) {
+        best = xf;
+        bestCovered = c;
+      }
+    }
+    return best;
   };
   const restore = (test: (p: number) => boolean) => {
     for (let p = 0; p < n; p += 1) if (test(p)) for (let c = 0; c < 3; c += 1) out[p * 3 + c] = P.rgb[p * 3 + c];
@@ -1908,9 +1963,18 @@ export function tryOnGarment(person: PhotoParse, garment: PhotoParse): { image: 
     : dot(mid(body.shoulders.left, body.shoulders.right), body.down) + sw * 1.3;
   restore((p) => {
     if (person.human[p] !== HUMAN_BODY_SKIN) return false;
-    if (zones.inArm[p]) return true;
     const x = p % w;
     const y = (p - x) / w;
+    if (zones.inArm[p]) {
+      // Except the top of the upper arm, by the shoulder, where the garment is: it's never in front of the
+      // garment (skin there is what the person's own neckline or strap left bare)
+      const arm = zones.area[p] === 1 ? body.arms.left : zones.area[p] === 2 ? body.arms.right : null;
+      if (arm?.elbow && coverage[p] > 0.5) {
+        const upper = sub(arm.elbow, arm.shoulder);
+        if (dot(sub({ x, y }, arm.shoulder), upper) < 0.5 * dot(upper, upper)) return false;
+      }
+      return true;
+    }
     return zones.area[p] === 0 && dot({ x, y }, body.down) < hipLevel;
   });
   draw("sleeveLeft", sleeveTransform("sleeveLeft"));
