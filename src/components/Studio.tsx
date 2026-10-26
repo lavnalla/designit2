@@ -16,6 +16,7 @@ import { removeBackground, preload } from "@imgly/background-removal";
 import { SubmissionModal } from "./SubmissionModal";
 import { pickFabricSwatch, synthesizeFabricImage } from "../lib/fabricSynthesis";
 import { renderSketch } from "../lib/sketchRender";
+import { renderJewelry } from "../lib/jewelryRender";
 import { parseFashionClasses } from "../lib/garmentSegmenter";
 import { toParseCanvas } from "../lib/photoTryOnParsing";
 import { isGarmentClass } from "../lib/photoTryOn";
@@ -1349,6 +1350,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
   }, []);
   const workspaceShapesRef = useRef<DistortableShape[]>([]);
   const isPointerDownRef = useRef(false);
+  // Whether this press is drawing a selection box (a cursor drag)
+  const selectingRef = useRef(false);
   const penRef = useRef<{
     pointerId: number;
     lastX: number;
@@ -5343,11 +5346,15 @@ export function Studio({ onBack }: { onBack: () => void }) {
   );
 
   // Turns a rough garment sketch (the selected area, or an image or stroke) into a finished-looking garment
-  // (sketchRender.ts), added over the sketch as a new image.
+  // (sketchRender.ts), or a rough jewellery sketch into polished gold, silver and gems (jewelryRender.ts),
+  // added over the sketch as a new image.
   // "selected": the clicked image or stroke (and anything grouped with it) alone, else the selected area,
   // else everything on the workspace. The sketch's own colours and fabrics are kept.
   const renderSketchFromWorkspace = useCallback(
-    async (target?: { type: "shape" | "stroke"; id: string } | "selected") => {
+    async (
+      target?: { type: "shape" | "stroke"; id: string } | "selected",
+      kind: "garment" | "jewelry" = "garment",
+    ) => {
       const selectionBox = selectionRect
         ? {
             x: Math.min(selectionRect.x1, selectionRect.x2),
@@ -5429,9 +5436,10 @@ export function Studio({ onBack }: { onBack: () => void }) {
         height: box.height + pad * 2,
       };
       try {
-        const sketch = await rasterizeWorkspaceRect(rect, only, true);
+        // (A garment's filled strokes lose their outlines; jewellery's lines are the metal itself)
+        const sketch = await rasterizeWorkspaceRect(rect, only, kind === "garment");
         if (!sketch) return;
-        const result = renderSketch(sketch);
+        const result = kind === "jewelry" ? renderJewelry(sketch) : renderSketch(sketch);
         if ("error" in result) {
           alert(result.error);
           return;
@@ -7659,6 +7667,21 @@ export function Studio({ onBack }: { onBack: () => void }) {
                       <button
                         type="button"
                         onClick={() => {
+                          renderSketchFromWorkspace("selected", "jewelry");
+                          setShowTopPanelMenu(false);
+                        }}
+                        className={`${toolbarButtonBaseClass} min-w-0 w-full`}
+                        style={{
+                          backgroundColor: "#fde68a",
+                          borderColor: "#d97706",
+                          color: "#000000",
+                        }}
+                      >
+                        Refine Jewellery
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
                           setGlobalShowDots(!globalShowDots);
                           setShowTopPanelMenu(false);
                         }}
@@ -7770,6 +7793,19 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 }}
               >
                 Refine Image
+              </button>
+
+              <button
+                type="button"
+                onClick={() => renderSketchFromWorkspace("selected", "jewelry")}
+                className={`${toolbarButtonBaseClass} hidden md:flex`}
+                style={{
+                  backgroundColor: "#fde68a",
+                  borderColor: "#d97706",
+                  color: "#000000",
+                }}
+              >
+                Refine Jewellery
               </button>
 
               <button
@@ -9052,8 +9088,12 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 e.stopPropagation();
               }
 
-              if (activeTool === "cursor" && isPrimaryPointer) {
+              // A selection box is drawn by dragging with the cursor; any other tool drops one left over
+              selectingRef.current = activeTool === "cursor" && isPrimaryPointer;
+              if (selectingRef.current) {
                 setSelectionRect({ x1: c.x, y1: c.y, x2: c.x, y2: c.y });
+              } else if (isPrimaryPointer && selectionRect) {
+                setSelectionRect(null);
               }
 
               if (activeTool === "scissor") {
@@ -9197,7 +9237,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 e.preventDefault();
               }
 
-              if (selectionRect && isPointerDownRef.current) {
+              if (selectionRect && isPointerDownRef.current && selectingRef.current) {
                 setSelectionRect((prev) =>
                   prev ? { ...prev, x2: c.x, y2: c.y } : null,
                 );
@@ -10003,6 +10043,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 setScissorDots([]);
                 scissorTargetRef.current = null;
                 isPointerDownRef.current = false;
+                selectingRef.current = false;
                 return;
               }
 
@@ -10175,6 +10216,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 pendingResizeRecordingRef.current = null;
               }
               isPointerDownRef.current = false;
+              selectingRef.current = false;
               penRef.current = null;
               setDraggingShapeId(null);
               setDraggingStrokeId(null);

@@ -655,13 +655,13 @@ function fillHoles(mask: Uint8Array, w: number, h: number): Uint8Array {
 }
 
 // Mask grown (dilate) or shrunk (erode) by r pixels (a square neighbourhood, from running sums)
-function dilate(mask: Uint8Array, w: number, h: number, r: number): Uint8Array {
+export function dilate(mask: Uint8Array, w: number, h: number, r: number): Uint8Array {
   const sums = boxSums(mask, w, h, r);
   const out = new Uint8Array(mask.length);
   for (let p = 0; p < mask.length; p += 1) if (sums[p] > 0) out[p] = 1;
   return out;
 }
-function erode(mask: Uint8Array, w: number, h: number, r: number): Uint8Array {
+export function erode(mask: Uint8Array, w: number, h: number, r: number): Uint8Array {
   const inverse = new Uint8Array(mask.length);
   for (let p = 0; p < mask.length; p += 1) inverse[p] = mask[p] ? 0 : 1;
   const grown = dilate(inverse, w, h, r);
@@ -691,7 +691,7 @@ function boxSums(values: ArrayLike<number>, w: number, h: number, r: number): Fl
   return out;
 }
 // The mean over each pixel's (2r+1)-square (shrunk at the image's edges)
-function boxBlur(values: Float32Array, w: number, h: number, r: number): Float32Array {
+export function boxBlur(values: Float32Array, w: number, h: number, r: number): Float32Array {
   const sums = boxSums(values, w, h, r);
   const out = new Float32Array(w * h);
   for (let y = 0; y < h; y += 1) {
@@ -705,7 +705,7 @@ function boxBlur(values: Float32Array, w: number, h: number, r: number): Float32
 }
 
 // Only the parts of a mask at least this fraction of its biggest part's size (stray specks dropped)
-function keepLargeParts(mask: Uint8Array, w: number, h: number, fraction: number): Uint8Array {
+export function keepLargeParts(mask: Uint8Array, w: number, h: number, fraction: number): Uint8Array {
   const n = mask.length;
   const label = new Int32Array(n).fill(-1);
   const sizes: number[] = [];
@@ -734,7 +734,7 @@ function keepLargeParts(mask: Uint8Array, w: number, h: number, fraction: number
 }
 
 // Each mask pixel's distance from the nearest pixel outside it (a two-pass chamfer approximation)
-function distanceInside(mask: Uint8Array, w: number, h: number): Float32Array {
+export function distanceInside(mask: Uint8Array, w: number, h: number): Float32Array {
   const n = mask.length;
   const d = new Float32Array(n);
   const far = w + h;
