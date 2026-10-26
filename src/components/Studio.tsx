@@ -7561,7 +7561,9 @@ export function Studio({ onBack }: { onBack: () => void }) {
                       return;
                     }
                     setRenderedWorkspaceImg(readyAsset);
-                    setShowPartPainter(true);
+                    // Jewellery needs no garment parts marked: straight to the try-on
+                    if (tryOnMode === "garment") setShowPartPainter(true);
+                    else setShowTryOn(true);
                   }}
                   className={`${toolbarButtonInteractiveClass} min-w-0 max-w-[7.25rem] cursor-pointer font-black outline-none sm:max-w-none`}
                   style={{
