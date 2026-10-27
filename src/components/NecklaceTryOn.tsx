@@ -56,6 +56,10 @@ const FACE_LANDMARKS = {
   mouthRight: 291,
 } as const;
 
+// Where an earring hangs from: this fraction of the way down from the eye's outer corner to the mouth's corner (the
+// earlobe, nearly level with the mouth)
+const EARLOBE_DOWN = 0.95;
+
 // Where a necklace sits: its sides this fraction of the shoulder span apart (a neck's width, the chain resting
 // just out on the shoulders' slope), this fraction of the way up from the shoulder joints' line to the chin
 const NECKLACE_NECK_WIDTH = 0.5;
@@ -478,6 +482,36 @@ function getNecklaceFallbackAnchors(bounds: OverlayBounds) {
     neckY,
     centerX: (bounds.minX + bounds.maxX) / 2,
   };
+}
+
+// The canvas cropped to what's drawn on it (its visible pixels, with a pixel's margin); as it is if it's empty
+function trimToContent(canvas: HTMLCanvasElement): HTMLCanvasElement {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx || !canvas.width || !canvas.height) return canvas;
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  let minX = canvas.width;
+  let minY = canvas.height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < canvas.height; y += 1) {
+    for (let x = 0; x < canvas.width; x += 1) {
+      if (data[(y * canvas.width + x) * 4 + 3] < 16) continue;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (maxX < 0) return canvas;
+  minX = Math.max(0, minX - 1);
+  minY = Math.max(0, minY - 1);
+  maxX = Math.min(canvas.width - 1, maxX + 1);
+  maxY = Math.min(canvas.height - 1, maxY + 1);
+  const trimmed = document.createElement("canvas");
+  trimmed.width = maxX - minX + 1;
+  trimmed.height = maxY - minY + 1;
+  trimmed.getContext("2d")?.drawImage(canvas, minX, minY, trimmed.width, trimmed.height, 0, 0, trimmed.width, trimmed.height);
+  return trimmed;
 }
 
 function hasVisiblePixels(canvas: HTMLCanvasElement, minOpaquePixels: number) {
@@ -1893,9 +1927,11 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
       const minOpaquePixels = Math.max(40, Math.round((full.width * full.height) * 0.0025));
       const hasDistinctRightEarring = rightWidth > 4 && hasVisiblePixels(right, minOpaquePixels);
 
+      // Each earring trimmed to itself (the empty space round it in the image would otherwise be sized as part
+      // of it, shrinking the earring to a speck)
       earringAssetsRef.current = {
-        left,
-        right: hasDistinctRightEarring ? right : mirroredLeft,
+        left: trimToContent(left),
+        right: trimToContent(hasDistinctRightEarring ? right : mirroredLeft),
       };
     };
     img.src = selectedImageSrc;
@@ -2223,8 +2259,10 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
                   const leftTempleY = leftTemple.y * h;
                   const rightTempleY = rightTemple.y * h;
                   const faceWidth = Math.max(1, Math.hypot(rightTempleX - leftTempleX, rightTempleY - leftTempleY));
-                  const leftEarY = (leftEye.y * h) + ((leftMouth.y - leftEye.y) * h * 0.62) - faceWidth * 0.035 + manualOffsetYRef.current;
-                  const rightEarY = (rightEye.y * h) + ((rightMouth.y - rightEye.y) * h * 0.62) - faceWidth * 0.035 + manualOffsetYRef.current;
+                  // The earlobes: about level with the base of the nose, EARLOBE_DOWN of the way down from the eyes'
+                  // outer corners to the mouth's
+                  const leftEarY = (leftEye.y * h) + ((leftMouth.y - leftEye.y) * h * EARLOBE_DOWN) + manualOffsetYRef.current;
+                  const rightEarY = (rightEye.y * h) + ((rightMouth.y - rightEye.y) * h * EARLOBE_DOWN) + manualOffsetYRef.current;
                     const leftEarX = leftTempleX - faceWidth * 0.05 + manualOffsetXRef.current;
                     const rightEarX = rightTempleX + faceWidth * 0.06 + manualOffsetXRef.current;
                   const earringWidth = faceWidth * 0.22 * manualScaleRef.current;
