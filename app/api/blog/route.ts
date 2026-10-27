@@ -1,8 +1,5 @@
 import { getBlogPosts, saveBlogPost } from '../../../src/lib/blog-storage';
-
-function isAdmin(request: Request) {
-  return request.headers.get('x-admin-password') === process.env.ADMIN_PASSWORD;
-}
+import { isAdminRequest as isAdmin } from '../../../src/lib/adminAuth';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);

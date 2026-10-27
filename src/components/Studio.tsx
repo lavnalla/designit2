@@ -17,6 +17,7 @@ import { SubmissionModal } from "./SubmissionModal";
 import { pickFabricSwatch, synthesizeFabricImage } from "../lib/fabricSynthesis";
 import { renderSketch } from "../lib/sketchRender";
 import { renderJewelry } from "../lib/jewelryRender";
+import { adminHeaders } from "../lib/adminAuth";
 import { parseFashionClasses } from "../lib/garmentSegmenter";
 import { toParseCanvas } from "../lib/photoTryOnParsing";
 import { isGarmentClass } from "../lib/photoTryOn";
@@ -292,6 +293,9 @@ interface Stroke {
   closed?: boolean;
   zIndex?: number;
   visible?: boolean;
+  // Spots rubbed out with the eraser (in the stroke's own, unrotated coordinates): hidden, the rest of the
+  // stroke left exactly as it is (nothing joined up across them)
+  erasedSpots?: Array<{ x: number; y: number; r: number }>;
 }
 type HistoryItem = { shapes: DistortableShape[]; strokes: Stroke[] };
 type Candidate = { id: string; d: string; area: number; selected: boolean };
@@ -335,7 +339,8 @@ const DEFAULT_MESH_PATTERN = {
   verticalLines: 4,
 } as const;
 
-export function Studio({ onBack }: { onBack: () => void }) {
+// designToOpen: a submitted design being opened (its id), which the Studio places on its workspace
+export function Studio({ onBack, designToOpen }: { onBack: () => void; designToOpen?: string | null }) {
   const [showSourceWindow, setShowSourceWindow] = useState(false);
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
   const [showTopPanelMenu, setShowTopPanelMenu] = useState(false);
@@ -1270,6 +1275,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [activePenLineCount, setActivePenLineCount] = useState<number>(1);
   const [activePenLineSpacing, setActivePenLineSpacing] = useState<number>(14);
   const [meshLineSpacing, setMeshLineSpacing] = useState<number>(14);
+  // How thick the mesh pen's lines are (its own: a mesh is many fine lines, not the pen's full width each)
+  const [meshLineWidth, setMeshLineWidth] = useState<number>(1.5);
   const [activeFillOpacity, setActiveFillOpacity] = useState<number>(1);
   const [meshHorizontalLines, setMeshHorizontalLines] = useState<number>(
     DEFAULT_MESH_PATTERN.horizontalLines,
@@ -1362,7 +1369,10 @@ export function Studio({ onBack }: { onBack: () => void }) {
     color?: string;
     width?: number;
   } | null>(null);
+  // The mesh pen adds a step (and its cross lines) every PEN_SPACING pixels; the plain pen records a point every
+  // FREEHAND_SPACING, so its curves stay smooth (a petal, a scroll), not a few straight segments
   const PEN_SPACING = 30;
+  const FREEHAND_SPACING = 3;
   const ERASE_RADIUS = 15;
 
   const handleDetectSourceArticles = async () => {
@@ -1455,6 +1465,65 @@ export function Studio({ onBack }: { onBack: () => void }) {
     setIsSidebarOpen(true);
     window.sessionStorage.removeItem("designit-studio-source-image");
   }, [mounted]);
+
+  // A submitted design opened from the community gallery or My Designs: placed on the workspace as an image,
+  // fitted to a comfortable size, on top of anything already there
+  useEffect(() => {
+    if (!mounted || typeof window === "undefined") return;
+    let pending: { id: string; email?: string } | null = null;
+    try {
+      const saved = window.sessionStorage.getItem("designit-studio-design");
+      pending = saved ? JSON.parse(saved) : null;
+      window.sessionStorage.removeItem("designit-studio-design");
+    } catch {
+      pending = null;
+    }
+    if (!pending?.id) return;
+    // (Not cancelled when this runs again: taking the design off the address re-runs it with nothing to open,
+    // while this one is still loading)
+    (async () => {
+      try {
+        const query = pending.email ? `?email=${encodeURIComponent(pending.email)}` : "";
+        const res = await fetch(`/api/submissions/${encodeURIComponent(pending.id)}${query}`);
+        const design = await res.json();
+        if (!res.ok || !design.imageData) throw new Error(design.error || "Could not load the design");
+        const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const el = new window.Image();
+          el.onload = () => resolve(el);
+          el.onerror = () => reject(new Error("Could not read the design image"));
+          el.src = design.imageData;
+        });
+        const fit = Math.min(1, 520 / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+        const width = Math.max(1, Math.round((img.naturalWidth || 400) * fit));
+        const height = Math.max(1, Math.round((img.naturalHeight || 400) * fit));
+        setWorkspaceShapes((prev) => {
+          const topZ = Math.max(0, ...prev.map((shape) => shape.zIndex || 0));
+          const opened: DistortableShape = {
+            id: `opened-design-${design.id}-${Date.now()}`,
+            img: design.imageData,
+            dots: [
+              { id: "tl", x: 0, y: 0 },
+              { id: "tr", x: width, y: 0 },
+              { id: "br", x: width, y: height },
+              { id: "bl", x: 0, y: height },
+            ],
+            dims: { width, height },
+            position: { x: 40, y: 40 },
+            scale: 1,
+            showDots: true,
+            fillColor: undefined,
+            erasedPaths: [],
+            zIndex: topZ + 1,
+          };
+          return [...prev, opened];
+        });
+      } catch (err) {
+        console.error("Opening the design failed:", err);
+        alert("Sorry, that design couldn't be opened.");
+      }
+    })();
+    // (designToOpen: a new design opened while the Studio is already showing)
+  }, [mounted, designToOpen]);
 
   useEffect(() => {
     workspaceShapesRef.current = workspaceShapes;
@@ -3191,9 +3260,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
 
     try {
       const response = await fetch("/api/submissions?admin=true", {
-        headers: {
-          "x-admin-password": password,
-        },
+        headers: adminHeaders(password),
       });
 
       if (!response.ok) {
@@ -5952,16 +6019,38 @@ export function Studio({ onBack }: { onBack: () => void }) {
     }
   };
 
+  // The eraser rubs out whatever is under it: on a stroke, a spot hidden there (its line, fill and fabric), the
+  // rest left as it is; a stroke rubbed out everywhere is removed. On an image, the same (its erasedPaths).
   const sweepErase = (x: number, y: number) => {
     setStrokes((prev) =>
-      prev
-        .map((st) => ({
-          ...st,
-          points: st.points.filter(
-            (p) => Math.hypot(p.x - x, p.y - y) > ERASE_RADIUS,
-          ),
-        }))
-        .filter((st) => st.points.length > 0),
+      prev.flatMap((st) => {
+        if (!st.points.length) return [];
+        const xs = st.points.map((p) => p.x);
+        const ys = st.points.map((p) => p.y);
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const maxY = Math.max(...ys);
+        const reach = ERASE_RADIUS + (st.width || 0);
+        if (x < minX - reach || x > maxX + reach || y < minY - reach || y > maxY + reach) return [st];
+        // (Into the stroke's own coordinates: it's drawn rotated about its middle)
+        const centerX = (minX + maxX) / 2;
+        const centerY = (minY + maxY) / 2;
+        const angle = (-(st.rotation || 0) * Math.PI) / 180;
+        const dx = x - centerX;
+        const dy = y - centerY;
+        const spot = {
+          x: centerX + dx * Math.cos(angle) - dy * Math.sin(angle),
+          y: centerY + dx * Math.sin(angle) + dy * Math.cos(angle),
+          r: ERASE_RADIUS,
+        };
+        const erasedSpots = [...(st.erasedSpots || []), spot];
+        // Rubbed out everywhere (every point under a spot, with the line's width): gone
+        const gone = st.points.every((p) =>
+          erasedSpots.some((e) => Math.hypot(p.x - e.x, p.y - e.y) <= e.r - (st.width || 0) / 2),
+        );
+        return gone ? [] : [{ ...st, erasedSpots }];
+      }),
     );
     setWorkspaceShapes((prev) =>
       prev.map((s) => {
@@ -5999,12 +6088,12 @@ export function Studio({ onBack }: { onBack: () => void }) {
 
   const getMeshPattern = (stroke?: Stroke) => ({
     horizontalLines: Math.max(
-      1,
+      0,
       stroke?.meshPattern?.horizontalLines ??
         DEFAULT_MESH_PATTERN.horizontalLines,
     ),
     verticalLines: Math.max(
-      1,
+      0,
       stroke?.meshPattern?.verticalLines ?? DEFAULT_MESH_PATTERN.verticalLines,
     ),
   });
@@ -6108,7 +6197,9 @@ export function Studio({ onBack }: { onBack: () => void }) {
 
   const createMeshStrokeSet = useCallback(
     (x: number, y: number, color: string, width: number, zIndex: number) => {
-      const horizontalLines = Math.max(1, meshHorizontalLines);
+      // (No lines along the stroke: two see-through rails along it still, the cross lines hung between them)
+      const showHorizontal = meshHorizontalLines > 0;
+      const horizontalLines = showHorizontal ? meshHorizontalLines : 2;
       const spacing = Math.max(meshLineSpacing, 4);
       const centerOffset = (horizontalLines - 1) / 2;
       const groupId = `mesh-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -6122,7 +6213,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
         strokesForMesh.push({
           id: `st-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`,
           points: [{ id: `pt-${Date.now()}-${index}`, x: startX, y: startY }],
-          color,
+          color: showHorizontal ? color : "transparent",
           width,
           zIndex,
           visible: true,
@@ -6131,7 +6222,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
           strokeRole: "mesh-horizontal",
           meshOffset: offset,
           meshPattern: {
-            horizontalLines,
+            horizontalLines: meshHorizontalLines,
             verticalLines: meshVerticalLines,
           },
           groupId,
@@ -6165,9 +6256,9 @@ export function Studio({ onBack }: { onBack: () => void }) {
         )
         .sort((a, b) => (a.meshOffset || 0) - (b.meshOffset || 0));
 
-      if (horizontalStrokes.length <= 1) return [] as Stroke[];
+      if (horizontalStrokes.length <= 1 || meshVerticalLines <= 0) return [] as Stroke[];
 
-      const verticalLines = Math.max(1, meshVerticalLines);
+      const verticalLines = meshVerticalLines;
       const connectors: Stroke[] = [];
 
       for (let index = 0; index < verticalLines; index += 1) {
@@ -6260,8 +6351,10 @@ export function Studio({ onBack }: { onBack: () => void }) {
   }
 
   function createMeshStrokeVariants(baseStroke: Stroke) {
-    const horizontalLines = Math.max(1, meshHorizontalLines);
-    const verticalLines = Math.max(1, meshVerticalLines);
+    // (No lines along it: two see-through rails, the cross lines hung between them)
+    const showHorizontal = meshHorizontalLines > 0;
+    const horizontalLines = showHorizontal ? meshHorizontalLines : 2;
+    const verticalLines = Math.max(0, meshVerticalLines);
 
     if (baseStroke.points.length < 2) {
       return [baseStroke];
@@ -6311,6 +6404,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
           clothType: undefined,
           strokeStyle: "solid" as const,
           strokeRole: "mesh-horizontal" as const,
+          ...(showHorizontal ? {} : { color: "transparent" }),
           points,
         };
       },
@@ -7652,6 +7746,21 @@ export function Studio({ onBack }: { onBack: () => void }) {
                       <button
                         type="button"
                         onClick={() => {
+                          setShowSubmissionModal(true);
+                          setShowTopPanelMenu(false);
+                        }}
+                        className={`${toolbarButtonBaseClass} min-w-0 w-full`}
+                        style={{
+                          backgroundColor: "#bbf7d0",
+                          borderColor: "#16a34a",
+                          color: "#000000",
+                        }}
+                      >
+                        Submit Design
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
                           renderSketchFromWorkspace("selected");
                           setShowTopPanelMenu(false);
                         }}
@@ -7819,6 +7928,21 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 }}
               >
                 Download
+              </button>
+
+              <button
+                id="submit-design-btn"
+                type="button"
+                onClick={() => setShowSubmissionModal(true)}
+                className={`${toolbarButtonBaseClass} hidden md:flex`}
+                style={{
+                  backgroundColor: "#bbf7d0",
+                  borderColor: "#16a34a",
+                  color: "#000000",
+                }}
+                title="Send this design for review: approved designs are shown in the community gallery"
+              >
+                Submit Design
               </button>
 
               <button
@@ -8606,7 +8730,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                               </label>
                               <input
                                 type="range"
-                                min={1}
+                                min={0}
                                 max={12}
                                 value={meshHorizontalLines}
                                 onChange={(e) => {
@@ -8632,7 +8756,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                               </label>
                               <input
                                 type="range"
-                                min={1}
+                                min={0}
                                 max={12}
                                 value={meshVerticalLines}
                                 onChange={(e) => {
@@ -8670,6 +8794,23 @@ export function Studio({ onBack }: { onBack: () => void }) {
                               />
                               <span className="text-[10px] font-bold w-6 text-right">
                                 {meshLineSpacing}
+                              </span>
+                            </div>
+                            <div className="mt-2 flex items-center gap-2">
+                              <label className="text-[10px] font-black uppercase text-slate-600 w-20">
+                                Thickness
+                              </label>
+                              <input
+                                type="range"
+                                min={0.5}
+                                max={8}
+                                step={0.5}
+                                value={meshLineWidth}
+                                onChange={(e) => setMeshLineWidth(parseFloat(e.target.value))}
+                                className="flex-1"
+                              />
+                              <span className="text-[10px] font-bold w-6 text-right">
+                                {meshLineWidth}
                               </span>
                             </div>
                             <div className="mt-2 text-[10px] text-slate-500">
@@ -9182,7 +9323,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     c.x,
                     c.y,
                     activeColor,
-                    activePenSize,
+                    meshLineWidth,
                     maxZ + 1,
                   );
                   setStrokes((prev) => [...prev, ...meshStrokeSet.strokes]);
@@ -9194,7 +9335,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     meshGroupId: meshStrokeSet.groupId,
                     pendingMesh: false,
                     color: activeColor,
-                    width: activePenSize,
+                    width: meshLineWidth,
                   };
                 } else {
                   const solidStrokeSet = createSolidStrokeSet(
@@ -9265,7 +9406,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                   Math.hypot(
                     c.x - penRef.current!.lastX,
                     c.y - penRef.current!.lastY,
-                  ) >= PEN_SPACING
+                  ) >= (penRef.current.meshGroupId ? PEN_SPACING : FREEHAND_SPACING)
                 ) {
                   setStrokes((prev) => {
                     const deltaX = c.x - penRef.current!.lastX;
@@ -9331,7 +9472,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                       );
                       const verticalConnectors = createMeshVerticalConnectors(
                         activeColor,
-                        activePenSize,
+                        meshLineWidth,
                         currentMaxZ + 1,
                         penRef.current.meshGroupId,
                         updated,
@@ -9827,8 +9968,9 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 ["cursor", "ghost", "pen"].includes(activeTool)
               ) {
                 const rawPoints = strokeToProcess.points;
-                const shape =
-                  workspaceShapes.find((s) => s.showDots) || workspaceShapes[0];
+                // (Only into an image that's selected, its dots shown: a stroke drawn freely near another image is
+                // left as drawn)
+                const shape = workspaceShapes.find((s) => s.showDots);
 
                 if (rawPoints && rawPoints.length >= 2 && shape) {
                   const startPoint = rawPoints[0];
@@ -9868,11 +10010,14 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     }
                   });
 
+                  // (Between two different dots: a loop, like a petal, starting and ending by the same dot is
+                  // drawn freely)
                   if (
                     nearestStartDot &&
                     nearestEndDot &&
                     minStartDist <= SNAP_THRESHOLD &&
-                    minEndDist <= SNAP_THRESHOLD
+                    minEndDist <= SNAP_THRESHOLD &&
+                    (nearestStartDot as any).index !== (nearestEndDot as any).index
                   ) {
                     // Lock execution immediately
                     isProcessingRef.current = true;
@@ -10341,6 +10486,22 @@ export function Studio({ onBack }: { onBack: () => void }) {
                               >
                                 <path d={generatePathData(shape.dots, true)} />
                               </clipPath>
+                              {/* What the eraser rubbed out */}
+                              {shape.erasedPaths && shape.erasedPaths.length > 0 && (
+                                <mask
+                                  id={`ms-${shape.id}`}
+                                  maskUnits="userSpaceOnUse"
+                                  x="0"
+                                  y="0"
+                                  width={shape.dims.width}
+                                  height={shape.dims.height}
+                                >
+                                  <rect x={0} y={0} width={shape.dims.width} height={shape.dims.height} fill="white" />
+                                  {shape.erasedPaths.map((p, i) => (
+                                    <path key={`er-${i}`} d={p} fill="black" />
+                                  ))}
+                                </mask>
+                              )}
                             </defs>
                             <image
                               key={`img-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`}
@@ -10348,6 +10509,11 @@ export function Studio({ onBack }: { onBack: () => void }) {
                               href={shape.img}
                               width={shape.dims.width}
                               height={shape.dims.height}
+                              mask={
+                                shape.erasedPaths && shape.erasedPaths.length > 0
+                                  ? `url(#ms-${shape.id})`
+                                  : undefined
+                              }
                               clipPath={
                                 shape.dots && shape.dots.length > 0
                                   ? `url(#cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length})`
@@ -11074,6 +11240,24 @@ export function Studio({ onBack }: { onBack: () => void }) {
                           });
                         }}
                       >
+                        {s.erasedSpots && s.erasedSpots.length > 0 && (
+                          <defs>
+                            <mask
+                              id={`ms-st-erase-${s.id}`}
+                              maskUnits="userSpaceOnUse"
+                              x={-100000}
+                              y={-100000}
+                              width={200000}
+                              height={200000}
+                            >
+                              <rect x={-100000} y={-100000} width={200000} height={200000} fill="white" />
+                              {s.erasedSpots.map((spot, i) => (
+                                <circle key={`erase-${s.id}-${i}`} cx={spot.x} cy={spot.y} r={spot.r} fill="black" />
+                              ))}
+                            </mask>
+                          </defs>
+                        )}
+                        <g mask={s.erasedSpots && s.erasedSpots.length > 0 ? `url(#ms-st-erase-${s.id})` : undefined}>
                         {s.baseFill && (
                           <path
                             d={strokePathD}
@@ -12321,6 +12505,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                               </>
                             );
                           })()}
+                        </g>
                       </g>
                     );
                   }

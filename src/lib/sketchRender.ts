@@ -624,7 +624,7 @@ function smoothRows(values: Float64Array, weights: Float64Array, top: number, bo
 // --- helpers ---
 
 // The mask with every hole in it filled (anything not reachable from the image's edge without crossing it)
-function fillHoles(mask: Uint8Array, w: number, h: number): Uint8Array {
+export function fillHoles(mask: Uint8Array, w: number, h: number): Uint8Array {
   const n = mask.length;
   const outside = new Uint8Array(n);
   const queue: number[] = [];
