@@ -1,8 +1,9 @@
 // Turns a rough jewellery sketch into polished metal with a 3D look, with no AI:
-// 1. The piece: exactly what's drawn on the paper, as wide as it's drawn. A line becomes round wire of that
-//    width (a chain, a ring's band; one too thin to be wire is thickened a little); a painted shape becomes a
-//    cast piece with rounded, bevelled edges (a pendant, a plate). Nothing is filled in: a ring drawn as a
-//    circle stays a ring.
+// 1. The piece: exactly what's drawn on the paper, as fine as it's drawn. A line's soft edge (where the pen's
+//    colour fades into the paper) isn't counted as metal, only kept as the metal's own soft edge, so a fine line
+//    stays fine. A line becomes round wire of its width (a chain, a ring's band, filigree); a painted shape
+//    becomes a cast piece with rounded, bevelled edges (a pendant, a plate). Nothing is filled in: a ring drawn
+//    as a circle stays a ring.
 // 2. Its material, from the colour it's drawn in, one metal for each connected piece (what most of it is drawn
 //    in, judged by its core, not its edges blended with the paper): the Studio's metallic pens (22K gold,
 //    platinum, silver, copper, rose gold) are those metals; otherwise yellow or orange is gold, light grey
@@ -13,10 +14,12 @@
 // 4. The metal's shine: polished metal shows what's around it, so each pixel shows the studio it faces (bright
 //    lights above, a dark horizon, a soft floor), in the metal's colours: deep in the shadows, warm in the
 //    midtones, nearly white in the highlights. A gem sits in a thin metal setting and is cut like a real stone:
-//    a flat table in the middle, facets round it, each catching the light differently, with sparkles.
+//    a flat table in the middle, facets round it, each catching the light differently, with sparkles. A stone
+//    that's already a picture of one (a ruby or emerald image placed on the sketch: its shading and highlights
+//    in it) is kept exactly as it is: no metal over it, nothing repainted.
 // 5. A soft shadow beneath. Everything else comes out see-through.
 
-import { boxBlur, dilate, distanceInside, erode, keepLargeParts } from "./sketchRender";
+import { boxBlur, dilate, distanceInside, erode, fillHoles, keepLargeParts } from "./sketchRender";
 
 type RGBA = { data: Uint8ClampedArray; width: number; height: number };
 
@@ -25,8 +28,15 @@ const PAPER_MIN = 248;
 const PAPER_SPREAD = 8;
 // Grey this light (0-255) or lighter is platinum; darker, silver
 const PLATINUM_LIGHTNESS = 210;
-// Pen lines are thickened into wire this wide (fraction of the sketch's size, at least 2 pixels each side)
-const WIRE_RADIUS = 0.008;
+// A pixel is the metal itself where its colour is at least this strong, as a fraction of the strongest nearby
+// (the line's core); weaker, it's the line's soft edge
+const METAL_COVERAGE = 0.5;
+// A stone whose brightness varies more than this (0-255) is a picture of a stone, kept as it is
+const PICTURED_STONE = 18;
+// A wire narrower than this many pixels each side shows less of its curve (its face more)
+const FINE_WIRE = 2.5;
+// ... and shines brighter by up to this much (the finest the most)
+const FINE_WIRE_SHINE = 0.35;
 // A flat piece's bevel: its edge rounds over this far in (fraction of the sketch's size)
 const BEVEL = 0.03;
 // How high the surface rises for its width (more: stronger relief, bolder reflections)
@@ -41,9 +51,9 @@ const FACETS_ROUND = 16;
 const GEM_TABLE = 0.45;
 const SETTING = 0.006;
 // The shadow beneath: how far down it falls and how soft it is (fractions of the sketch's size), how dark
-const SHADOW_DROP = 0.008;
-const SHADOW_SOFTNESS = 0.012;
-const SHADOW_OPACITY = 0.22;
+const SHADOW_DROP = 0.003;
+const SHADOW_SOFTNESS = 0.004;
+const SHADOW_OPACITY = 0.15;
 
 // The metals: the colour of the Studio's pen for each, and the metal's colours from shadow through midtone to
 // highlight (0-1 each) with how bright the studio's reflections show in it
@@ -117,6 +127,57 @@ const METALS: Record<number, Metal> = {
   },
 };
 const METAL_IDS = [METAL_GOLD, METAL_PLATINUM, METAL_SILVER, METAL_COPPER, METAL_ROSE_GOLD];
+// Gold's look, from a photo of polished 22 carat gold: the colour at each share of it, darkest to lightest (2%
+// deep amber shadow, its middle a saturated buttery yellow, creamy highlights). A piece's gold is coloured so
+// it has the same share of each: its pixels ranked by how much light they catch, each given the photo's colour
+// at its rank (the shading keeps its shape; the gold takes the photo's colour and lightness).
+const GOLD_LOOK: Array<[number, [number, number, number]]> = [
+  [0, [110, 45, 0]],
+  [0.02, [131, 56, 1]],
+  [0.1, [192, 134, 44]],
+  [0.25, [215, 176, 90]],
+  [0.4, [233, 194, 100]],
+  [0.5, [243, 202, 104]],
+  [0.6, [252, 210, 105]],
+  [0.75, [250, 222, 150]],
+  [0.9, [245, 230, 185]],
+  [0.98, [254, 242, 200]],
+  [1, [255, 252, 215]],
+];
+// Platinum and silver the same way, with the same spread of light as the gold photo: platinum a bright, faintly
+// cool white with soft grey shadows; silver a neutral, slightly greyer white with deeper shadows
+const PLATINUM_LOOK: Array<[number, [number, number, number]]> = [
+  [0, [70, 72, 78]],
+  [0.02, [96, 99, 106]],
+  [0.1, [150, 153, 160]],
+  [0.25, [190, 193, 199]],
+  [0.4, [210, 213, 218]],
+  [0.5, [220, 222, 227]],
+  [0.6, [228, 230, 234]],
+  [0.75, [236, 238, 241]],
+  [0.9, [244, 245, 247]],
+  [0.98, [251, 252, 253]],
+  [1, [255, 255, 255]],
+];
+const SILVER_LOOK: Array<[number, [number, number, number]]> = [
+  [0, [45, 46, 48]],
+  [0.02, [70, 71, 74]],
+  [0.1, [125, 127, 130]],
+  [0.25, [170, 172, 175]],
+  [0.4, [195, 196, 199]],
+  [0.5, [207, 208, 211]],
+  [0.6, [217, 218, 220]],
+  [0.75, [228, 229, 231]],
+  [0.9, [240, 240, 242]],
+  [0.98, [250, 250, 251]],
+  [1, [255, 255, 255]],
+];
+// The metals coloured by a look (the others by their ramp)
+const LOOKS: Record<number, Array<[number, [number, number, number]]>> = {
+  [METAL_GOLD]: GOLD_LOOK,
+  [METAL_PLATINUM]: PLATINUM_LOOK,
+  [METAL_SILVER]: SILVER_LOOK,
+};
 // A colour within this distance (0-255, across the three colours) of a metal's pen is that metal
 const PEN_MATCH = 40;
 
@@ -162,6 +223,23 @@ export function renderJewelry(sketch: RGBA): JewelryRenderResult {
     else family[p] = GEM;
   }
   if (inkCount < n * 0.001) return { error: "Nothing drawn here to refine: select the jewellery sketch." };
+  // Each stone whole: where gem colours are, closed over and filled in, so its dark shading and white highlights
+  // (not gem-coloured themselves) are the stone too, not taken for pen or silver. Gold drawn round it stays gold.
+  const stoneArea = new Uint8Array(n);
+  {
+    const seeds = new Uint8Array(n);
+    for (let p = 0; p < n; p += 1) if (family[p] === GEM) seeds[p] = 1;
+    const closed = fillHoles(erode(dilate(seeds, w, h, 2), w, h, 2), w, h);
+    const reach = dilate(closed, w, h, 1);
+    for (let p = 0; p < n; p += 1) {
+      if (!reach[p] || !ink[p]) continue;
+      const f = family[p];
+      if (f === METAL_GOLD || f === METAL_COPPER || f === METAL_ROSE_GOLD) continue;
+      stoneArea[p] = 1;
+      family[p] = GEM;
+    }
+  }
+
   // Gems are where gem colours are painted; every other connected piece is one metal, what most of it is drawn
   // in (gold if it's all pen, or whichever metal the rest of the sketch is)
   const material = new Uint8Array(n);
@@ -207,7 +285,6 @@ export function renderJewelry(sketch: RGBA): JewelryRenderResult {
 
   // How wide each piece is drawn: half its width, the middle of the most typical cross-section (the median of
   // its pixels' distance in from the edge along its middle)
-  const inkDist = distanceInside(ink, w, h);
   const halfWidthOf = (part: number[], dist: Float32Array) => {
     const middles: number[] = [];
     for (const q of part) {
@@ -225,28 +302,64 @@ export function renderJewelry(sketch: RGBA): JewelryRenderResult {
     middles.sort((a, b) => a - b);
     return middles[Math.floor(middles.length / 2)];
   };
-  // Lines too thin to be wire are thickened to the thinnest wire, evenly
-  const thinnest = Math.max(2, Math.round(size * WIRE_RADIUS));
-  let piece: Uint8Array = ink.slice();
-  for (const part of components(ink, w, h)) {
-    const half = halfWidthOf(part, inkDist);
-    if (half >= thinnest) continue;
-    const mask = new Uint8Array(n);
-    for (const q of part) mask[q] = 1;
-    const grown = dilate(mask, w, h, Math.round(thinnest - half));
-    for (let q = 0; q < n; q += 1) if (grown[q]) piece[q] = 1;
+  // How much of each pixel the pen covers: its colour's strength (how far from the paper's white) against the
+  // strongest nearby, the line's core. The metal is where it's at least METAL_COVERAGE: a line's faded edge
+  // isn't, so the metal is as fine as the line is drawn.
+  const strength = new Float32Array(n);
+  for (let p = 0; p < n; p += 1) {
+    if (!ink[p]) continue;
+    const a = data[p * 4 + 3] / 255;
+    strength[p] = (a * (255 - Math.min(data[p * 4], data[p * 4 + 1], data[p * 4 + 2]))) / 255;
   }
-  // Its edge smoothed a touch (the anti-aliasing's stair steps), specks dropped
-  const smoothed = boxBlur(Float32Array.from(piece), w, h, 1);
-  piece = new Uint8Array(n);
-  for (let p = 0; p < n; p += 1) if (smoothed[p] >= 0.5) piece[p] = 1;
-  piece = keepLargeParts(piece, w, h, 0.01);
+  const strongest = localMax(strength, w, h, 2);
+  const coverage = new Float32Array(n);
+  let piece: Uint8Array = new Uint8Array(n);
+  for (let p = 0; p < n; p += 1) {
+    if (!ink[p] || strongest[p] <= 0) continue;
+    coverage[p] = Math.min(1, strength[p] / strongest[p]);
+  }
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      const p = y * w + x;
+      if (coverage[p] >= METAL_COVERAGE) {
+        piece[p] = 1;
+        continue;
+      }
+      // (A fine line running between pixels splits its colour over two: the stronger of them across the line
+      // is still the metal, so it doesn't break up)
+      if (coverage[p] < METAL_COVERAGE * 0.4) continue;
+      const across = (a: number, b: number) => strength[p] >= a && strength[p] >= b;
+      const left = x > 0 ? strength[p - 1] : 0;
+      const right = x < w - 1 ? strength[p + 1] : 0;
+      const up = y > 0 ? strength[p - w] : 0;
+      const down = y < h - 1 ? strength[p + w] : 0;
+      if (across(left, right) || across(up, down)) piece[p] = 1;
+    }
+  }
+  // (Only specks dropped: a short fine stroke is still part of the piece)
+  piece = keepLargeParts(piece, w, h, 0.002);
+  // (A stone is all there, its pale highlights included)
+  for (let p = 0; p < n; p += 1) if (stoneArea[p]) piece[p] = 1;
+  // Which stones are pictures of stones (shading in them: kept as they are) and which are painted flat (cut and
+  // set, below): how much their brightness varies
+  const pictured = new Uint8Array(n);
+  for (const part of components(stoneArea, w, h)) {
+    let sum = 0;
+    let sumSq = 0;
+    for (const q of part) {
+      const l = 0.2126 * data[q * 4] + 0.7152 * data[q * 4 + 1] + 0.0722 * data[q * 4 + 2];
+      sum += l;
+      sumSq += l * l;
+    }
+    const mean = sum / part.length;
+    if (Math.sqrt(Math.max(0, sumSq / part.length - mean * mean)) > PICTURED_STONE) for (const q of part) pictured[q] = 1;
+  }
   // Every pixel of the piece takes the material of the nearest ink (thickened wire, smoothed edges)
   spreadNearest(material, ink, w, h);
   // Each gem's setting: its outer band becomes the metal it's set in (the nearest metal, else gold)
   {
     const gemMask = new Uint8Array(n);
-    for (let p = 0; p < n; p += 1) if (piece[p] && material[p] === GEM) gemMask[p] = 1;
+    for (let p = 0; p < n; p += 1) if (piece[p] && material[p] === GEM && !pictured[p]) gemMask[p] = 1;
     const inner = erode(gemMask, w, h, Math.max(1, Math.round(size * SETTING)));
     const metalInk = new Uint8Array(n);
     for (let p = 0; p < n; p += 1) if (ink[p] && material[p] !== GEM) metalInk[p] = 1;
@@ -335,7 +448,8 @@ export function renderJewelry(sketch: RGBA): JewelryRenderResult {
   };
 
   // --- 4. The shine ---
-  const out = new Uint8ClampedArray(n * 4);
+  // The light each pixel catches (from the studio it reflects)
+  const caught = new Float32Array(n);
   for (let y = 0; y < h; y += 1) {
     for (let x = 0; x < w; x += 1) {
       const p = y * w + x;
@@ -343,9 +457,12 @@ export function renderJewelry(sketch: RGBA): JewelryRenderResult {
       // Which way the surface faces (from its slope)
       const sx = (x < w - 1 ? surface[p + 1] : surface[p]) - (x > 0 ? surface[p - 1] : surface[p]);
       const sy = (y < h - 1 ? surface[p + w] : surface[p]) - (y > 0 ? surface[p - w] : surface[p]);
-      let nx = -sx / 2;
-      let ny = -sy / 2;
-      if (material[p] === GEM && stone[p] >= 0) {
+      // (A wire only a pixel or two across is too narrow for its curve to show as a slope: mostly its face, so it
+      // reads as bright metal, not its dark edges)
+      const fine = Math.min(1, reachOf[p] / FINE_WIRE);
+      let nx = (-sx / 2) * fine;
+      let ny = (-sy / 2) * fine;
+      if (material[p] === GEM && stone[p] >= 0 && !pictured[p]) {
         // (A cut stone is flat across its facets: their tilt, not the bevel)
         const [tx, ty] = facetTilt(x, y, stone[p]);
         nx = tx;
@@ -363,15 +480,51 @@ export function renderJewelry(sketch: RGBA): JewelryRenderResult {
       const rx = 2 * along * nx + PERSPECTIVE * (x / w - 0.5);
       const ry = 2 * along * ny - vy + PERSPECTIVE * (y / h - 0.5);
       const rz = 2 * along * nz - vz;
-      const seen = studio(rx, ry, rz);
+      // (A fine wire catches the light along its whole face: brighter)
+      caught[p] = studio(rx, ry, rz) + (1 - fine) * FINE_WIRE_SHINE;
+    }
+  }
+  // Each looked metal's pixels ranked by the light they catch (for its look)
+  const caughtBy = new Map<number, number[]>();
+  for (let p = 0; p < n; p += 1) {
+    if (!piece[p] || pictured[p] || !LOOKS[material[p]]) continue;
+    if (!caughtBy.has(material[p])) caughtBy.set(material[p], []);
+    caughtBy.get(material[p])!.push(caught[p]);
+  }
+  for (const list of caughtBy.values()) list.sort((a, b) => a - b);
+  const rankIn = (metal: number, v: number) => {
+    const list = caughtBy.get(metal) ?? [];
+    let lo = 0;
+    let hi = list.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (list[mid] < v) lo = mid + 1;
+      else hi = mid;
+    }
+    return list.length > 1 ? lo / (list.length - 1) : 0.5;
+  };
+  // ... and each pixel's colour
+  const out = new Uint8ClampedArray(n * 4);
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      const p = y * w + x;
+      if (!piece[p]) continue;
+      const seen = caught[p];
       let colour: [number, number, number];
-      if (material[p] === GEM) {
+      if (pictured[p]) {
+        colour = [data[p * 4] / 255, data[p * 4 + 1] / 255, data[p * 4 + 2] / 255];
+      } else if (material[p] === GEM) {
         const base: [number, number, number] = [gemColour[p * 3], gemColour[p * 3 + 1], gemColour[p * 3 + 2]];
         // Deeper toward the rim, lit through its facets, sparkling where a facet catches a light
         const depth = Math.min(1, dist[p] / bevel);
         const body = 0.25 + 0.75 * Math.min(1, seen * 0.8) * (0.55 + 0.45 * depth);
         const sparkle = Math.max(0, seen - 1.05) * 2.5;
         colour = [0, 1, 2].map((c) => Math.min(1, base[c] * body * 1.25 + sparkle)) as [number, number, number];
+      } else if (LOOKS[material[p]]) {
+        colour = lookAt(LOOKS[material[p]], rankIn(material[p], seen));
+        // (A faint polish texture)
+        const polish = 1 + 0.01 * noise(x, y);
+        colour = colour.map((v) => Math.min(1, v * polish)) as [number, number, number];
       } else {
         const metal = METALS[material[p]] ?? METALS[METAL_GOLD];
         colour = ramp(metal.ramp, seen / metal.exposure);
@@ -383,11 +536,24 @@ export function renderJewelry(sketch: RGBA): JewelryRenderResult {
       out[p * 4 + 3] = 255;
     }
   }
-  // Edges anti-aliased
-  const cover = boxBlur(Float32Array.from(piece), w, h, 1);
-  for (let p = 0; p < n; p += 1) {
-    if (!out[p * 4 + 3]) continue;
-    out[p * 4 + 3] = Math.round(Math.min(1, cover[p] * 1.6) * 255);
+  // The line's soft edge: just outside the metal, the colour of the metal beside it, as see-through as the pen
+  // faded there (so edges are smooth without the line getting any wider)
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      const p = y * w + x;
+      if (piece[p] || coverage[p] <= 0.05) continue;
+      let from = -1;
+      for (let dy = -1; dy <= 1 && from < 0; dy += 1) {
+        for (let dx = -1; dx <= 1 && from < 0; dx += 1) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx >= 0 && ny >= 0 && nx < w && ny < h && piece[ny * w + nx]) from = ny * w + nx;
+        }
+      }
+      if (from < 0) continue;
+      for (let c = 0; c < 3; c += 1) out[p * 4 + c] = out[from * 4 + c];
+      out[p * 4 + 3] = Math.round(Math.min(1, coverage[p] / METAL_COVERAGE) * 255);
+    }
   }
 
   // --- 5. The soft shadow beneath ---
@@ -430,6 +596,17 @@ function studio(x: number, y: number, z: number): number {
   // Facing straight back at the viewer: the dark of the camera's surroundings
   light -= 0.15 * Math.max(0, z) ** 8;
   return Math.max(0, light);
+}
+
+// A colour from a look (colours at shares, 0-255) at a share t (0 to 1)
+function lookAt(look: Array<[number, [number, number, number]]>, t: number): [number, number, number] {
+  const share = Math.max(0, Math.min(1, t));
+  let i = 0;
+  while (i < look.length - 2 && look[i + 1][0] < share) i += 1;
+  const [a, from] = look[i];
+  const [b, to] = look[i + 1];
+  const f = b > a ? (share - a) / (b - a) : 0;
+  return [0, 1, 2].map((c) => (from[c] * (1 - f) + to[c] * f) / 255) as [number, number, number];
 }
 
 // A colour along a ramp of stops (t from 0 to 1)
@@ -484,6 +661,27 @@ function spreadNearest(values: Uint8Array, from: Uint8Array, w: number, h: numbe
   const nearest = nearestOf(from, w, h);
   const copy = values.slice();
   for (let p = 0; p < values.length; p += 1) if (nearest[p] >= 0) values[p] = copy[nearest[p]];
+}
+
+// The largest value within r pixels each way (a square), in two passes
+function localMax(values: Float32Array, w: number, h: number, r: number): Float32Array {
+  const across = new Float32Array(w * h);
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      let most = 0;
+      for (let k = Math.max(0, x - r); k <= Math.min(w - 1, x + r); k += 1) most = Math.max(most, values[y * w + k]);
+      across[y * w + x] = most;
+    }
+  }
+  const out = new Float32Array(w * h);
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      let most = 0;
+      for (let k = Math.max(0, y - r); k <= Math.min(h - 1, y + r); k += 1) most = Math.max(most, across[k * w + x]);
+      out[y * w + x] = most;
+    }
+  }
+  return out;
 }
 
 // The connected parts of a mask (touching across corners too), each as its pixels

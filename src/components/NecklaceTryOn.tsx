@@ -36,6 +36,10 @@ interface NecklaceAnchorPoints {
   rightNeckX: number;
   neckY: number;
   centerX: number;
+  // A necklace on a chain: the image without its back chain (the part round the back of the neck, drawn
+  // separately so it goes behind the neck), and the chain's look
+  front?: HTMLCanvasElement;
+  chain?: { colour: string; highlight: string; thickness: number };
 }
 
 interface EarringAssetSet {
@@ -51,6 +55,29 @@ const FACE_LANDMARKS = {
   mouthLeft: 61,
   mouthRight: 291,
 } as const;
+
+// Where an earring hangs from: this fraction of the way down from the eye's outer corner to the mouth's corner (the
+// earlobe, nearly level with the mouth)
+const EARLOBE_DOWN = 0.95;
+
+// Where a necklace sits: its sides this fraction of the shoulder span apart (a neck's width, the chain resting
+// just out on the shoulders' slope), this fraction of the way up from the shoulder joints' line to the chin
+const NECKLACE_NECK_WIDTH = 0.5;
+const NECKLACE_NECK_HEIGHT = 0.22;
+// From the person's outline: how far out along each shoulder line (from the neck toward the shoulder tip) the
+// chain lies
+const NECKLACE_ON_SHOULDERS = 0.25;
+// ... and for a necklace on a chain, which hangs from close in by the neck, high on the shoulders' slope
+const NECKLACE_ON_SHOULDERS_CHAIN = 0.08;
+// ... raised from there by this fraction of its width, its ends on the lower sides of the neck
+const NECKLACE_LIFT_CHAIN = 0.12;
+// ... and up this many canvas pixels more (two presses of the up arrow, 5 each)
+const NECKLACE_CHAIN_RAISE = 10;
+// ... and raised from there by this fraction of the width between those two points (it sits up against the
+// base of the neck, not down on the slope)
+const NECKLACE_LIFT = 0.28;
+// A necklace image wraps the neck this fraction of its height down from its top (past the clasp at the back)
+const NECKLACE_WRAP_DEPTH = 0.08;
 
 function getNecklacePlacement(
   landmarks: Array<{ x: number; y: number }>,
@@ -70,32 +97,382 @@ function getNecklacePlacement(
   const shoulderMidX = (leftShoulderX + rightShoulderX) / 2;
   const shoulderMidY = (leftShoulderY + rightShoulderY) / 2;
 
+  // A necklace wraps the base of the neck: its sides NECKLACE_NECK_WIDTH of the shoulder span apart, centred
+  // under the chin, NECKLACE_NECK_HEIGHT of the way up from the shoulder line to the chin
   if (chin) {
     const chinX = chin.x * width;
     const chinY = chin.y * height;
+    const half = (shoulderSpan * NECKLACE_NECK_WIDTH) / 2;
 
     return {
-      chainStartX: leftShoulderX + (chinX - leftShoulderX) * 0.4,
-      chainStartY: leftShoulderY + (chinY - leftShoulderY) * 0.3,
-      chainEndX: rightShoulderX - (rightShoulderX - chinX) * 0.4,
-      chainEndY: rightShoulderY + (chinY - rightShoulderY) * 0.3,
+      chainStartX: chinX - half,
+      chainStartY: leftShoulderY + (chinY - leftShoulderY) * NECKLACE_NECK_HEIGHT,
+      chainEndX: chinX + half,
+      chainEndY: rightShoulderY + (chinY - rightShoulderY) * NECKLACE_NECK_HEIGHT,
       controlX: chinX,
     };
   }
 
-  const fallbackNeckY = shoulderMidY - shoulderSpan * 0.18;
+  const fallbackNeckY = shoulderMidY - shoulderSpan * 0.1;
+  const half = (shoulderSpan * NECKLACE_NECK_WIDTH) / 2;
 
   return {
-    chainStartX: leftShoulderX + shoulderSpan * 0.18,
+    chainStartX: shoulderMidX - half,
     chainStartY: fallbackNeckY,
-    chainEndX: rightShoulderX - shoulderSpan * 0.18,
+    chainEndX: shoulderMidX + half,
     chainEndY: fallbackNeckY,
     controlX: shoulderMidX,
   };
 }
 
+// A chain is the thin part of a necklace: no thicker than this fraction of its heaviest part (a bib, a pendant)
+const CHAIN_THINNESS = 0.3;
+// A necklace image's pixels this opaque or more are the necklace itself (0-255); fainter ones, its shadow
+const SOLID_ALPHA = 128;
+// A necklace wraps the neck where, going down from its top, it first reaches this fraction of its full width
+const WRAP_WIDTH = 0.95;
+// The back chain drawn round the neck: up this fraction of the neck's width above where the necklace wraps it
+// (its curve's pull: the chain's top, behind the neck, is about three quarters of this up), and pulled in
+// toward the neck by this fraction of it as it rises
+const CHAIN_RISE = 0.9;
+const CHAIN_INWARD = 0.1;
+
+// Splits a necklace image on a chain into its front (what hangs down the front when worn: a bib, a pendant on
+// its chain) and its back chain (the top, where the chain turns in over the neck: round the back of it when
+// worn). Returns the front image, anchors where it wraps the neck on each side (these go at the base of the
+// neck), and the chain's colour and thickness; null if the necklace has no back chain.
+function splitNecklaceChain(
+  imageData: Uint8ClampedArray,
+  w: number,
+  bounds: OverlayBounds,
+  source: CanvasImageSource,
+): NecklaceAnchorPoints | null {
+  const { minX, minY } = bounds;
+  const bw = bounds.width + 1;
+  const bh = bounds.height + 1;
+  const n = bw * bh;
+  const solid = new Uint8Array(n);
+  for (let y = 0; y < bh; y += 1) {
+    for (let x = 0; x < bw; x += 1) {
+      // (Solid metal only: a soft shadow under it, or a faint halo, would make a chain look as thick as its
+      // pendant)
+      if (imageData[((y + minY) * w + x + minX) * 4 + 3] >= SOLID_ALPHA) solid[y * bw + x] = 1;
+    }
+  }
+  // How far each pixel is from the necklace's edge (a two-pass chamfer), and from that how thick the necklace
+  // is around it (the most within a radius)
+  const dist = new Float32Array(n);
+  for (let q = 0; q < n; q += 1) dist[q] = solid[q] ? bw + bh : 0;
+  for (let y = 0; y < bh; y += 1) {
+    for (let x = 0; x < bw; x += 1) {
+      const q = y * bw + x;
+      if (!dist[q]) continue;
+      dist[q] = Math.min(dist[q], x > 0 ? dist[q - 1] + 1 : 1, y > 0 ? dist[q - bw] + 1 : 1);
+    }
+  }
+  for (let y = bh - 1; y >= 0; y -= 1) {
+    for (let x = bw - 1; x >= 0; x -= 1) {
+      const q = y * bw + x;
+      if (!dist[q]) continue;
+      dist[q] = Math.min(dist[q], x < bw - 1 ? dist[q + 1] + 1 : 1, y < bh - 1 ? dist[q + bw] + 1 : 1);
+    }
+  }
+  let deepest = 0;
+  for (let q = 0; q < n; q += 1) deepest = Math.max(deepest, dist[q]);
+  if (deepest < 3) return null;
+  const chainMost = Math.max(1.5, deepest * CHAIN_THINNESS);
+  const radius = Math.max(2, Math.ceil(chainMost * 2));
+  const across = new Float32Array(n);
+  for (let y = 0; y < bh; y += 1) {
+    for (let x = 0; x < bw; x += 1) {
+      let most = 0;
+      for (let k = Math.max(0, x - radius); k <= Math.min(bw - 1, x + radius); k += 1) most = Math.max(most, dist[y * bw + k]);
+      across[y * bw + x] = most;
+    }
+  }
+  const thick = new Uint8Array(n);
+  for (let y = 0; y < bh; y += 1) {
+    for (let x = 0; x < bw; x += 1) {
+      const q = y * bw + x;
+      if (!solid[q]) continue;
+      let most = 0;
+      for (let k = Math.max(0, y - radius); k <= Math.min(bh - 1, y + radius); k += 1) most = Math.max(most, across[k * bw + x]);
+      if (most > chainMost) thick[q] = 1;
+    }
+  }
+  // Where it wraps the neck: going down from its top, the first row where it's as wide as it gets (above it,
+  // the chain turns in over the top: that part goes round the back of the neck, a heart's lobes and their V
+  // included; below it, the necklace hangs down the front: a pendant's chain, a bib)
+  const spanLeft = new Int32Array(bh).fill(-1);
+  const spanRight = new Int32Array(bh).fill(-1);
+  for (let y = 0; y < bh; y += 1) {
+    for (let x = 0; x < bw; x += 1) {
+      if (!solid[y * bw + x]) continue;
+      if (spanLeft[y] < 0) spanLeft[y] = x;
+      spanRight[y] = x;
+    }
+  }
+  let widest = 0;
+  for (let y = 0; y < Math.round(bh * 0.7); y += 1) if (spanLeft[y] >= 0) widest = Math.max(widest, spanRight[y] - spanLeft[y]);
+  let wrapRow = -1;
+  for (let y = 0; y < bh && wrapRow < 0; y += 1) {
+    if (spanLeft[y] >= 0 && spanRight[y] - spanLeft[y] >= widest * WRAP_WIDTH) wrapRow = y;
+  }
+  // A back chain: what's above that row is mostly thin (a chain, not the top of a solid collar)
+  let above = 0;
+  let chainPixels = 0;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  const thicknesses: number[] = [];
+  for (let y = 0; y < Math.max(0, wrapRow); y += 1) {
+    for (let x = 0; x < bw; x += 1) {
+      const q = y * bw + x;
+      if (!solid[q]) continue;
+      above += 1;
+      if (thick[q]) continue;
+      chainPixels += 1;
+      const i = ((y + minY) * w + x + minX) * 4;
+      r += imageData[i];
+      g += imageData[i + 1];
+      b += imageData[i + 2];
+      thicknesses.push(dist[q]);
+    }
+  }
+  if (wrapRow <= 0 || chainPixels < Math.max(30, n * 0.005) || chainPixels < above * 0.5) return null;
+  // Where it wraps the neck on each side: its outer edges just below that row
+  let left = -1;
+  let right = -1;
+  const band = Math.max(2, Math.round(bh * 0.03));
+  for (let y = wrapRow; y < Math.min(bh, wrapRow + band); y += 1) {
+    if (spanLeft[y] < 0) continue;
+    if (left < 0 || spanLeft[y] < left) left = spanLeft[y];
+    if (spanRight[y] > right) right = spanRight[y];
+  }
+  if (left < 0 || right - left < bw * 0.2) return null;
+  // The front: the image without the back chain
+  const front = document.createElement("canvas");
+  const fullW = (source as HTMLCanvasElement).width;
+  const fullH = (source as HTMLCanvasElement).height;
+  front.width = fullW;
+  front.height = fullH;
+  const frontCtx = front.getContext("2d");
+  if (!frontCtx) return null;
+  frontCtx.drawImage(source, 0, 0);
+  const frontData = frontCtx.getImageData(0, 0, fullW, fullH);
+  // (Everything above the wrap, and any bit of the back chain dipping below it left cut off from the front, like
+  // the tip of a heart's V: pieces much smaller than the front itself)
+  const kept = new Uint8Array(n);
+  for (let q = wrapRow * bw; q < n; q += 1) kept[q] = solid[q];
+  const piece = new Int32Array(n).fill(-1);
+  const sizes: number[] = [];
+  for (let start = 0; start < n; start += 1) {
+    if (!kept[start] || piece[start] >= 0) continue;
+    const id = sizes.length;
+    let count = 0;
+    const stack = [start];
+    piece[start] = id;
+    while (stack.length) {
+      const q = stack.pop()!;
+      count += 1;
+      const x = q % bw;
+      for (let dy = -1; dy <= 1; dy += 1) {
+        for (let dx = -1; dx <= 1; dx += 1) {
+          const r2 = q + dy * bw + dx;
+          if (x + dx < 0 || x + dx >= bw || r2 < 0 || r2 >= n || !kept[r2] || piece[r2] >= 0) continue;
+          piece[r2] = id;
+          stack.push(r2);
+        }
+      }
+    }
+    sizes.push(count);
+  }
+  const biggest = Math.max(0, ...sizes);
+  for (let q = 0; q < n; q += 1) {
+    if (!solid[q]) continue;
+    if (kept[q] && sizes[piece[q]] >= biggest * 0.1) continue;
+    const x = q % bw;
+    const y = (q - x) / bw;
+    frontData.data[((y + minY) * fullW + x + minX) * 4 + 3] = 0;
+  }
+  // (And the back chain's shadow: everything faint above the wrap)
+  for (let y = 0; y < wrapRow; y += 1) {
+    for (let x = 0; x < bw; x += 1) frontData.data[((y + minY) * fullW + x + minX) * 4 + 3] = 0;
+  }
+  frontCtx.putImageData(frontData, 0, 0);
+  // The chain's look: its average colour, a lighter one for its shine, and its width (twice its middle's
+  // distance from its edge)
+  thicknesses.sort((a, c) => a - c);
+  const half = thicknesses[Math.floor(thicknesses.length * 0.75)] ?? 1;
+  const mean = [r, g, b].map((v) => Math.round(v / chainPixels));
+  const lighter = mean.map((v) => Math.round(v + (255 - v) * 0.55));
+  return {
+    leftNeckX: left + minX,
+    rightNeckX: right + minX,
+    neckY: wrapRow + minY,
+    centerX: (left + right) / 2 + minX,
+    front,
+    chain: {
+      colour: `rgb(${mean[0]}, ${mean[1]}, ${mean[2]})`,
+      highlight: `rgb(${lighter[0]}, ${lighter[1]}, ${lighter[2]})`,
+      thickness: Math.max(1, half * 2),
+    },
+  };
+}
+
+// The back chain of a necklace drawn round the neck: one chain from where the necklace wraps the neck on one
+// side, up and round the back of the neck, down to the other side. Where the person is above the necklace (the
+// neck, the head) it's behind them, so it's cut out there (from the person mask: opaque where the person is):
+// what shows is the chain rising from the necklace to the neck's edge on each side, then going behind it.
+let backChainCanvas: HTMLCanvasElement | null = null;
+function drawBackChain(
+  ctx: CanvasRenderingContext2D,
+  leftEnd: { x: number; y: number },
+  rightEnd: { x: number; y: number },
+  neckWidth: number,
+  chain: { colour: string; highlight: string; thickness: number },
+  scale: number,
+  personMask: CanvasImageSource | null,
+) {
+  const { width: w, height: h } = ctx.canvas;
+  if (!backChainCanvas) backChainCanvas = document.createElement("canvas");
+  if (backChainCanvas.width !== w) backChainCanvas.width = w;
+  if (backChainCanvas.height !== h) backChainCanvas.height = h;
+  const chainCtx = backChainCanvas.getContext("2d");
+  if (!chainCtx) return;
+  chainCtx.clearRect(0, 0, w, h);
+
+  const width = Math.max(1, chain.thickness * scale);
+  const rise = neckWidth * CHAIN_RISE;
+  // Up from each end, in a little toward the neck, over the back of it
+  const pull = neckWidth * CHAIN_INWARD;
+  const trace = (offset: number) => {
+    chainCtx.beginPath();
+    chainCtx.moveTo(leftEnd.x, leftEnd.y + offset);
+    chainCtx.bezierCurveTo(
+      leftEnd.x + pull,
+      leftEnd.y - rise + offset,
+      rightEnd.x - pull,
+      rightEnd.y - rise + offset,
+      rightEnd.x,
+      rightEnd.y + offset,
+    );
+  };
+  chainCtx.lineCap = "round";
+  // The chain, its links as short dashes, with a lighter line along it for its shine
+  for (const [colour, lineWidth, offset] of [
+    [chain.colour, width, 0],
+    [chain.highlight, Math.max(0.6, width * 0.4), -width * 0.2],
+  ] as Array<[string, number, number]>) {
+    chainCtx.strokeStyle = colour;
+    chainCtx.lineWidth = lineWidth;
+    chainCtx.setLineDash([Math.max(1, width * 1.2), Math.max(0.5, width * 0.45)]);
+    trace(offset);
+    chainCtx.stroke();
+  }
+  chainCtx.setLineDash([]);
+
+  // Behind the person above the necklace: cut out where the mask is, above the necklace's ends (a little
+  // above, so the chain still shows leaving the necklace)
+  if (personMask) {
+    const cutBelow = Math.min(leftEnd.y, rightEnd.y) - width;
+    chainCtx.save();
+    chainCtx.beginPath();
+    chainCtx.rect(0, 0, w, Math.max(0, cutBelow));
+    chainCtx.clip();
+    chainCtx.globalCompositeOperation = "destination-out";
+    chainCtx.drawImage(personMask, 0, 0, w, h);
+    chainCtx.restore();
+  }
+  ctx.drawImage(backChainCanvas, 0, 0);
+}
+
+// Where on a shoulder line (traced from the neck outward) a necklace's chain rests: a little way out onto the
+// shoulders' slope, past the mask's ragged edge at the neck
+function wrapIndex(line: Array<{ x: number; y: number }>, along = NECKLACE_ON_SHOULDERS) {
+  return Math.min(line.length - 1, Math.max(2, Math.round(line.length * along)));
+}
+
+// A necklace's back chain: from each end of the necklace in to the side of the neck (along the top of the
+// shoulder, just inside it on the skin, where the end rests on the shoulder; straight across where it's up on
+// the neck), where it goes behind the neck and out of sight
+function drawShoulderChain(
+  ctx: CanvasRenderingContext2D,
+  ends: Array<{ x: number; y: number }>,
+  shoulderLines: Array<Array<{ x: number; y: number }>>,
+  chain: { colour: string; highlight: string; thickness: number },
+  scale: number,
+) {
+  const width = Math.max(1, chain.thickness * scale);
+  // (Each end with the shoulder line nearer it)
+  const lines = [...shoulderLines].sort((a, b) => a[0].x - b[0].x);
+  const sortedEnds = [...ends].sort((a, b) => a.x - b.x);
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  lines.forEach((line, side) => {
+    const end = sortedEnds[side];
+    // From the necklace's end in to the neck: along the shoulder line's points still below the end (on the
+    // shoulder), then across to the neck's edge at the end's height
+    const path = [end];
+    for (let i = wrapIndex(line, NECKLACE_ON_SHOULDERS_CHAIN); i >= 0; i -= 1) {
+      const y = line[i].y + width * 0.6;
+      if (y >= end.y) path.push({ x: line[i].x, y });
+    }
+    const neckEdge = { x: line[0].x, y: Math.min(end.y, path[path.length - 1].y) };
+    if (path.length === 1 || path[path.length - 1].x !== neckEdge.x) path.push(neckEdge);
+    // Darker as it nears the neck, turning to go behind it
+    const fade = ctx.createLinearGradient(end.x, end.y, line[0].x, line[0].y);
+    for (const [colour, lineWidth, offset] of [
+      [chain.colour, width, 0],
+      [chain.highlight, Math.max(0.6, width * 0.4), -width * 0.2],
+    ] as Array<[string, number, number]>) {
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = lineWidth;
+      // Links: short dashes along it
+      ctx.setLineDash([Math.max(1, width * 1.2), Math.max(0.5, width * 0.45)]);
+      ctx.beginPath();
+      path.forEach((point, i) => (i ? ctx.lineTo(point.x, point.y + offset) : ctx.moveTo(point.x, point.y + offset)));
+      ctx.stroke();
+    }
+    fade.addColorStop(0, "rgba(0,0,0,0)");
+    fade.addColorStop(0.7, "rgba(0,0,0,0)");
+    fade.addColorStop(1, "rgba(0,0,0,0.35)");
+    ctx.setLineDash([]);
+    ctx.strokeStyle = fade;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    path.forEach((point, i) => (i ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y)));
+    ctx.stroke();
+  });
+  ctx.restore();
+}
+
+// Where a necklace sits, from the person's outline: the shoulder lines traced from each side of the neck
+// outward start just outside the neck on the top of the shoulders' slope, where a necklace rests. Null
+// without both lines.
+// (onChain: a necklace on a chain, resting on the shoulders close in by the neck, not lifted)
+function necklaceAtNeckBase(shoulderLines: Array<Array<{ x: number; y: number }>> | null | undefined, onChain = false) {
+  if (!shoulderLines || shoulderLines.length !== 2) return null;
+  const along = onChain ? NECKLACE_ON_SHOULDERS_CHAIN : NECKLACE_ON_SHOULDERS;
+  const pick = (line: Array<{ x: number; y: number }>) => line[wrapIndex(line, along)];
+  const a = pick(shoulderLines[0]);
+  const b = pick(shoulderLines[1]);
+  const left = a.x <= b.x ? a : b;
+  const right = a.x <= b.x ? b : a;
+  if (right.x - left.x < 4) return null;
+  const lift = (right.x - left.x) * (onChain ? NECKLACE_LIFT_CHAIN : NECKLACE_LIFT);
+  return {
+    chainStartX: left.x,
+    chainStartY: left.y - lift,
+    chainEndX: right.x,
+    chainEndY: right.y - lift,
+    controlX: (left.x + right.x) / 2,
+  };
+}
+
 function getNecklaceFallbackAnchors(bounds: OverlayBounds) {
-  const upperBandHeight = Math.max(6, Math.floor(bounds.height * 0.22));
+  const upperBandHeight = Math.max(2, Math.floor(bounds.height * NECKLACE_WRAP_DEPTH));
   const neckY = bounds.minY + upperBandHeight;
   const inset = bounds.width * 0.18;
 
@@ -105,6 +482,36 @@ function getNecklaceFallbackAnchors(bounds: OverlayBounds) {
     neckY,
     centerX: (bounds.minX + bounds.maxX) / 2,
   };
+}
+
+// The canvas cropped to what's drawn on it (its visible pixels, with a pixel's margin); as it is if it's empty
+function trimToContent(canvas: HTMLCanvasElement): HTMLCanvasElement {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx || !canvas.width || !canvas.height) return canvas;
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  let minX = canvas.width;
+  let minY = canvas.height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < canvas.height; y += 1) {
+    for (let x = 0; x < canvas.width; x += 1) {
+      if (data[(y * canvas.width + x) * 4 + 3] < 16) continue;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (maxX < 0) return canvas;
+  minX = Math.max(0, minX - 1);
+  minY = Math.max(0, minY - 1);
+  maxX = Math.min(canvas.width - 1, maxX + 1);
+  maxY = Math.min(canvas.height - 1, maxY + 1);
+  const trimmed = document.createElement("canvas");
+  trimmed.width = maxX - minX + 1;
+  trimmed.height = maxY - minY + 1;
+  trimmed.getContext("2d")?.drawImage(canvas, minX, minY, trimmed.width, trimmed.height, 0, 0, trimmed.width, trimmed.height);
+  return trimmed;
 }
 
 function hasVisiblePixels(canvas: HTMLCanvasElement, minOpaquePixels: number) {
@@ -1459,8 +1866,9 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
   const targetWidth = 640;
   const targetHeight = 480;
   const BODY_MASK_THRESHOLD = 50;
-  const NECKLACE_STARTUP_SCALE = 0.8;
-  const NECKLACE_STARTUP_Y_OFFSET = -targetHeight * 0.02;
+  // (The necklace is already placed and sized at the base of the neck: no start-up adjustment)
+  const NECKLACE_STARTUP_SCALE = 1;
+  const NECKLACE_STARTUP_Y_OFFSET = 0;
   const EARRING_STARTUP_SCALE = 0.72;
   const isLoaded = scriptsLoaded.camera && scriptsLoaded.selfie && scriptsLoaded.holistic;
   const isMobile = viewportWidth <= 768;
@@ -1519,9 +1927,11 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
       const minOpaquePixels = Math.max(40, Math.round((full.width * full.height) * 0.0025));
       const hasDistinctRightEarring = rightWidth > 4 && hasVisiblePixels(right, minOpaquePixels);
 
+      // Each earring trimmed to itself (the empty space round it in the image would otherwise be sized as part
+      // of it, shrinking the earring to a speck)
       earringAssetsRef.current = {
-        left,
-        right: hasDistinctRightEarring ? right : mirroredLeft,
+        left: trimToContent(left),
+        right: trimToContent(hasDistinctRightEarring ? right : mirroredLeft),
       };
     };
     img.src = selectedImageSrc;
@@ -1675,43 +2085,31 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
             };
             overlayBoundsRef.current = bounds;
 
-            const scanTop = bounds.minY;
-            const scanBottom = Math.min(localCropC.height - 1, bounds.minY + Math.max(8, Math.floor(bounds.height * 0.35)));
-            let bestRow = -1;
-            let widestSpan = 0;
-            let bestLeft = bounds.minX;
-            let bestRight = bounds.maxX;
-
-            for (let y = scanTop; y <= scanBottom; y += 1) {
-              let rowLeft = -1;
-              let rowRight = -1;
-
+            // Where the necklace wraps the neck: just below its top (past the clasp at the back), across its
+            // outer edges there (a few rows, so a gap in a chain doesn't shorten it)
+            const wrapRow = Math.min(bounds.maxY, bounds.minY + Math.max(2, Math.round(bounds.height * NECKLACE_WRAP_DEPTH)));
+            let wrapLeft = -1;
+            let wrapRight = -1;
+            for (let y = Math.max(bounds.minY, wrapRow - 3); y <= Math.min(bounds.maxY, wrapRow + 3); y += 1) {
               for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
-                const alpha = imageData[(y * localCropC.width + x) * 4 + 3];
-                if (alpha < 16) continue;
-                if (rowLeft === -1) rowLeft = x;
-                rowRight = x;
-              }
-
-              if (rowLeft === -1 || rowRight === -1) continue;
-
-              const span = rowRight - rowLeft;
-              if (span > widestSpan) {
-                widestSpan = span;
-                bestRow = y;
-                bestLeft = rowLeft;
-                bestRight = rowRight;
+                if (imageData[(y * localCropC.width + x) * 4 + 3] < 16) continue;
+                if (wrapLeft === -1 || x < wrapLeft) wrapLeft = x;
+                if (x > wrapRight) wrapRight = x;
               }
             }
 
-            necklaceAnchorsRef.current = bestRow === -1
-              ? getNecklaceFallbackAnchors(bounds)
-              : {
-                  leftNeckX: bestLeft,
-                  rightNeckX: bestRight,
-                  neckY: bestRow,
-                  centerX: (bestLeft + bestRight) / 2,
-                };
+            // A necklace on a chain: its front goes at the base of the neck, its chain round the back
+            const onChain = splitNecklaceChain(imageData, localCropC.width, bounds, localCropC);
+            necklaceAnchorsRef.current = onChain
+              ? onChain
+              : wrapLeft === -1 || wrapRight - wrapLeft < bounds.width * 0.2
+                ? getNecklaceFallbackAnchors(bounds)
+                : {
+                    leftNeckX: wrapLeft,
+                    rightNeckX: wrapRight,
+                    neckY: wrapRow,
+                    centerX: (wrapLeft + wrapRight) / 2,
+                  };
           } else {
             overlayBoundsRef.current = null;
             necklaceAnchorsRef.current = null;
@@ -1861,8 +2259,10 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
                   const leftTempleY = leftTemple.y * h;
                   const rightTempleY = rightTemple.y * h;
                   const faceWidth = Math.max(1, Math.hypot(rightTempleX - leftTempleX, rightTempleY - leftTempleY));
-                  const leftEarY = (leftEye.y * h) + ((leftMouth.y - leftEye.y) * h * 0.62) - faceWidth * 0.035 + manualOffsetYRef.current;
-                  const rightEarY = (rightEye.y * h) + ((rightMouth.y - rightEye.y) * h * 0.62) - faceWidth * 0.035 + manualOffsetYRef.current;
+                  // The earlobes: about level with the base of the nose, EARLOBE_DOWN of the way down from the eyes'
+                  // outer corners to the mouth's
+                  const leftEarY = (leftEye.y * h) + ((leftMouth.y - leftEye.y) * h * EARLOBE_DOWN) + manualOffsetYRef.current;
+                  const rightEarY = (rightEye.y * h) + ((rightMouth.y - rightEye.y) * h * EARLOBE_DOWN) + manualOffsetYRef.current;
                     const leftEarX = leftTempleX - faceWidth * 0.05 + manualOffsetXRef.current;
                     const rightEarX = rightTempleX + faceWidth * 0.06 + manualOffsetXRef.current;
                   const earringWidth = faceWidth * 0.22 * manualScaleRef.current;
@@ -1888,8 +2288,13 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
                 }
               }
             } else if (mode === "necklace" && necklaceAnchorsRef.current) {
+              // Where the neck meets the shoulders, from the person's outline (else estimated from the pose)
               const chin = faceLandmarks?.[152];
-              const placement = getNecklacePlacement(lm, w, h, chin);
+              const shoulderLines =
+                bodyAnalysis?.shoulderLines ?? liveShoulderLines(currentCamMask, lm, faceLandmarks, w, h);
+              const placement =
+                necklaceAtNeckBase(shoulderLines, !!necklaceAnchorsRef.current.chain) ??
+                getNecklacePlacement(lm, w, h, chin);
 
               if (placement) {
                 const { chainStartX, chainStartY, chainEndX, chainEndY, controlX } = placement;
@@ -1902,9 +2307,37 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
                 const drawH = croppedImageElement.height * scale;
                 const drawX = controlX - sourceAnchors.centerX * scale + manualOffsetXRef.current;
                 const shoulderLineY = Math.min(chainStartY, chainEndY);
-                const drawY = shoulderLineY - sourceAnchors.neckY * scale + manualOffsetYRef.current - h * 0.015;
+                // (A necklace on a chain rests with its ends on the shoulders, on the skin, its chain going on
+                // round the back of the neck: not lifted like a chainless one)
+                const onShoulders = !!sourceAnchors.chain && shoulderLines?.length === 2;
+                // (and up by NECKLACE_CHAIN_RAISE)
+                const chainDrop = onShoulders ? sourceAnchors.chain!.thickness * scale * 0.6 - NECKLACE_CHAIN_RAISE : 0;
+                const drawY = shoulderLineY - sourceAnchors.neckY * scale + manualOffsetYRef.current + chainDrop;
 
-                canvasCtx.drawImage(croppedImageElement, drawX, drawY, drawW, drawH);
+                canvasCtx.drawImage(sourceAnchors.front ?? croppedImageElement, drawX, drawY, drawW, drawH);
+                // Its back chain: on the shoulders, in to the neck and behind it; without the person's outline,
+                // round the neck and cut out where the person is
+                if (sourceAnchors.chain && onShoulders) {
+                  const at = (x: number, y: number) => ({ x: drawX + x * scale, y: drawY + y * scale });
+                  drawShoulderChain(
+                    canvasCtx,
+                    [at(sourceAnchors.leftNeckX, sourceAnchors.neckY), at(sourceAnchors.rightNeckX, sourceAnchors.neckY)],
+                    shoulderLines!,
+                    sourceAnchors.chain,
+                    scale,
+                  );
+                } else if (sourceAnchors.chain) {
+                  const at = (x: number, y: number) => ({ x: drawX + x * scale, y: drawY + y * scale });
+                  drawBackChain(
+                    canvasCtx,
+                    at(sourceAnchors.leftNeckX, sourceAnchors.neckY),
+                    at(sourceAnchors.rightNeckX, sourceAnchors.neckY),
+                    liveNeckWidth,
+                    sourceAnchors.chain,
+                    scale,
+                    currentCamMask,
+                  );
+                }
               }
             } else if (garmentPiecesRef.current && piecesCtx) {
               // Photo and webcam: the whole garment drawn straight on top in one piece — not trimmed to the

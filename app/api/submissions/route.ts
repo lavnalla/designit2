@@ -1,52 +1,68 @@
-// NOTE: Make sure to check the import path relative to where this file is
-import { saveSubmission, getSubmissions, StorageUnavailableError } from '../../../src/lib/storage';
+import {
+  saveSubmission,
+  getSubmissions,
+  getSubmissionsByEmail,
+  StorageUnavailableError,
+} from '../../../src/lib/storage';
+import { isAdminRequest } from '../../../src/lib/adminAuth';
 
+// A plausible email address (something@something.something)
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// The largest design image accepted (a data URL, in characters)
+const MAX_IMAGE_LENGTH = 8_000_000;
+
+// ?admin=true (with the admin password in x-admin-password): every submission, with who sent it.
+// ?email=...: everything submitted with that email, whatever its status (the submitter's "My designs").
+// Otherwise: the approved designs, for the community gallery.
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const adminRequest = searchParams.get('admin') === 'true';
-  const password = request.headers.get('x-admin-password');
-  
-  // Debug log
-  console.log('[API] Admin check - Request:', adminRequest, 'Password Provided:', !!password, 'Match:', password === process.env.ADMIN_PASSWORD);
-  
-  // Verify password if requesting admin data
-  const isAdmin = adminRequest && password === process.env.ADMIN_PASSWORD;
-  
-  console.log('[API] Admin request?', adminRequest, 'Pass match?', password === process.env.ADMIN_PASSWORD);
-  console.log('[API] Fetching submissions with admin flag:', isAdmin);
+  try {
+    if (searchParams.get('admin') === 'true') {
+      if (!isAdminRequest(request)) {
+        return Response.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+      return Response.json(await getSubmissions(true));
+    }
 
-  const submissions = await getSubmissions(isAdmin);
-  console.log('[API] Found submissions:', submissions.length);
-  
-  return Response.json(submissions);
+    const email = searchParams.get('email');
+    if (email !== null) {
+      if (!EMAIL.test(email.trim())) return Response.json({ error: 'Enter a valid email address' }, { status: 400 });
+      return Response.json(await getSubmissionsByEmail(email));
+    }
+
+    return Response.json(await getSubmissions(false));
+  } catch (error) {
+    console.error('Listing submissions failed:', error);
+    return Response.json({ error: 'Could not load submissions' }, { status: 500 });
+  }
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { name, author, imageData } = body;
-    
-    if (!name || !author || !imageData) {
-      console.warn('[API] Missing fields in submission:', { name, author, hasImage: !!imageData });
-      return Response.json({ error: 'Missing required fields' }, { status: 400 });
-    }
-    
-    console.log('[API] Saving new submission:', { name, author });
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    const author = typeof body.author === 'string' ? body.author.trim() : '';
+    const email = typeof body.email === 'string' ? body.email.trim() : '';
+    const imageData = typeof body.imageData === 'string' ? body.imageData : '';
 
-    const newSubmission = await saveSubmission({
-      name,
-      author,
-      imageData
-    });
-    
-    console.log('[API] Saved successfully:', newSubmission.id);
-    return Response.json(newSubmission);
+    if (!name || !author || !email || !imageData) {
+      return Response.json({ error: 'Please fill in the design name, your name and your email.' }, { status: 400 });
+    }
+    if (!EMAIL.test(email)) {
+      return Response.json({ error: 'Enter a valid email address.' }, { status: 400 });
+    }
+    if (!imageData.startsWith('data:image/') || imageData.length > MAX_IMAGE_LENGTH) {
+      return Response.json({ error: 'The design image is missing or too large.' }, { status: 400 });
+    }
+
+    const saved = await saveSubmission({ name, author, email, imageData });
+    return Response.json(saved);
   } catch (error) {
     if (error instanceof StorageUnavailableError) {
       // No database is connected: say so instead of a generic server error
       return Response.json({ error: error.message }, { status: 503 });
     }
     console.error('Submission error:', error);
-    return Response.json({ error: 'Internal Server Error' }, { status: 500 });
+    return Response.json({ error: 'Could not save the design. Please try again.' }, { status: 500 });
   }
 }

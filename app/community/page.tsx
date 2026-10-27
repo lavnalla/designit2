@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Image from 'next/image';
+import Link from 'next/link';
 import { getApprovedSubmissions } from '../../src/lib/storage';
 
 export const metadata: Metadata = {
@@ -18,6 +19,9 @@ interface Design {
   imageData: string;
 }
 
+// Built on each visit, so a newly approved design shows straight away
+export const dynamic = 'force-dynamic';
+
 export default async function CommunityPage() {
   // Fetch directly from DB instead of API to avoid localhost issues
   const designs = await getApprovedSubmissions();
@@ -32,10 +36,12 @@ export default async function CommunityPage() {
           </div>
         ) : (
           <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            {designs.map((design: any) => (
-              <div 
+            {designs.map((design: Design) => (
+              <Link
                 key={design.id}
-                className="group relative bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden hover:shadow-md hover:border-yellow-400 transition-all duration-300"
+                href={`/studio?design=${encodeURIComponent(design.id)}`}
+                title="Open in the Studio"
+                className="group relative block bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden hover:shadow-md hover:border-yellow-400 transition-all duration-300"
               >
                 <div className="aspect-square w-full relative bg-white overflow-hidden p-2">
                   <Image 
@@ -54,7 +60,7 @@ export default async function CommunityPage() {
                     by <span className="font-bold text-yellow-600">{design.author}</span>
                   </p>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         )}

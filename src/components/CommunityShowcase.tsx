@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Heart, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import Image from 'next/image';
 
 interface Design {
@@ -48,7 +48,12 @@ export function CommunityShowcase() {
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-6">
           {designs.map((design) => (
-            <div key={design.id} className="group relative bg-white rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 border border-slate-200">
+            <Link
+              key={design.id}
+              href={`/studio?design=${encodeURIComponent(design.id)}`}
+              title="Open in the Studio"
+              className="group relative block bg-white rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 border border-slate-200"
+            >
               <div className="aspect-square relative overflow-hidden bg-white">
                 <Image 
                   src={design.imageData} 
@@ -63,7 +68,7 @@ export function CommunityShowcase() {
                   <span className="text-slate-500 text-[10px] truncate">by {design.author}</span>
                 </div>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       </div>

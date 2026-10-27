@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Check, X, ArrowLeft, Loader2 } from 'lucide-react';
 import Image from 'next/image';
+import { adminHeaders } from '../../src/lib/adminAuth';
 
 interface Design {
   id: string;
@@ -11,6 +12,8 @@ interface Design {
   author: string;
   imageData: string;
   status: 'pending' | 'approved' | 'rejected';
+  email?: string;
+  createdAt?: string;
 }
 
 interface BlogPostDraft {
@@ -61,9 +64,7 @@ export default function AdminPage() {
   const fetchSubmissions = async () => {
     try {
       const res = await fetch('/api/submissions?admin=true', {
-        headers: {
-          'x-admin-password': password // Use the confirmed password
-        }
+        headers: adminHeaders(password),
       });
       
       if (res.ok) {
@@ -89,9 +90,9 @@ export default function AdminPage() {
     try {
       const res = await fetch(`/api/submissions/${id}`, {
         method: 'PUT',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'x-admin-password': password
+          ...adminHeaders(password),
         },
         body: JSON.stringify({ status })
       });
@@ -122,7 +123,7 @@ export default function AdminPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-admin-password': password,
+          ...adminHeaders(password),
         },
         body: JSON.stringify({
           slug: blogDraft.slug,
@@ -271,7 +272,11 @@ export default function AdminPage() {
                     {sub.status}
                   </span>
                 </div>
-                <p className="text-slate-500 mb-4">by <span className="font-semibold text-slate-700">{sub.author}</span></p>
+                <p className="text-slate-500">by <span className="font-semibold text-slate-700">{sub.author}</span></p>
+                <p className="text-slate-400 text-sm mb-4">
+                  {sub.email ?? 'no email'}
+                  {sub.createdAt ? ` · ${new Date(sub.createdAt).toLocaleString()}` : ''}
+                </p>
                 
                 <div className="flex items-center justify-center md:justify-start gap-4">
                   {sub.status !== 'approved' && (

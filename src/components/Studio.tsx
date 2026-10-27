@@ -2,7 +2,7 @@
 
 "use client";
 
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import NecklaceTryOn from "./NecklaceTryOn";
 import GarmentPartPainter from "./GarmentPartPainter";
@@ -17,10 +17,12 @@ import { SubmissionModal } from "./SubmissionModal";
 import { pickFabricSwatch, synthesizeFabricImage } from "../lib/fabricSynthesis";
 import { renderSketch } from "../lib/sketchRender";
 import { renderJewelry } from "../lib/jewelryRender";
+import { adminHeaders } from "../lib/adminAuth";
 import { parseFashionClasses } from "../lib/garmentSegmenter";
 import { toParseCanvas } from "../lib/photoTryOnParsing";
 import { isGarmentClass } from "../lib/photoTryOn";
 import BodySilhouetteView from "./BodySilhouetteView";
+import MobileScrollbars, { SCROLLBAR_SCREENS } from "./MobileScrollbars";
 
 const MOBILE_BREAKPOINT = 1024;
 
@@ -292,6 +294,9 @@ interface Stroke {
   closed?: boolean;
   zIndex?: number;
   visible?: boolean;
+  // Spots rubbed out with the eraser (in the stroke's own, unrotated coordinates): hidden, the rest of the
+  // stroke left exactly as it is (nothing joined up across them)
+  erasedSpots?: Array<{ x: number; y: number; r: number }>;
 }
 type HistoryItem = { shapes: DistortableShape[]; strokes: Stroke[] };
 type Candidate = { id: string; d: string; area: number; selected: boolean };
@@ -335,7 +340,8 @@ const DEFAULT_MESH_PATTERN = {
   verticalLines: 4,
 } as const;
 
-export function Studio({ onBack }: { onBack: () => void }) {
+// designToOpen: a submitted design being opened (its id), which the Studio places on its workspace
+export function Studio({ onBack, designToOpen }: { onBack: () => void; designToOpen?: string | null }) {
   const [showSourceWindow, setShowSourceWindow] = useState(false);
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
   const [showTopPanelMenu, setShowTopPanelMenu] = useState(false);
@@ -1270,6 +1276,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [activePenLineCount, setActivePenLineCount] = useState<number>(1);
   const [activePenLineSpacing, setActivePenLineSpacing] = useState<number>(14);
   const [meshLineSpacing, setMeshLineSpacing] = useState<number>(14);
+  // How thick the mesh pen's lines are (its own: a mesh is many fine lines, not the pen's full width each)
+  const [meshLineWidth, setMeshLineWidth] = useState<number>(1.5);
   const [activeFillOpacity, setActiveFillOpacity] = useState<number>(1);
   const [meshHorizontalLines, setMeshHorizontalLines] = useState<number>(
     DEFAULT_MESH_PATTERN.horizontalLines,
@@ -1350,8 +1358,25 @@ export function Studio({ onBack }: { onBack: () => void }) {
   }, []);
   const workspaceShapesRef = useRef<DistortableShape[]>([]);
   const isPointerDownRef = useRef(false);
+  // A touch screen or a narrow window (the workspace gets room to scroll round, and scroll bars)
+  const [touchWorkspace, setTouchWorkspace] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia(SCROLLBAR_SCREENS);
+    const update = () => setTouchWorkspace(query.matches);
+    const first = requestAnimationFrame(update);
+    query.addEventListener("change", update);
+    return () => {
+      cancelAnimationFrame(first);
+      query.removeEventListener("change", update);
+    };
+  }, []);
   // Whether this press is drawing a selection box (a cursor drag)
   const selectingRef = useRef(false);
+  // Touch screens have no right click: holding a finger still on an image or stroke opens its menu instead.
+  // The hold being timed (cancelled if the finger moves or lifts), and the tap that lifting it makes, which
+  // mustn't close the menu it just opened.
+  const longPressRef = useRef<{ timer: number; x: number; y: number } | null>(null);
+  const suppressNextClickRef = useRef(false);
   const penRef = useRef<{
     pointerId: number;
     lastX: number;
@@ -1362,7 +1387,17 @@ export function Studio({ onBack }: { onBack: () => void }) {
     color?: string;
     width?: number;
   } | null>(null);
+  // The mesh pen adds a step (and its cross lines) every PEN_SPACING pixels; the plain pen records a point every
+  // FREEHAND_SPACING, so its curves stay smooth (a petal, a scroll), not a few straight segments
   const PEN_SPACING = 30;
+  // Holding a finger this long (ms) on an image or stroke, moving it no more than this (px), opens its menu
+  const LONG_PRESS_MS = 500;
+  // Room left past the workspace's furthest item (px), to scroll to
+  const WORKSPACE_MARGIN = 80;
+  // ... and on a touch screen or narrow window the workspace is at least this big (px each way), to scroll round
+  const WORKSPACE_MIN_TOUCH = 1200;
+  const LONG_PRESS_SLOP = 10;
+  const FREEHAND_SPACING = 3;
   const ERASE_RADIUS = 15;
 
   const handleDetectSourceArticles = async () => {
@@ -1455,6 +1490,65 @@ export function Studio({ onBack }: { onBack: () => void }) {
     setIsSidebarOpen(true);
     window.sessionStorage.removeItem("designit-studio-source-image");
   }, [mounted]);
+
+  // A submitted design opened from the community gallery or My Designs: placed on the workspace as an image,
+  // fitted to a comfortable size, on top of anything already there
+  useEffect(() => {
+    if (!mounted || typeof window === "undefined") return;
+    let pending: { id: string; email?: string } | null = null;
+    try {
+      const saved = window.sessionStorage.getItem("designit-studio-design");
+      pending = saved ? JSON.parse(saved) : null;
+      window.sessionStorage.removeItem("designit-studio-design");
+    } catch {
+      pending = null;
+    }
+    if (!pending?.id) return;
+    // (Not cancelled when this runs again: taking the design off the address re-runs it with nothing to open,
+    // while this one is still loading)
+    (async () => {
+      try {
+        const query = pending.email ? `?email=${encodeURIComponent(pending.email)}` : "";
+        const res = await fetch(`/api/submissions/${encodeURIComponent(pending.id)}${query}`);
+        const design = await res.json();
+        if (!res.ok || !design.imageData) throw new Error(design.error || "Could not load the design");
+        const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const el = new window.Image();
+          el.onload = () => resolve(el);
+          el.onerror = () => reject(new Error("Could not read the design image"));
+          el.src = design.imageData;
+        });
+        const fit = Math.min(1, 520 / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+        const width = Math.max(1, Math.round((img.naturalWidth || 400) * fit));
+        const height = Math.max(1, Math.round((img.naturalHeight || 400) * fit));
+        setWorkspaceShapes((prev) => {
+          const topZ = Math.max(0, ...prev.map((shape) => shape.zIndex || 0));
+          const opened: DistortableShape = {
+            id: `opened-design-${design.id}-${Date.now()}`,
+            img: design.imageData,
+            dots: [
+              { id: "tl", x: 0, y: 0 },
+              { id: "tr", x: width, y: 0 },
+              { id: "br", x: width, y: height },
+              { id: "bl", x: 0, y: height },
+            ],
+            dims: { width, height },
+            position: { x: 40, y: 40 },
+            scale: 1,
+            showDots: true,
+            fillColor: undefined,
+            erasedPaths: [],
+            zIndex: topZ + 1,
+          };
+          return [...prev, opened];
+        });
+      } catch (err) {
+        console.error("Opening the design failed:", err);
+        alert("Sorry, that design couldn't be opened.");
+      }
+    })();
+    // (designToOpen: a new design opened while the Studio is already showing)
+  }, [mounted, designToOpen]);
 
   useEffect(() => {
     workspaceShapesRef.current = workspaceShapes;
@@ -3191,9 +3285,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
 
     try {
       const response = await fetch("/api/submissions?admin=true", {
-        headers: {
-          "x-admin-password": password,
-        },
+        headers: adminHeaders(password),
       });
 
       if (!response.ok) {
@@ -4261,6 +4353,21 @@ export function Studio({ onBack }: { onBack: () => void }) {
       };
     }
   }, []);
+
+  // How far the workspace's contents reach (right and down, with a margin): the drawing is at least this big, so
+  // the area scrolls to anything placed beyond the screen (a phone's, especially)
+  const workspaceExtent = useMemo(() => {
+    // (On a touch screen or a narrow window, always room to move round in)
+    let right = touchWorkspace ? WORKSPACE_MIN_TOUCH - WORKSPACE_MARGIN : 0;
+    let bottom = touchWorkspace ? WORKSPACE_MIN_TOUCH - WORKSPACE_MARGIN : 0;
+    for (const item of [...workspaceShapes, ...strokes]) {
+      if ("dots" in item ? !item.dots.length : !item.points.length) continue;
+      const box = getBoundingBox(item);
+      right = Math.max(right, box.x + box.width);
+      bottom = Math.max(bottom, box.y + box.height);
+    }
+    return { width: Math.ceil(right + WORKSPACE_MARGIN), height: Math.ceil(bottom + WORKSPACE_MARGIN) };
+  }, [workspaceShapes, strokes, getBoundingBox, touchWorkspace]);
 
   const isItemInRect = useCallback(
     (
@@ -5952,16 +6059,38 @@ export function Studio({ onBack }: { onBack: () => void }) {
     }
   };
 
+  // The eraser rubs out whatever is under it: on a stroke, a spot hidden there (its line, fill and fabric), the
+  // rest left as it is; a stroke rubbed out everywhere is removed. On an image, the same (its erasedPaths).
   const sweepErase = (x: number, y: number) => {
     setStrokes((prev) =>
-      prev
-        .map((st) => ({
-          ...st,
-          points: st.points.filter(
-            (p) => Math.hypot(p.x - x, p.y - y) > ERASE_RADIUS,
-          ),
-        }))
-        .filter((st) => st.points.length > 0),
+      prev.flatMap((st) => {
+        if (!st.points.length) return [];
+        const xs = st.points.map((p) => p.x);
+        const ys = st.points.map((p) => p.y);
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const maxY = Math.max(...ys);
+        const reach = ERASE_RADIUS + (st.width || 0);
+        if (x < minX - reach || x > maxX + reach || y < minY - reach || y > maxY + reach) return [st];
+        // (Into the stroke's own coordinates: it's drawn rotated about its middle)
+        const centerX = (minX + maxX) / 2;
+        const centerY = (minY + maxY) / 2;
+        const angle = (-(st.rotation || 0) * Math.PI) / 180;
+        const dx = x - centerX;
+        const dy = y - centerY;
+        const spot = {
+          x: centerX + dx * Math.cos(angle) - dy * Math.sin(angle),
+          y: centerY + dx * Math.sin(angle) + dy * Math.cos(angle),
+          r: ERASE_RADIUS,
+        };
+        const erasedSpots = [...(st.erasedSpots || []), spot];
+        // Rubbed out everywhere (every point under a spot, with the line's width): gone
+        const gone = st.points.every((p) =>
+          erasedSpots.some((e) => Math.hypot(p.x - e.x, p.y - e.y) <= e.r - (st.width || 0) / 2),
+        );
+        return gone ? [] : [{ ...st, erasedSpots }];
+      }),
     );
     setWorkspaceShapes((prev) =>
       prev.map((s) => {
@@ -5999,12 +6128,12 @@ export function Studio({ onBack }: { onBack: () => void }) {
 
   const getMeshPattern = (stroke?: Stroke) => ({
     horizontalLines: Math.max(
-      1,
+      0,
       stroke?.meshPattern?.horizontalLines ??
         DEFAULT_MESH_PATTERN.horizontalLines,
     ),
     verticalLines: Math.max(
-      1,
+      0,
       stroke?.meshPattern?.verticalLines ?? DEFAULT_MESH_PATTERN.verticalLines,
     ),
   });
@@ -6108,7 +6237,9 @@ export function Studio({ onBack }: { onBack: () => void }) {
 
   const createMeshStrokeSet = useCallback(
     (x: number, y: number, color: string, width: number, zIndex: number) => {
-      const horizontalLines = Math.max(1, meshHorizontalLines);
+      // (No lines along the stroke: two see-through rails along it still, the cross lines hung between them)
+      const showHorizontal = meshHorizontalLines > 0;
+      const horizontalLines = showHorizontal ? meshHorizontalLines : 2;
       const spacing = Math.max(meshLineSpacing, 4);
       const centerOffset = (horizontalLines - 1) / 2;
       const groupId = `mesh-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -6122,7 +6253,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
         strokesForMesh.push({
           id: `st-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`,
           points: [{ id: `pt-${Date.now()}-${index}`, x: startX, y: startY }],
-          color,
+          color: showHorizontal ? color : "transparent",
           width,
           zIndex,
           visible: true,
@@ -6131,7 +6262,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
           strokeRole: "mesh-horizontal",
           meshOffset: offset,
           meshPattern: {
-            horizontalLines,
+            horizontalLines: meshHorizontalLines,
             verticalLines: meshVerticalLines,
           },
           groupId,
@@ -6165,9 +6296,9 @@ export function Studio({ onBack }: { onBack: () => void }) {
         )
         .sort((a, b) => (a.meshOffset || 0) - (b.meshOffset || 0));
 
-      if (horizontalStrokes.length <= 1) return [] as Stroke[];
+      if (horizontalStrokes.length <= 1 || meshVerticalLines <= 0) return [] as Stroke[];
 
-      const verticalLines = Math.max(1, meshVerticalLines);
+      const verticalLines = meshVerticalLines;
       const connectors: Stroke[] = [];
 
       for (let index = 0; index < verticalLines; index += 1) {
@@ -6260,8 +6391,10 @@ export function Studio({ onBack }: { onBack: () => void }) {
   }
 
   function createMeshStrokeVariants(baseStroke: Stroke) {
-    const horizontalLines = Math.max(1, meshHorizontalLines);
-    const verticalLines = Math.max(1, meshVerticalLines);
+    // (No lines along it: two see-through rails, the cross lines hung between them)
+    const showHorizontal = meshHorizontalLines > 0;
+    const horizontalLines = showHorizontal ? meshHorizontalLines : 2;
+    const verticalLines = Math.max(0, meshVerticalLines);
 
     if (baseStroke.points.length < 2) {
       return [baseStroke];
@@ -6311,6 +6444,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
           clothType: undefined,
           strokeStyle: "solid" as const,
           strokeRole: "mesh-horizontal" as const,
+          ...(showHorizontal ? {} : { color: "transparent" }),
           points,
         };
       },
@@ -6950,6 +7084,11 @@ export function Studio({ onBack }: { onBack: () => void }) {
     <div
       className="fixed inset-0 flex h-[100dvh] w-full flex-col overflow-hidden overscroll-none bg-[#fffdfa] text-slate-900 select-none"
       onClick={() => {
+        // (The tap from lifting a finger held to open a menu leaves that menu open)
+        if (suppressNextClickRef.current) {
+          suppressNextClickRef.current = false;
+          return;
+        }
         setContextMenu(null);
         setShowTopPanelMenu(false);
         setShowHeaderMenu(false);
@@ -7588,21 +7727,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
                       <button
                         type="button"
                         onClick={() => {
-                          setShowMannequinModal(true);
-                          setShowTopPanelMenu(false);
-                        }}
-                        className={`${toolbarButtonBaseClass} min-w-0 w-full gap-1`}
-                        style={{
-                          backgroundColor: "#f9a8d4",
-                          borderColor: "#ec4899",
-                          color: "#000000",
-                        }}
-                      >
-                        Dress Form
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
                           undo();
                           setShowTopPanelMenu(false);
                         }}
@@ -7633,51 +7757,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
                         }}
                       >
                         Reset
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleDownload("png");
-                          setShowTopPanelMenu(false);
-                        }}
-                        className={`${toolbarButtonBaseClass} min-w-0 w-full`}
-                        style={{
-                          backgroundColor: "#c4b5fd",
-                          borderColor: "#8b5cf6",
-                          color: "#000000",
-                        }}
-                      >
-                        Download
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          renderSketchFromWorkspace("selected");
-                          setShowTopPanelMenu(false);
-                        }}
-                        className={`${toolbarButtonBaseClass} min-w-0 w-full`}
-                        style={{
-                          backgroundColor: "#fcd34d",
-                          borderColor: "#fbbf24",
-                          color: "#000000",
-                        }}
-                      >
-                        Refine Image
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          renderSketchFromWorkspace("selected", "jewelry");
-                          setShowTopPanelMenu(false);
-                        }}
-                        className={`${toolbarButtonBaseClass} min-w-0 w-full`}
-                        style={{
-                          backgroundColor: "#fde68a",
-                          borderColor: "#d97706",
-                          color: "#000000",
-                        }}
-                      >
-                        Refine Jewellery
                       </button>
                       <button
                         type="button"
@@ -7725,30 +7804,85 @@ export function Studio({ onBack }: { onBack: () => void }) {
                       >
                         Lock
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowMannequinModal(true);
+                          setShowTopPanelMenu(false);
+                        }}
+                        className={`${toolbarButtonBaseClass} min-w-0 w-full gap-1`}
+                        style={{
+                          backgroundColor: "#f9a8d4",
+                          borderColor: "#ec4899",
+                          color: "#000000",
+                        }}
+                      >
+                        Dress Form
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          renderSketchFromWorkspace("selected");
+                          setShowTopPanelMenu(false);
+                        }}
+                        className={`${toolbarButtonBaseClass} min-w-0 w-full`}
+                        style={{
+                          backgroundColor: "#fcd34d",
+                          borderColor: "#fbbf24",
+                          color: "#000000",
+                        }}
+                      >
+                        Refine Image
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          renderSketchFromWorkspace("selected", "jewelry");
+                          setShowTopPanelMenu(false);
+                        }}
+                        className={`${toolbarButtonBaseClass} min-w-0 w-full`}
+                        style={{
+                          backgroundColor: "#fde68a",
+                          borderColor: "#d97706",
+                          color: "#000000",
+                        }}
+                      >
+                        Refine Jewellery
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleDownload("png");
+                          setShowTopPanelMenu(false);
+                        }}
+                        className={`${toolbarButtonBaseClass} min-w-0 w-full`}
+                        style={{
+                          backgroundColor: "#c4b5fd",
+                          borderColor: "#8b5cf6",
+                          color: "#000000",
+                        }}
+                      >
+                        Download
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowSubmissionModal(true);
+                          setShowTopPanelMenu(false);
+                        }}
+                        className={`${toolbarButtonBaseClass} min-w-0 w-full`}
+                        style={{
+                          backgroundColor: "#bbf7d0",
+                          borderColor: "#16a34a",
+                          color: "#000000",
+                        }}
+                      >
+                        Submit Design
+                      </button>
                     </div>
                   </div>
                 )}
               </div>
-
-              <button
-                id="dress-form-btn"
-                onClick={() => setShowMannequinModal(true)}
-                className={`${toolbarButtonBaseClass} hover:shadow-lg gap-1 hidden md:flex`}
-                style={{
-                  backgroundColor: "#f9a8d4",
-                  borderColor: "#ec4899",
-                  color: "#000000",
-                }}
-              >
-                <svg
-                  className="w-3 h-3 text-black"
-                  fill="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path d="M12 2C10.9 2 10 2.9 10 4s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 18h-3v-6h-2v6H9v-6H7v6H4v-8c0-1.1.9-2 2-2h12c1.1 0 2 .9 2 2v8z" />
-                </svg>
-                <span className="hidden sm:inline">Dress Form</span>
-              </button>
 
               <button
                 id="undo-btn"
@@ -7780,45 +7914,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 }}
               >
                 Reset
-              </button>
-
-              <button
-                type="button"
-                onClick={() => renderSketchFromWorkspace("selected")}
-                className={`${toolbarButtonBaseClass} hidden md:flex`}
-                style={{
-                  backgroundColor: "#fcd34d",
-                  borderColor: "#fbbf24",
-                  color: "#000000",
-                }}
-              >
-                Refine Image
-              </button>
-
-              <button
-                type="button"
-                onClick={() => renderSketchFromWorkspace("selected", "jewelry")}
-                className={`${toolbarButtonBaseClass} hidden md:flex`}
-                style={{
-                  backgroundColor: "#fde68a",
-                  borderColor: "#d97706",
-                  color: "#000000",
-                }}
-              >
-                Refine Jewellery
-              </button>
-
-              <button
-                id="download-btn"
-                onClick={() => handleDownload("png")}
-                className={`${toolbarButtonBaseClass} hidden md:flex`}
-                style={{
-                  backgroundColor: "#c4b5fd",
-                  borderColor: "#8b5cf6",
-                  color: "#000000",
-                }}
-              >
-                Download
               </button>
 
               <button
@@ -7862,6 +7957,75 @@ export function Studio({ onBack }: { onBack: () => void }) {
               >
                 Lock
               </button>
+
+              <button
+                id="dress-form-btn"
+                onClick={() => setShowMannequinModal(true)}
+                className={`${toolbarButtonBaseClass} hover:shadow-lg gap-1 hidden md:flex`}
+                style={{
+                  backgroundColor: "#f9a8d4",
+                  borderColor: "#ec4899",
+                  color: "#000000",
+                }}
+              >
+                <svg
+                  className="w-3 h-3 text-black"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M12 2C10.9 2 10 2.9 10 4s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 18h-3v-6h-2v6H9v-6H7v6H4v-8c0-1.1.9-2 2-2h12c1.1 0 2 .9 2 2v8z" />
+                </svg>
+                <span className="hidden sm:inline">Dress Form</span>
+              </button>
+
+              {/* Refine: a sketch into a finished garment, or into polished jewellery */}
+              <select
+                id="refine-menu"
+                value=""
+                aria-label="Refine"
+                onChange={(e) => {
+                  const choice = e.target.value;
+                  if (choice === "image") renderSketchFromWorkspace("selected");
+                  else if (choice === "jewelry") renderSketchFromWorkspace("selected", "jewelry");
+                }}
+                className={`${toolbarButtonInteractiveClass} hidden md:block cursor-pointer font-black outline-none`}
+                style={{
+                  backgroundColor: "#fcd34d",
+                  borderColor: "#fbbf24",
+                  color: "#000000",
+                }}
+              >
+                <option value="" disabled hidden>
+                  Refine
+                </option>
+                <option value="image">Refine Image</option>
+                <option value="jewelry">Refine Jewellery</option>
+              </select>
+
+              {/* Save: download the design, or submit it for the community gallery */}
+              <select
+                id="save-menu"
+                value=""
+                aria-label="Save"
+                onChange={(e) => {
+                  const choice = e.target.value;
+                  if (choice === "download") handleDownload("png");
+                  else if (choice === "submit") setShowSubmissionModal(true);
+                }}
+                className={`${toolbarButtonInteractiveClass} hidden md:block cursor-pointer font-black outline-none`}
+                style={{
+                  backgroundColor: "#c4b5fd",
+                  borderColor: "#8b5cf6",
+                  color: "#000000",
+                }}
+                title="Download the design, or submit it for review: approved designs are shown in the community gallery"
+              >
+                <option value="" disabled hidden>
+                  Save
+                </option>
+                <option value="download">Download</option>
+                <option value="submit">Submit Design</option>
+              </select>
             </div>
           </div>
         </div>
@@ -7901,7 +8065,9 @@ export function Studio({ onBack }: { onBack: () => void }) {
         )}
       </header>
       <div className="flex-1 flex overflow-hidden relative">
-        <main className="flex-1 bg-[#F9F9FB] relative overflow-visible">
+        {/* (min-w-0: as wide as the space it's given, not its contents, so a workspace wider than the screen
+            scrolls across inside it instead of being cut off) */}
+        <main className="flex-1 min-w-0 bg-[#F9F9FB] relative overflow-visible">
           {showWelcomePrompt && (
             <div className="absolute inset-0 z-[120] flex items-center justify-center px-8 pointer-events-none">
               <div className="pointer-events-auto max-w-3xl text-center">
@@ -8606,7 +8772,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                               </label>
                               <input
                                 type="range"
-                                min={1}
+                                min={0}
                                 max={12}
                                 value={meshHorizontalLines}
                                 onChange={(e) => {
@@ -8632,7 +8798,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                               </label>
                               <input
                                 type="range"
-                                min={1}
+                                min={0}
                                 max={12}
                                 value={meshVerticalLines}
                                 onChange={(e) => {
@@ -8670,6 +8836,23 @@ export function Studio({ onBack }: { onBack: () => void }) {
                               />
                               <span className="text-[10px] font-bold w-6 text-right">
                                 {meshLineSpacing}
+                              </span>
+                            </div>
+                            <div className="mt-2 flex items-center gap-2">
+                              <label className="text-[10px] font-black uppercase text-slate-600 w-20">
+                                Thickness
+                              </label>
+                              <input
+                                type="range"
+                                min={0.5}
+                                max={8}
+                                step={0.5}
+                                value={meshLineWidth}
+                                onChange={(e) => setMeshLineWidth(parseFloat(e.target.value))}
+                                className="flex-1"
+                              />
+                              <span className="text-[10px] font-bold w-6 text-right">
+                                {meshLineWidth}
                               </span>
                             </div>
                             <div className="mt-2 text-[10px] text-slate-500">
@@ -9074,6 +9257,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
             </aside>
           )}
 
+          <MobileScrollbars target={canvasRef} />
           <div
             ref={canvasRef}
             className="w-full h-[calc(100vh)] pb md:pb p-2 lg:p-8 overflow-auto touch-none"
@@ -9182,7 +9366,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     c.x,
                     c.y,
                     activeColor,
-                    activePenSize,
+                    meshLineWidth,
                     maxZ + 1,
                   );
                   setStrokes((prev) => [...prev, ...meshStrokeSet.strokes]);
@@ -9194,7 +9378,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     meshGroupId: meshStrokeSet.groupId,
                     pendingMesh: false,
                     color: activeColor,
-                    width: activePenSize,
+                    width: meshLineWidth,
                   };
                 } else {
                   const solidStrokeSet = createSolidStrokeSet(
@@ -9265,7 +9449,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                   Math.hypot(
                     c.x - penRef.current!.lastX,
                     c.y - penRef.current!.lastY,
-                  ) >= PEN_SPACING
+                  ) >= (penRef.current.meshGroupId ? PEN_SPACING : FREEHAND_SPACING)
                 ) {
                   setStrokes((prev) => {
                     const deltaX = c.x - penRef.current!.lastX;
@@ -9331,7 +9515,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                       );
                       const verticalConnectors = createMeshVerticalConnectors(
                         activeColor,
-                        activePenSize,
+                        meshLineWidth,
                         currentMaxZ + 1,
                         penRef.current.meshGroupId,
                         updated,
@@ -9827,8 +10011,9 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 ["cursor", "ghost", "pen"].includes(activeTool)
               ) {
                 const rawPoints = strokeToProcess.points;
-                const shape =
-                  workspaceShapes.find((s) => s.showDots) || workspaceShapes[0];
+                // (Only into an image that's selected, its dots shown: a stroke drawn freely near another image is
+                // left as drawn)
+                const shape = workspaceShapes.find((s) => s.showDots);
 
                 if (rawPoints && rawPoints.length >= 2 && shape) {
                   const startPoint = rawPoints[0];
@@ -9868,11 +10053,14 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     }
                   });
 
+                  // (Between two different dots: a loop, like a petal, starting and ending by the same dot is
+                  // drawn freely)
                   if (
                     nearestStartDot &&
                     nearestEndDot &&
                     minStartDist <= SNAP_THRESHOLD &&
-                    minEndDist <= SNAP_THRESHOLD
+                    minEndDist <= SNAP_THRESHOLD &&
+                    (nearestStartDot as any).index !== (nearestEndDot as any).index
                   ) {
                     // Lock execution immediately
                     isProcessingRef.current = true;
@@ -10243,6 +10431,51 @@ export function Studio({ onBack }: { onBack: () => void }) {
                       ? { type: "stroke", id: strokeId }
                       : null,
                 );
+                // A finger held still on an image or stroke: its menu, as a right click gives
+                if (longPressRef.current) window.clearTimeout(longPressRef.current.timer);
+                longPressRef.current = null;
+                if (e.pointerType !== "mouse" && (shapeId || strokeId)) {
+                  const c = getCoords(e);
+                  const { clientX, clientY } = e;
+                  longPressRef.current = {
+                    x: clientX,
+                    y: clientY,
+                    timer: window.setTimeout(() => {
+                      longPressRef.current = null;
+                      suppressNextClickRef.current = true;
+                      // (Not every phone taps on lifting a held finger: the next real tap closes it as usual)
+                      window.setTimeout(() => {
+                        suppressNextClickRef.current = false;
+                      }, 1500);
+                      openContextMenu(
+                        shapeId
+                          ? { x: clientX, y: clientY, id: shapeId, type: "shape", clickX: c.x, clickY: c.y }
+                          : { x: clientX, y: clientY, id: strokeId!, type: "stroke" },
+                      );
+                    }, LONG_PRESS_MS),
+                  };
+                }
+              }}
+              onPointerMoveCapture={(e) => {
+                const press = longPressRef.current;
+                if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > LONG_PRESS_SLOP) {
+                  window.clearTimeout(press.timer);
+                  longPressRef.current = null;
+                }
+              }}
+              onPointerUpCapture={() => {
+                if (longPressRef.current) window.clearTimeout(longPressRef.current.timer);
+                longPressRef.current = null;
+              }}
+              onPointerCancelCapture={() => {
+                if (longPressRef.current) window.clearTimeout(longPressRef.current.timer);
+                longPressRef.current = null;
+              }}
+              // (The phone's own press-and-hold callout would cover the menu.) At least as big as what's on it.
+              style={{
+                WebkitTouchCallout: "none",
+                minWidth: workspaceExtent.width,
+                minHeight: workspaceExtent.height,
               }}
               className={`w-full h-full shadow-2xl rounded-[3rem] lg:rounded-[3rem] rounded-2xl ${getWorkspaceBgClasses()}`}
               onContextMenu={(e) => {
@@ -10341,6 +10574,22 @@ export function Studio({ onBack }: { onBack: () => void }) {
                               >
                                 <path d={generatePathData(shape.dots, true)} />
                               </clipPath>
+                              {/* What the eraser rubbed out */}
+                              {shape.erasedPaths && shape.erasedPaths.length > 0 && (
+                                <mask
+                                  id={`ms-${shape.id}`}
+                                  maskUnits="userSpaceOnUse"
+                                  x="0"
+                                  y="0"
+                                  width={shape.dims.width}
+                                  height={shape.dims.height}
+                                >
+                                  <rect x={0} y={0} width={shape.dims.width} height={shape.dims.height} fill="white" />
+                                  {shape.erasedPaths.map((p, i) => (
+                                    <path key={`er-${i}`} d={p} fill="black" />
+                                  ))}
+                                </mask>
+                              )}
                             </defs>
                             <image
                               key={`img-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`}
@@ -10348,6 +10597,11 @@ export function Studio({ onBack }: { onBack: () => void }) {
                               href={shape.img}
                               width={shape.dims.width}
                               height={shape.dims.height}
+                              mask={
+                                shape.erasedPaths && shape.erasedPaths.length > 0
+                                  ? `url(#ms-${shape.id})`
+                                  : undefined
+                              }
                               clipPath={
                                 shape.dots && shape.dots.length > 0
                                   ? `url(#cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length})`
@@ -11074,6 +11328,24 @@ export function Studio({ onBack }: { onBack: () => void }) {
                           });
                         }}
                       >
+                        {s.erasedSpots && s.erasedSpots.length > 0 && (
+                          <defs>
+                            <mask
+                              id={`ms-st-erase-${s.id}`}
+                              maskUnits="userSpaceOnUse"
+                              x={-100000}
+                              y={-100000}
+                              width={200000}
+                              height={200000}
+                            >
+                              <rect x={-100000} y={-100000} width={200000} height={200000} fill="white" />
+                              {s.erasedSpots.map((spot, i) => (
+                                <circle key={`erase-${s.id}-${i}`} cx={spot.x} cy={spot.y} r={spot.r} fill="black" />
+                              ))}
+                            </mask>
+                          </defs>
+                        )}
+                        <g mask={s.erasedSpots && s.erasedSpots.length > 0 ? `url(#ms-st-erase-${s.id})` : undefined}>
                         {s.baseFill && (
                           <path
                             d={strokePathD}
@@ -12321,6 +12593,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                               </>
                             );
                           })()}
+                        </g>
                       </g>
                     );
                   }
