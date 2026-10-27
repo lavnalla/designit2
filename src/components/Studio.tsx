@@ -1398,7 +1398,9 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
   const WORKSPACE_MIN_TOUCH = 1200;
   const LONG_PRESS_SLOP = 10;
   const FREEHAND_SPACING = 3;
-  const ERASE_RADIUS = 15;
+  // The eraser's radius (px): chosen in the eraser's panel
+  const [eraseRadius, setEraseRadius] = useState(15);
+  const ERASE_RADIUS = eraseRadius;
 
   const handleDetectSourceArticles = async () => {
     const detectImage = originalSourceImage ?? selectedImage;
@@ -8461,6 +8463,8 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
                     setShowShapesModal(true);
                   } else {
                     setActiveTool(t as any);
+                    // (The eraser's sizes are in the settings panel: shown with it)
+                    if (t === "erase") setShowColorPanel(true);
                     if (tutorialRecording) {
                       recordTutorialStepOnce({
                         type: "tool-select",
@@ -8675,6 +8679,48 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
                     </div>
 
                     <hr className="border-slate-100" />
+
+                    {activeTool === "erase" && (
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <label className="text-[10px] font-black uppercase text-slate-700">
+                          Eraser Size
+                        </label>
+                        <div className="mt-2 flex gap-1.5">
+                          {[
+                            { label: "S", radius: 6 },
+                            { label: "M", radius: 15 },
+                            { label: "L", radius: 30 },
+                            { label: "XL", radius: 55 },
+                          ].map((size) => (
+                            <button
+                              key={size.label}
+                              type="button"
+                              onClick={() => setEraseRadius(size.radius)}
+                              className={`flex-1 rounded-lg border py-1 text-[10px] font-black ${eraseRadius === size.radius ? "border-slate-700 bg-slate-700 text-white" : "border-slate-300 bg-white text-slate-700"}`}
+                            >
+                              {size.label}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="mt-3 flex items-center gap-2">
+                          <input
+                            type="range"
+                            min={2}
+                            max={80}
+                            value={eraseRadius}
+                            onChange={(e) => setEraseRadius(parseInt(e.target.value, 10))}
+                            className="flex-1"
+                            aria-label="Eraser size"
+                          />
+                          {/* The eraser as big as it is */}
+                          <span
+                            className="shrink-0 rounded-full border border-slate-500 bg-white"
+                            style={{ width: Math.min(40, eraseRadius), height: Math.min(40, eraseRadius) }}
+                          />
+                          <span className="text-[10px] font-bold w-6 text-right">{eraseRadius}</span>
+                        </div>
+                      </div>
+                    )}
 
                     {(activeTool === "pen" || activeTool === "ghost") && (
                       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
