@@ -127,6 +127,57 @@ const METALS: Record<number, Metal> = {
   },
 };
 const METAL_IDS = [METAL_GOLD, METAL_PLATINUM, METAL_SILVER, METAL_COPPER, METAL_ROSE_GOLD];
+// Gold's look, from a photo of polished 22 carat gold: the colour at each share of it, darkest to lightest (2%
+// deep amber shadow, its middle a saturated buttery yellow, creamy highlights). A piece's gold is coloured so
+// it has the same share of each: its pixels ranked by how much light they catch, each given the photo's colour
+// at its rank (the shading keeps its shape; the gold takes the photo's colour and lightness).
+const GOLD_LOOK: Array<[number, [number, number, number]]> = [
+  [0, [110, 45, 0]],
+  [0.02, [131, 56, 1]],
+  [0.1, [192, 134, 44]],
+  [0.25, [215, 176, 90]],
+  [0.4, [233, 194, 100]],
+  [0.5, [243, 202, 104]],
+  [0.6, [252, 210, 105]],
+  [0.75, [250, 222, 150]],
+  [0.9, [245, 230, 185]],
+  [0.98, [254, 242, 200]],
+  [1, [255, 252, 215]],
+];
+// Platinum and silver the same way, with the same spread of light as the gold photo: platinum a bright, faintly
+// cool white with soft grey shadows; silver a neutral, slightly greyer white with deeper shadows
+const PLATINUM_LOOK: Array<[number, [number, number, number]]> = [
+  [0, [70, 72, 78]],
+  [0.02, [96, 99, 106]],
+  [0.1, [150, 153, 160]],
+  [0.25, [190, 193, 199]],
+  [0.4, [210, 213, 218]],
+  [0.5, [220, 222, 227]],
+  [0.6, [228, 230, 234]],
+  [0.75, [236, 238, 241]],
+  [0.9, [244, 245, 247]],
+  [0.98, [251, 252, 253]],
+  [1, [255, 255, 255]],
+];
+const SILVER_LOOK: Array<[number, [number, number, number]]> = [
+  [0, [45, 46, 48]],
+  [0.02, [70, 71, 74]],
+  [0.1, [125, 127, 130]],
+  [0.25, [170, 172, 175]],
+  [0.4, [195, 196, 199]],
+  [0.5, [207, 208, 211]],
+  [0.6, [217, 218, 220]],
+  [0.75, [228, 229, 231]],
+  [0.9, [240, 240, 242]],
+  [0.98, [250, 250, 251]],
+  [1, [255, 255, 255]],
+];
+// The metals coloured by a look (the others by their ramp)
+const LOOKS: Record<number, Array<[number, [number, number, number]]>> = {
+  [METAL_GOLD]: GOLD_LOOK,
+  [METAL_PLATINUM]: PLATINUM_LOOK,
+  [METAL_SILVER]: SILVER_LOOK,
+};
 // A colour within this distance (0-255, across the three colours) of a metal's pen is that metal
 const PEN_MATCH = 40;
 
@@ -397,7 +448,8 @@ export function renderJewelry(sketch: RGBA): JewelryRenderResult {
   };
 
   // --- 4. The shine ---
-  const out = new Uint8ClampedArray(n * 4);
+  // The light each pixel catches (from the studio it reflects)
+  const caught = new Float32Array(n);
   for (let y = 0; y < h; y += 1) {
     for (let x = 0; x < w; x += 1) {
       const p = y * w + x;
@@ -429,7 +481,35 @@ export function renderJewelry(sketch: RGBA): JewelryRenderResult {
       const ry = 2 * along * ny - vy + PERSPECTIVE * (y / h - 0.5);
       const rz = 2 * along * nz - vz;
       // (A fine wire catches the light along its whole face: brighter)
-      const seen = studio(rx, ry, rz) + (1 - fine) * FINE_WIRE_SHINE;
+      caught[p] = studio(rx, ry, rz) + (1 - fine) * FINE_WIRE_SHINE;
+    }
+  }
+  // Each looked metal's pixels ranked by the light they catch (for its look)
+  const caughtBy = new Map<number, number[]>();
+  for (let p = 0; p < n; p += 1) {
+    if (!piece[p] || pictured[p] || !LOOKS[material[p]]) continue;
+    if (!caughtBy.has(material[p])) caughtBy.set(material[p], []);
+    caughtBy.get(material[p])!.push(caught[p]);
+  }
+  for (const list of caughtBy.values()) list.sort((a, b) => a - b);
+  const rankIn = (metal: number, v: number) => {
+    const list = caughtBy.get(metal) ?? [];
+    let lo = 0;
+    let hi = list.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (list[mid] < v) lo = mid + 1;
+      else hi = mid;
+    }
+    return list.length > 1 ? lo / (list.length - 1) : 0.5;
+  };
+  // ... and each pixel's colour
+  const out = new Uint8ClampedArray(n * 4);
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      const p = y * w + x;
+      if (!piece[p]) continue;
+      const seen = caught[p];
       let colour: [number, number, number];
       if (pictured[p]) {
         colour = [data[p * 4] / 255, data[p * 4 + 1] / 255, data[p * 4 + 2] / 255];
@@ -440,6 +520,11 @@ export function renderJewelry(sketch: RGBA): JewelryRenderResult {
         const body = 0.25 + 0.75 * Math.min(1, seen * 0.8) * (0.55 + 0.45 * depth);
         const sparkle = Math.max(0, seen - 1.05) * 2.5;
         colour = [0, 1, 2].map((c) => Math.min(1, base[c] * body * 1.25 + sparkle)) as [number, number, number];
+      } else if (LOOKS[material[p]]) {
+        colour = lookAt(LOOKS[material[p]], rankIn(material[p], seen));
+        // (A faint polish texture)
+        const polish = 1 + 0.01 * noise(x, y);
+        colour = colour.map((v) => Math.min(1, v * polish)) as [number, number, number];
       } else {
         const metal = METALS[material[p]] ?? METALS[METAL_GOLD];
         colour = ramp(metal.ramp, seen / metal.exposure);
@@ -511,6 +596,17 @@ function studio(x: number, y: number, z: number): number {
   // Facing straight back at the viewer: the dark of the camera's surroundings
   light -= 0.15 * Math.max(0, z) ** 8;
   return Math.max(0, light);
+}
+
+// A colour from a look (colours at shares, 0-255) at a share t (0 to 1)
+function lookAt(look: Array<[number, [number, number, number]]>, t: number): [number, number, number] {
+  const share = Math.max(0, Math.min(1, t));
+  let i = 0;
+  while (i < look.length - 2 && look[i + 1][0] < share) i += 1;
+  const [a, from] = look[i];
+  const [b, to] = look[i + 1];
+  const f = b > a ? (share - a) / (b - a) : 0;
+  return [0, 1, 2].map((c) => (from[c] * (1 - f) + to[c] * f) / 255) as [number, number, number];
 }
 
 // A colour along a ramp of stops (t from 0 to 1)
