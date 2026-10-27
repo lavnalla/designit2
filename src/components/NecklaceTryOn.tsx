@@ -2877,15 +2877,18 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
     setScaleVersion((prev) => prev + 1);
   };
 
-  const mobileControlButtonStyle: React.CSSProperties = {
+  // (Big enough to tap: the size and position buttons along the top on a phone)
+  const mobileAdjustButtonStyle: React.CSSProperties = {
     background: "#1f2937",
     color: "#fff",
     border: "1px solid #4b5563",
     borderRadius: "6px",
-    padding: "4px 8px",
+    padding: "8px 0",
     cursor: "pointer",
-    fontSize: "12px",
+    fontSize: "15px",
     fontWeight: "bold",
+    flex: 1,
+    minWidth: 0,
   };
 
   const mobileControlActionButtonStyle: React.CSSProperties = {
@@ -2998,6 +3001,33 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
               {!isLoaded && <span style={{ marginLeft: isMobile ? "8px" : "15px", color: "#a3a3a3", fontSize: isMobile ? "11px" : "13px" }}>{"Loading Textures..."}</span>}
             </div>
             
+            {/* On a phone: size and position always on show, in one row (Minimize and Close in the menu) */}
+            {isMobile && (
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", order: 2 }}>
+                <button onClick={() => adjustScale(-0.1)} title="Decrease Image Size" style={mobileAdjustButtonStyle}>
+                  −
+                </button>
+                <span style={{ color: "#fff", fontSize: "12px", minWidth: "38px", textAlign: "center" }}>
+                  {Math.round(manualScaleRef.current * 100)}%
+                </span>
+                <button onClick={() => adjustScale(0.1)} title="Increase Image Size" style={mobileAdjustButtonStyle}>
+                  +
+                </button>
+                <button onClick={() => adjustVerticalOffset(-5)} title="Move Image Up" style={mobileAdjustButtonStyle}>
+                  ↑
+                </button>
+                <button onClick={() => adjustVerticalOffset(5)} title="Move Image Down" style={mobileAdjustButtonStyle}>
+                  ↓
+                </button>
+                <button onClick={() => adjustHorizontalOffset(-5)} title="Move Image Left" style={mobileAdjustButtonStyle}>
+                  ←
+                </button>
+                <button onClick={() => adjustHorizontalOffset(5)} title="Move Image Right" style={mobileAdjustButtonStyle}>
+                  →
+                </button>
+              </div>
+            )}
+
             {/* MINIMIZE AND CLOSE CONTROLS */}
             {isMobile ? (
               <div style={{ position: "relative", display: "flex", justifyContent: "flex-end" }}>
@@ -3015,7 +3045,7 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
                     fontWeight: "bold"
                   }}
                 >
-                  {showMobileControlsMenu ? "▴ Controls" : "☰ Controls"}
+                  {showMobileControlsMenu ? "▴ Menu" : "☰ Menu"}
                 </button>
 
                 {showMobileControlsMenu && (
@@ -3039,75 +3069,6 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
                       zIndex: 10000
                     }}
                   >
-                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                      <div style={{ color: "#fff", fontSize: "11px", fontWeight: "bold", textTransform: "uppercase", opacity: 0.8 }}>
-                        Size
-                      </div>
-                      <div style={{ display: "flex", gap: "6px" }}>
-                        <button
-                          onClick={() => { setShowMobileControlsMenu(false); adjustScale(-0.1); }}
-                          title="Decrease Image Size"
-                          style={{ ...mobileControlButtonStyle, flex: 1 }}
-                        >
-                          −
-                        </button>
-                        <span style={{ color: "#fff", fontSize: "12px", minWidth: "42px", textAlign: "center", alignSelf: "center" }}>
-                          {Math.round(manualScaleRef.current * 100)}%
-                        </span>
-                        <button
-                          onClick={() => { setShowMobileControlsMenu(false); adjustScale(0.1); }}
-                          title="Increase Image Size"
-                          style={{ ...mobileControlButtonStyle, flex: 1 }}
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-
-                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                      <div style={{ color: "#fff", fontSize: "11px", fontWeight: "bold", textTransform: "uppercase", opacity: 0.8 }}>
-                        Vertical
-                      </div>
-                      <div style={{ display: "flex", gap: "6px" }}>
-                        <button
-                          onClick={() => { setShowMobileControlsMenu(false); adjustVerticalOffset(-5); }}
-                          title="Move Image Up"
-                          style={{ ...mobileControlButtonStyle, flex: 1 }}
-                        >
-                          ↑
-                        </button>
-                        <button
-                          onClick={() => { setShowMobileControlsMenu(false); adjustVerticalOffset(5); }}
-                          title="Move Image Down"
-                          style={{ ...mobileControlButtonStyle, flex: 1 }}
-                        >
-                          ↓
-                        </button>
-                      </div>
-                    </div>
-
-                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                      <div style={{ color: "#fff", fontSize: "11px", fontWeight: "bold", textTransform: "uppercase", opacity: 0.8 }}>
-                        Horizontal
-                      </div>
-                      <div style={{ display: "flex", gap: "6px" }}>
-                        <button
-                          onClick={() => { setShowMobileControlsMenu(false); adjustHorizontalOffset(-5); }}
-                          title="Move Image Left"
-                          style={{ ...mobileControlButtonStyle, flex: 1 }}
-                        >
-                          ←
-                        </button>
-                        <button
-                          onClick={() => { setShowMobileControlsMenu(false); adjustHorizontalOffset(5); }}
-                          title="Move Image Right"
-                          style={{ ...mobileControlButtonStyle, flex: 1 }}
-                        >
-                          →
-                        </button>
-                      </div>
-                    </div>
-
                     <button
                       onClick={() => { setShowMobileControlsMenu(false); setIsMinimized(true); }}
                       title="Minimize Window"
@@ -3306,8 +3267,8 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
             style={{ 
               position: "relative", 
               width: "100%", 
-              height: isMobile ? "calc(100% - 130px)" : "calc(100% - 60px)", 
-              marginTop: isMobile ? "130px" : "60px",
+              height: isMobile ? "calc(100% - 170px)" : "calc(100% - 60px)", 
+              marginTop: isMobile ? "170px" : "60px",
               padding: isMobile ? "8px" : "0",
               boxSizing: "border-box",
               display: "flex",
@@ -3428,7 +3389,7 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
                 alt="Your photo wearing the garment"
                 style={{
                   maxWidth: isMobile ? "96vw" : "100%",
-                  maxHeight: isMobile ? "calc(100dvh - 160px)" : "90%",
+                  maxHeight: isMobile ? "calc(100dvh - 200px)" : "90%",
                   objectFit: "contain",
                   borderRadius: isMobile ? "8px" : "12px",
                   boxShadow: "0 12px 36px rgba(0,0,0,0.5)"
@@ -3443,7 +3404,7 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
                 display: showFitted && fittedResultUrl ? "none" : undefined,
                 width: isMobile ? "96vw" : "auto",
                 height: isMobile ? "auto" : "90%", 
-                maxHeight: isMobile ? "calc(100dvh - 160px)" : "none",
+                maxHeight: isMobile ? "calc(100dvh - 200px)" : "none",
                 aspectRatio: "4/3",
                 // Mirror the webcam like a selfie view; a photo is shown as-is
                 transform: inputSource === "photo" ? "none" : "rotateY(180deg)", 
