@@ -2,7 +2,7 @@
 
 "use client";
 
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import NecklaceTryOn from "./NecklaceTryOn";
 import GarmentPartPainter from "./GarmentPartPainter";
@@ -22,6 +22,7 @@ import { parseFashionClasses } from "../lib/garmentSegmenter";
 import { toParseCanvas } from "../lib/photoTryOnParsing";
 import { isGarmentClass } from "../lib/photoTryOn";
 import BodySilhouetteView from "./BodySilhouetteView";
+import MobileScrollbars, { SCROLLBAR_SCREENS } from "./MobileScrollbars";
 
 const MOBILE_BREAKPOINT = 1024;
 
@@ -1357,8 +1358,25 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
   }, []);
   const workspaceShapesRef = useRef<DistortableShape[]>([]);
   const isPointerDownRef = useRef(false);
+  // A touch screen or a narrow window (the workspace gets room to scroll round, and scroll bars)
+  const [touchWorkspace, setTouchWorkspace] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia(SCROLLBAR_SCREENS);
+    const update = () => setTouchWorkspace(query.matches);
+    const first = requestAnimationFrame(update);
+    query.addEventListener("change", update);
+    return () => {
+      cancelAnimationFrame(first);
+      query.removeEventListener("change", update);
+    };
+  }, []);
   // Whether this press is drawing a selection box (a cursor drag)
   const selectingRef = useRef(false);
+  // Touch screens have no right click: holding a finger still on an image or stroke opens its menu instead.
+  // The hold being timed (cancelled if the finger moves or lifts), and the tap that lifting it makes, which
+  // mustn't close the menu it just opened.
+  const longPressRef = useRef<{ timer: number; x: number; y: number } | null>(null);
+  const suppressNextClickRef = useRef(false);
   const penRef = useRef<{
     pointerId: number;
     lastX: number;
@@ -1372,6 +1390,13 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
   // The mesh pen adds a step (and its cross lines) every PEN_SPACING pixels; the plain pen records a point every
   // FREEHAND_SPACING, so its curves stay smooth (a petal, a scroll), not a few straight segments
   const PEN_SPACING = 30;
+  // Holding a finger this long (ms) on an image or stroke, moving it no more than this (px), opens its menu
+  const LONG_PRESS_MS = 500;
+  // Room left past the workspace's furthest item (px), to scroll to
+  const WORKSPACE_MARGIN = 80;
+  // ... and on a touch screen or narrow window the workspace is at least this big (px each way), to scroll round
+  const WORKSPACE_MIN_TOUCH = 1200;
+  const LONG_PRESS_SLOP = 10;
   const FREEHAND_SPACING = 3;
   const ERASE_RADIUS = 15;
 
@@ -4329,6 +4354,21 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
     }
   }, []);
 
+  // How far the workspace's contents reach (right and down, with a margin): the drawing is at least this big, so
+  // the area scrolls to anything placed beyond the screen (a phone's, especially)
+  const workspaceExtent = useMemo(() => {
+    // (On a touch screen or a narrow window, always room to move round in)
+    let right = touchWorkspace ? WORKSPACE_MIN_TOUCH - WORKSPACE_MARGIN : 0;
+    let bottom = touchWorkspace ? WORKSPACE_MIN_TOUCH - WORKSPACE_MARGIN : 0;
+    for (const item of [...workspaceShapes, ...strokes]) {
+      if ("dots" in item ? !item.dots.length : !item.points.length) continue;
+      const box = getBoundingBox(item);
+      right = Math.max(right, box.x + box.width);
+      bottom = Math.max(bottom, box.y + box.height);
+    }
+    return { width: Math.ceil(right + WORKSPACE_MARGIN), height: Math.ceil(bottom + WORKSPACE_MARGIN) };
+  }, [workspaceShapes, strokes, getBoundingBox, touchWorkspace]);
+
   const isItemInRect = useCallback(
     (
       bbox: { x: number; y: number; width: number; height: number },
@@ -7044,6 +7084,11 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
     <div
       className="fixed inset-0 flex h-[100dvh] w-full flex-col overflow-hidden overscroll-none bg-[#fffdfa] text-slate-900 select-none"
       onClick={() => {
+        // (The tap from lifting a finger held to open a menu leaves that menu open)
+        if (suppressNextClickRef.current) {
+          suppressNextClickRef.current = false;
+          return;
+        }
         setContextMenu(null);
         setShowTopPanelMenu(false);
         setShowHeaderMenu(false);
@@ -8020,7 +8065,9 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
         )}
       </header>
       <div className="flex-1 flex overflow-hidden relative">
-        <main className="flex-1 bg-[#F9F9FB] relative overflow-visible">
+        {/* (min-w-0: as wide as the space it's given, not its contents, so a workspace wider than the screen
+            scrolls across inside it instead of being cut off) */}
+        <main className="flex-1 min-w-0 bg-[#F9F9FB] relative overflow-visible">
           {showWelcomePrompt && (
             <div className="absolute inset-0 z-[120] flex items-center justify-center px-8 pointer-events-none">
               <div className="pointer-events-auto max-w-3xl text-center">
@@ -9210,6 +9257,7 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
             </aside>
           )}
 
+          <MobileScrollbars target={canvasRef} />
           <div
             ref={canvasRef}
             className="w-full h-[calc(100vh)] pb md:pb p-2 lg:p-8 overflow-auto touch-none"
@@ -10383,6 +10431,51 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
                       ? { type: "stroke", id: strokeId }
                       : null,
                 );
+                // A finger held still on an image or stroke: its menu, as a right click gives
+                if (longPressRef.current) window.clearTimeout(longPressRef.current.timer);
+                longPressRef.current = null;
+                if (e.pointerType !== "mouse" && (shapeId || strokeId)) {
+                  const c = getCoords(e);
+                  const { clientX, clientY } = e;
+                  longPressRef.current = {
+                    x: clientX,
+                    y: clientY,
+                    timer: window.setTimeout(() => {
+                      longPressRef.current = null;
+                      suppressNextClickRef.current = true;
+                      // (Not every phone taps on lifting a held finger: the next real tap closes it as usual)
+                      window.setTimeout(() => {
+                        suppressNextClickRef.current = false;
+                      }, 1500);
+                      openContextMenu(
+                        shapeId
+                          ? { x: clientX, y: clientY, id: shapeId, type: "shape", clickX: c.x, clickY: c.y }
+                          : { x: clientX, y: clientY, id: strokeId!, type: "stroke" },
+                      );
+                    }, LONG_PRESS_MS),
+                  };
+                }
+              }}
+              onPointerMoveCapture={(e) => {
+                const press = longPressRef.current;
+                if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > LONG_PRESS_SLOP) {
+                  window.clearTimeout(press.timer);
+                  longPressRef.current = null;
+                }
+              }}
+              onPointerUpCapture={() => {
+                if (longPressRef.current) window.clearTimeout(longPressRef.current.timer);
+                longPressRef.current = null;
+              }}
+              onPointerCancelCapture={() => {
+                if (longPressRef.current) window.clearTimeout(longPressRef.current.timer);
+                longPressRef.current = null;
+              }}
+              // (The phone's own press-and-hold callout would cover the menu.) At least as big as what's on it.
+              style={{
+                WebkitTouchCallout: "none",
+                minWidth: workspaceExtent.width,
+                minHeight: workspaceExtent.height,
               }}
               className={`w-full h-full shadow-2xl rounded-[3rem] lg:rounded-[3rem] rounded-2xl ${getWorkspaceBgClasses()}`}
               onContextMenu={(e) => {
