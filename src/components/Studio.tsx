@@ -5454,6 +5454,43 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
     [buildSelectionClone, strokes],
   );
 
+  // The design to submit: the clicked image or stroke (and anything grouped with it) alone, as a PNG data URL;
+  // null when nothing's clicked (the whole workspace is submitted then)
+  const getClickedDesignImage = useCallback(async (): Promise<string | null> => {
+    const clicked = lastClickedItem
+      ? lastClickedItem.type === "shape"
+        ? workspaceShapes.find((shape) => shape.id === lastClickedItem.id)
+        : strokes.find((stroke) => stroke.id === lastClickedItem.id)
+      : selectedShapeId
+        ? workspaceShapes.find((shape) => shape.id === selectedShapeId)
+        : null;
+    if (!clicked) return null;
+    const groups = new Set([clicked.groupId].filter(Boolean));
+    const members = [...workspaceShapes, ...strokes].filter(
+      (item) => item === clicked || (item.groupId && groups.has(item.groupId)),
+    );
+    const boxes = members.map((item) => getBoundingBox(item));
+    const pad = 8;
+    const x = Math.min(...boxes.map((b) => b.x)) - pad;
+    const y = Math.min(...boxes.map((b) => b.y)) - pad;
+    const rect = {
+      x,
+      y,
+      width: Math.max(...boxes.map((b) => b.x + b.width)) + pad - x,
+      height: Math.max(...boxes.map((b) => b.y + b.height)) + pad - y,
+    };
+    const pixels = await rasterizeWorkspaceRect(rect, {
+      shapes: new Set(members.filter((item) => "dots" in item).map((item) => item.id)),
+      strokes: new Set(members.filter((item) => !("dots" in item)).map((item) => item.id)),
+    });
+    if (!pixels) return null;
+    const canvas = document.createElement("canvas");
+    canvas.width = pixels.width;
+    canvas.height = pixels.height;
+    canvas.getContext("2d")?.putImageData(pixels, 0, 0);
+    return canvas.toDataURL("image/png");
+  }, [lastClickedItem, selectedShapeId, workspaceShapes, strokes, getBoundingBox, rasterizeWorkspaceRect]);
+
   // Turns a rough garment sketch (the selected area, or an image or stroke) into a finished-looking garment
   // (sketchRender.ts), or a rough jewellery sketch into polished gold, silver and gems (jewelryRender.ts),
   // added over the sketch as a new image.
@@ -12758,7 +12795,7 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
       <SubmissionModal
         isOpen={showSubmissionModal}
         onClose={() => setShowSubmissionModal(false)}
-        getDesignImage={getDesignImage}
+        getDesignImage={async () => (await getClickedDesignImage()) ?? getDesignImage()}
       />
 
       {showPartPainter && renderedWorkspaceImg && (
