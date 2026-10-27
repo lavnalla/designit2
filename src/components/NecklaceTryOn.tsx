@@ -59,6 +59,8 @@ const FACE_LANDMARKS = {
 // Where an earring hangs from: this fraction of the way down from the eye's outer corner to the mouth's corner (the
 // earlobe, nearly level with the mouth)
 const EARLOBE_DOWN = 0.95;
+// ... and this fraction of the face's width out from its edge at the temples
+const EARLOBE_OUT = 0.02;
 
 // Where a necklace sits: its sides this fraction of the shoulder span apart (a neck's width, the chain resting
 // just out on the shoulders' slope), this fraction of the way up from the shoulder joints' line to the chin
@@ -76,6 +78,14 @@ const NECKLACE_CHAIN_RAISE = 10;
 // ... and raised from there by this fraction of the width between those two points (it sits up against the
 // base of the neck, not down on the slope)
 const NECKLACE_LIFT = 0.28;
+// A necklace without a chain: how far above the pose's estimate of the base of the neck its widest row goes
+// (fraction of the picture's height), that row looked for in this top fraction of it
+const NECKLACE_POSE_RAISE = 0.015;
+const NECKLACE_NECK_SCAN = 0.35;
+// ... and with the face in view, its top this fraction of the face's width below the chin (round the neck)
+const NECKLACE_BELOW_CHIN = 0.15;
+// ... on a photo (taken standing, the head up: more neck showing below the chin)
+const NECKLACE_BELOW_CHIN_PHOTO = 0.35;
 // A necklace image wraps the neck this fraction of its height down from its top (past the clasp at the back)
 const NECKLACE_WRAP_DEPTH = 0.08;
 
@@ -512,24 +522,6 @@ function trimToContent(canvas: HTMLCanvasElement): HTMLCanvasElement {
   trimmed.height = maxY - minY + 1;
   trimmed.getContext("2d")?.drawImage(canvas, minX, minY, trimmed.width, trimmed.height, 0, 0, trimmed.width, trimmed.height);
   return trimmed;
-}
-
-function hasVisiblePixels(canvas: HTMLCanvasElement, minOpaquePixels: number) {
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return false;
-  const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-  let opaquePixels = 0;
-
-  for (let index = 3; index < data.length; index += 4) {
-    if (data[index] > 20) {
-      opaquePixels += 1;
-      if (opaquePixels >= minOpaquePixels) {
-        return true;
-      }
-    }
-  }
-
-  return false;
 }
 
 type PieceBox = { minX: number; minY: number; maxX: number; maxY: number };
@@ -1740,6 +1732,108 @@ function buildSilhouetteOverlay(body: BodyAnalysis, w: number, h: number): HTMLC
   return overlay;
 }
 
+// The design with its white background see-through: the white (or near-white, grey-free) reaching in from the
+// image's edges, and the white showing through gaps in it (the space inside a crescent earring or a necklace's
+// loop), wherever there's more than a speck of it (a shine on metal stays). The pixels where the design meets
+// the background are faded by how white they are, so its edge stays smooth.
+const BACKGROUND_WHITE = 235;
+const BACKGROUND_GREY = 20;
+const DESIGN_EDGE_WHITE = 200;
+// White enclosed by the design is background if there's at least this much of it (fraction of the image)
+const ENCLOSED_WHITE = 0.0005;
+async function withoutWhiteBackground(src: string): Promise<string> {
+  const img = await loadImage(src);
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx || !w || !h) return src;
+  ctx.drawImage(img, 0, 0);
+  const image = ctx.getImageData(0, 0, w, h);
+  const { data } = image;
+  const isBackground = (p: number) => {
+    const i = p * 4;
+    if (data[i + 3] < 16) return true;
+    const lo = Math.min(data[i], data[i + 1], data[i + 2]);
+    const hi = Math.max(data[i], data[i + 1], data[i + 2]);
+    return lo >= BACKGROUND_WHITE && hi - lo <= BACKGROUND_GREY;
+  };
+  const background = new Uint8Array(w * h);
+  const queue = new Int32Array(w * h);
+  let end = 0;
+  const visit = (p: number) => {
+    if (background[p] || !isBackground(p)) return;
+    background[p] = 1;
+    queue[end] = p;
+    end += 1;
+  };
+  for (let x = 0; x < w; x += 1) {
+    visit(x);
+    visit((h - 1) * w + x);
+  }
+  for (let y = 0; y < h; y += 1) {
+    visit(y * w);
+    visit(y * w + w - 1);
+  }
+  for (let at = 0; at < end; at += 1) {
+    const p = queue[at];
+    const x = p % w;
+    if (x > 0) visit(p - 1);
+    if (x < w - 1) visit(p + 1);
+    if (p >= w) visit(p - w);
+    if (p < w * (h - 1)) visit(p + w);
+  }
+  // White enclosed by the design: each patch of it big enough
+  const enclosedMin = Math.max(12, Math.round(w * h * ENCLOSED_WHITE));
+  const seen = new Uint8Array(w * h);
+  for (let start = 0; start < w * h; start += 1) {
+    if (background[start] || seen[start] || !isBackground(start)) continue;
+    const patchStart = end;
+    seen[start] = 1;
+    queue[end] = start;
+    end += 1;
+    for (let at = patchStart; at < end; at += 1) {
+      const p = queue[at];
+      const x = p % w;
+      for (const q of [x > 0 ? p - 1 : -1, x < w - 1 ? p + 1 : -1, p >= w ? p - w : -1, p < w * (h - 1) ? p + w : -1]) {
+        if (q < 0 || seen[q] || background[q] || !isBackground(q)) continue;
+        seen[q] = 1;
+        queue[end] = q;
+        end += 1;
+      }
+    }
+    if (end - patchStart >= enclosedMin) {
+      for (let at = patchStart; at < end; at += 1) background[queue[at]] = 1;
+    } else {
+      end = patchStart;
+    }
+  }
+  if (!end) return src;
+  for (let p = 0; p < w * h; p += 1) {
+    const i = p * 4;
+    if (background[p]) {
+      data[i + 3] = 0;
+      continue;
+    }
+    // (The design's edge: next to the background, as see-through as it's near white)
+    const x = p % w;
+    const nextToBackground =
+      (x > 0 && background[p - 1]) ||
+      (x < w - 1 && background[p + 1]) ||
+      (p >= w && background[p - w]) ||
+      (p < w * (h - 1) && background[p + w]);
+    if (!nextToBackground) continue;
+    const lo = Math.min(data[i], data[i + 1], data[i + 2]);
+    if (lo > DESIGN_EDGE_WHITE) {
+      data[i + 3] = Math.round(data[i + 3] * Math.max(0, (255 - lo) / (255 - DESIGN_EDGE_WHITE)));
+    }
+  }
+  ctx.putImageData(image, 0, 0);
+  return canvas.toDataURL("image/png");
+}
+
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -1797,6 +1891,21 @@ declare global {
 
 export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inputSource = "webcam", partMaskSrc = null, onClose }: NecklaceTryOnProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  // The design as it's worn: its white background cleared (jewellery and garments alike)
+  const [designSrc, setDesignSrc] = useState<string | null>(null);
+  useEffect(() => {
+    setDesignSrc(null);
+    if (!selectedImageSrc) return;
+    let cancelled = false;
+    withoutWhiteBackground(selectedImageSrc)
+      .catch(() => selectedImageSrc)
+      .then((src) => {
+        if (!cancelled) setDesignSrc(src);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedImageSrc]);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   // In photo mode the uploaded photo, letterboxed to targetWidth x targetHeight, stands in for the webcam feed
   const [photoCanvas, setPhotoCanvas] = useState<HTMLCanvasElement | null>(null);
@@ -1866,9 +1975,11 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
   const targetWidth = 640;
   const targetHeight = 480;
   const BODY_MASK_THRESHOLD = 50;
-  // (The necklace is already placed and sized at the base of the neck: no start-up adjustment)
+  // (The necklace is already placed and sized at the base of the neck; it starts a few presses of the up arrow
+  // higher, 5 each: three on the webcam, one on a photo)
   const NECKLACE_STARTUP_SCALE = 1;
-  const NECKLACE_STARTUP_Y_OFFSET = 0;
+  const NECKLACE_STARTUP_Y_OFFSET = -15;
+  const NECKLACE_STARTUP_Y_OFFSET_PHOTO = -5;
   const EARRING_STARTUP_SCALE = 0.72;
   const isLoaded = scriptsLoaded.camera && scriptsLoaded.selfie && scriptsLoaded.holistic;
   const isMobile = viewportWidth <= 768;
@@ -1876,7 +1987,7 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
   useEffect(() => {
     if (mode === "necklace") {
       manualScaleRef.current = NECKLACE_STARTUP_SCALE;
-      manualOffsetYRef.current = NECKLACE_STARTUP_Y_OFFSET;
+      manualOffsetYRef.current = inputSource === "photo" ? NECKLACE_STARTUP_Y_OFFSET_PHOTO : NECKLACE_STARTUP_Y_OFFSET;
     } else if (mode === "earrings") {
       manualScaleRef.current = EARRING_STARTUP_SCALE;
       manualOffsetYRef.current = 0;
@@ -1886,56 +1997,35 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
     }
     manualOffsetXRef.current = 0;
     setScaleVersion((prev) => prev + 1);
-  }, [mode, EARRING_STARTUP_SCALE, NECKLACE_STARTUP_SCALE, NECKLACE_STARTUP_Y_OFFSET]);
+  }, [mode, inputSource, EARRING_STARTUP_SCALE, NECKLACE_STARTUP_SCALE, NECKLACE_STARTUP_Y_OFFSET, NECKLACE_STARTUP_Y_OFFSET_PHOTO]);
 
   useEffect(() => {
     earringAssetsRef.current = null;
-    if (mode !== "earrings" || !selectedImageSrc) return;
+    if (mode !== "earrings" || !designSrc) return;
 
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
-      const full = document.createElement("canvas");
-      full.width = img.width;
-      full.height = img.height;
-      const fullCtx = full.getContext("2d");
-      if (!fullCtx) return;
-      fullCtx.drawImage(img, 0, 0);
-
-      const splitX = Math.max(1, Math.round(full.width / 2));
-      const left = document.createElement("canvas");
-      left.width = splitX;
-      left.height = full.height;
-      left.getContext("2d")?.drawImage(full, 0, 0, splitX, full.height, 0, 0, splitX, full.height);
-
-      const rightWidth = Math.max(1, full.width - splitX);
-      const right = document.createElement("canvas");
-      right.width = rightWidth;
-      right.height = full.height;
-      right.getContext("2d")?.drawImage(full, splitX, 0, rightWidth, full.height, 0, 0, rightWidth, full.height);
-
-      const mirroredLeft = document.createElement("canvas");
-      mirroredLeft.width = left.width;
-      mirroredLeft.height = left.height;
-      const mirroredCtx = mirroredLeft.getContext("2d");
+      // The earring as given, whole: worn as it is on one ear and mirrored on the other (trimmed to itself, so
+      // the empty space round it in the image isn't sized as part of it)
+      const whole = document.createElement("canvas");
+      whole.width = img.width;
+      whole.height = img.height;
+      whole.getContext("2d")?.drawImage(img, 0, 0);
+      const earring = trimToContent(whole);
+      const mirrored = document.createElement("canvas");
+      mirrored.width = earring.width;
+      mirrored.height = earring.height;
+      const mirroredCtx = mirrored.getContext("2d");
       if (mirroredCtx) {
-        mirroredCtx.translate(mirroredLeft.width, 0);
+        mirroredCtx.translate(mirrored.width, 0);
         mirroredCtx.scale(-1, 1);
-        mirroredCtx.drawImage(left, 0, 0);
+        mirroredCtx.drawImage(earring, 0, 0);
       }
-
-      const minOpaquePixels = Math.max(40, Math.round((full.width * full.height) * 0.0025));
-      const hasDistinctRightEarring = rightWidth > 4 && hasVisiblePixels(right, minOpaquePixels);
-
-      // Each earring trimmed to itself (the empty space round it in the image would otherwise be sized as part
-      // of it, shrinking the earring to a speck)
-      earringAssetsRef.current = {
-        left: trimToContent(left),
-        right: trimToContent(hasDistinctRightEarring ? right : mirroredLeft),
-      };
+      earringAssetsRef.current = { left: earring, right: mirrored };
     };
-    img.src = selectedImageSrc;
-  }, [mode, selectedImageSrc]);
+    img.src = designSrc;
+  }, [mode, designSrc]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1990,10 +2080,10 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
   // Split the garment into torso and sleeve pieces using the painter's part mask
   useEffect(() => {
     garmentPiecesRef.current = null;
-    if (!selectedImageSrc) return;
+    if (!designSrc) return;
 
     let cancelled = false;
-    Promise.all([loadImage(selectedImageSrc), partMaskSrc ? loadImage(partMaskSrc) : Promise.resolve(null)])
+    Promise.all([loadImage(designSrc), partMaskSrc ? loadImage(partMaskSrc) : Promise.resolve(null)])
       .then(([garment, mask]) => {
         if (cancelled) return;
         // Without a usable part mask (none saved, or no body marked) the whole garment is fitted as one piece
@@ -2020,11 +2110,11 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
     return () => {
       cancelled = true;
     };
-  }, [selectedImageSrc, partMaskSrc]);
+  }, [designSrc, partMaskSrc]);
 
   // Automated Background Pre-Cropper Watcher
   useEffect(() => {
-    if (!selectedImageSrc) return;
+    if (!designSrc) return;
 
     const img = new Image();
     img.crossOrigin = "anonymous";
@@ -2085,16 +2175,24 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
             };
             overlayBoundsRef.current = bounds;
 
-            // Where the necklace wraps the neck: just below its top (past the clasp at the back), across its
-            // outer edges there (a few rows, so a gap in a chain doesn't shorten it)
-            const wrapRow = Math.min(bounds.maxY, bounds.minY + Math.max(2, Math.round(bounds.height * NECKLACE_WRAP_DEPTH)));
+            // Where a necklace without a chain sits at the base of the neck: its widest row in its top
+            // NECKLACE_NECK_SCAN (a collar flares out there)
+            const scanBottom = Math.min(bounds.maxY, bounds.minY + Math.max(8, Math.floor(bounds.height * NECKLACE_NECK_SCAN)));
+            let wrapRow = -1;
             let wrapLeft = -1;
             let wrapRight = -1;
-            for (let y = Math.max(bounds.minY, wrapRow - 3); y <= Math.min(bounds.maxY, wrapRow + 3); y += 1) {
+            for (let y = bounds.minY; y <= scanBottom; y += 1) {
+              let rowLeft = -1;
+              let rowRight = -1;
               for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
                 if (imageData[(y * localCropC.width + x) * 4 + 3] < 16) continue;
-                if (wrapLeft === -1 || x < wrapLeft) wrapLeft = x;
-                if (x > wrapRight) wrapRight = x;
+                if (rowLeft === -1) rowLeft = x;
+                rowRight = x;
+              }
+              if (rowLeft !== -1 && rowRight - rowLeft > wrapRight - wrapLeft) {
+                wrapRow = y;
+                wrapLeft = rowLeft;
+                wrapRight = rowRight;
               }
             }
 
@@ -2102,7 +2200,7 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
             const onChain = splitNecklaceChain(imageData, localCropC.width, bounds, localCropC);
             necklaceAnchorsRef.current = onChain
               ? onChain
-              : wrapLeft === -1 || wrapRight - wrapLeft < bounds.width * 0.2
+              : wrapRow === -1
                 ? getNecklaceFallbackAnchors(bounds)
                 : {
                     leftNeckX: wrapLeft,
@@ -2118,8 +2216,8 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
         processedImg.src = localCropC.toDataURL();
       }
     };
-    img.src = selectedImageSrc;
-  }, [mode, selectedImageSrc]);
+    img.src = designSrc;
+  }, [mode, designSrc]);
 
   useEffect(() => {
     if (isClosed || isMinimized) return;
@@ -2263,8 +2361,9 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
                   // outer corners to the mouth's
                   const leftEarY = (leftEye.y * h) + ((leftMouth.y - leftEye.y) * h * EARLOBE_DOWN) + manualOffsetYRef.current;
                   const rightEarY = (rightEye.y * h) + ((rightMouth.y - rightEye.y) * h * EARLOBE_DOWN) + manualOffsetYRef.current;
-                    const leftEarX = leftTempleX - faceWidth * 0.05 + manualOffsetXRef.current;
-                    const rightEarX = rightTempleX + faceWidth * 0.06 + manualOffsetXRef.current;
+                  // (Just outside the face's edge at the temples, under the earlobes)
+                  const leftEarX = leftTempleX - faceWidth * EARLOBE_OUT + manualOffsetXRef.current;
+                  const rightEarX = rightTempleX + faceWidth * EARLOBE_OUT + manualOffsetXRef.current;
                   const earringWidth = faceWidth * 0.22 * manualScaleRef.current;
                   const tilt = Math.atan2((rightEye.y - leftEye.y) * h, (rightEye.x - leftEye.x) * w);
 
@@ -2292,9 +2391,13 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
               const chin = faceLandmarks?.[152];
               const shoulderLines =
                 bodyAnalysis?.shoulderLines ?? liveShoulderLines(currentCamMask, lm, faceLandmarks, w, h);
-              const placement =
-                necklaceAtNeckBase(shoulderLines, !!necklaceAnchorsRef.current.chain) ??
-                getNecklacePlacement(lm, w, h, chin);
+              // A necklace on a chain from the person's outline (its ends resting on the shoulders); one without,
+              // its widest row at the base of the neck from the pose, NECKLACE_POSE_RAISE above it
+              const onChain = !!necklaceAnchorsRef.current.chain;
+              const fromPose = getNecklacePlacement(lm, w, h, chin);
+              const fromOutline = necklaceAtNeckBase(shoulderLines, onChain);
+              const placement = onChain ? fromOutline ?? fromPose : fromPose ?? fromOutline;
+              const poseRaise = !onChain && fromPose ? h * NECKLACE_POSE_RAISE : 0;
 
               if (placement) {
                 const { chainStartX, chainStartY, chainEndX, chainEndY, controlX } = placement;
@@ -2312,7 +2415,19 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
                 const onShoulders = !!sourceAnchors.chain && shoulderLines?.length === 2;
                 // (and up by NECKLACE_CHAIN_RAISE)
                 const chainDrop = onShoulders ? sourceAnchors.chain!.thickness * scale * 0.6 - NECKLACE_CHAIN_RAISE : 0;
-                const drawY = shoulderLineY - sourceAnchors.neckY * scale + manualOffsetYRef.current + chainDrop;
+                // A necklace without a chain goes round the neck: its top NECKLACE_BELOW_CHIN of the face's width
+                // below the chin (the face is tracked steadily; the shoulders, often at the frame's edge, aren't)
+                const leftTemple = faceLandmarks?.[FACE_LANDMARKS.leftTemple];
+                const rightTemple = faceLandmarks?.[FACE_LANDMARKS.rightTemple];
+                const necklaceTop = overlayBoundsRef.current?.minY ?? 0;
+                const drawY =
+                  !onChain && chin && leftTemple && rightTemple
+                    ? chin.y * h +
+                      Math.hypot((rightTemple.x - leftTemple.x) * w, (rightTemple.y - leftTemple.y) * h) *
+                        (isPhoto ? NECKLACE_BELOW_CHIN_PHOTO : NECKLACE_BELOW_CHIN) -
+                      necklaceTop * scale +
+                      manualOffsetYRef.current
+                    : shoulderLineY - sourceAnchors.neckY * scale + manualOffsetYRef.current + chainDrop - poseRaise;
 
                 canvasCtx.drawImage(sourceAnchors.front ?? croppedImageElement, drawX, drawY, drawW, drawH);
                 // Its back chain: on the shoulders, in to the neck and behind it; without the person's outline,
@@ -2411,6 +2526,14 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
                   manualOffsetXRef.current,
                   manualOffsetYRef.current,
                 );
+              }
+              // On the webcam the garment is worn: kept only where the person is (their outline from the camera,
+              // arms included), so it takes their shape and moves with their arms. A photo shows it whole.
+              if (!isPhoto && currentCamMask) {
+                piecesCtx.save();
+                piecesCtx.globalCompositeOperation = "destination-in";
+                piecesCtx.drawImage(currentCamMask, 0, 0, w, h);
+                piecesCtx.restore();
               }
               canvasCtx.drawImage(piecesCanvas, 0, 0);
               garmentDrawnOnTop = true;
