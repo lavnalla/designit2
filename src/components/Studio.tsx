@@ -7682,21 +7682,6 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
                       <button
                         type="button"
                         onClick={() => {
-                          setShowMannequinModal(true);
-                          setShowTopPanelMenu(false);
-                        }}
-                        className={`${toolbarButtonBaseClass} min-w-0 w-full gap-1`}
-                        style={{
-                          backgroundColor: "#f9a8d4",
-                          borderColor: "#ec4899",
-                          color: "#000000",
-                        }}
-                      >
-                        Dress Form
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
                           undo();
                           setShowTopPanelMenu(false);
                         }}
@@ -7727,66 +7712,6 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
                         }}
                       >
                         Reset
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleDownload("png");
-                          setShowTopPanelMenu(false);
-                        }}
-                        className={`${toolbarButtonBaseClass} min-w-0 w-full`}
-                        style={{
-                          backgroundColor: "#c4b5fd",
-                          borderColor: "#8b5cf6",
-                          color: "#000000",
-                        }}
-                      >
-                        Download
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowSubmissionModal(true);
-                          setShowTopPanelMenu(false);
-                        }}
-                        className={`${toolbarButtonBaseClass} min-w-0 w-full`}
-                        style={{
-                          backgroundColor: "#bbf7d0",
-                          borderColor: "#16a34a",
-                          color: "#000000",
-                        }}
-                      >
-                        Submit Design
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          renderSketchFromWorkspace("selected");
-                          setShowTopPanelMenu(false);
-                        }}
-                        className={`${toolbarButtonBaseClass} min-w-0 w-full`}
-                        style={{
-                          backgroundColor: "#fcd34d",
-                          borderColor: "#fbbf24",
-                          color: "#000000",
-                        }}
-                      >
-                        Refine Image
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          renderSketchFromWorkspace("selected", "jewelry");
-                          setShowTopPanelMenu(false);
-                        }}
-                        className={`${toolbarButtonBaseClass} min-w-0 w-full`}
-                        style={{
-                          backgroundColor: "#fde68a",
-                          borderColor: "#d97706",
-                          color: "#000000",
-                        }}
-                      >
-                        Refine Jewellery
                       </button>
                       <button
                         type="button"
@@ -7834,30 +7759,85 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
                       >
                         Lock
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowMannequinModal(true);
+                          setShowTopPanelMenu(false);
+                        }}
+                        className={`${toolbarButtonBaseClass} min-w-0 w-full gap-1`}
+                        style={{
+                          backgroundColor: "#f9a8d4",
+                          borderColor: "#ec4899",
+                          color: "#000000",
+                        }}
+                      >
+                        Dress Form
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          renderSketchFromWorkspace("selected");
+                          setShowTopPanelMenu(false);
+                        }}
+                        className={`${toolbarButtonBaseClass} min-w-0 w-full`}
+                        style={{
+                          backgroundColor: "#fcd34d",
+                          borderColor: "#fbbf24",
+                          color: "#000000",
+                        }}
+                      >
+                        Refine Image
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          renderSketchFromWorkspace("selected", "jewelry");
+                          setShowTopPanelMenu(false);
+                        }}
+                        className={`${toolbarButtonBaseClass} min-w-0 w-full`}
+                        style={{
+                          backgroundColor: "#fde68a",
+                          borderColor: "#d97706",
+                          color: "#000000",
+                        }}
+                      >
+                        Refine Jewellery
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleDownload("png");
+                          setShowTopPanelMenu(false);
+                        }}
+                        className={`${toolbarButtonBaseClass} min-w-0 w-full`}
+                        style={{
+                          backgroundColor: "#c4b5fd",
+                          borderColor: "#8b5cf6",
+                          color: "#000000",
+                        }}
+                      >
+                        Download
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowSubmissionModal(true);
+                          setShowTopPanelMenu(false);
+                        }}
+                        className={`${toolbarButtonBaseClass} min-w-0 w-full`}
+                        style={{
+                          backgroundColor: "#bbf7d0",
+                          borderColor: "#16a34a",
+                          color: "#000000",
+                        }}
+                      >
+                        Submit Design
+                      </button>
                     </div>
                   </div>
                 )}
               </div>
-
-              <button
-                id="dress-form-btn"
-                onClick={() => setShowMannequinModal(true)}
-                className={`${toolbarButtonBaseClass} hover:shadow-lg gap-1 hidden md:flex`}
-                style={{
-                  backgroundColor: "#f9a8d4",
-                  borderColor: "#ec4899",
-                  color: "#000000",
-                }}
-              >
-                <svg
-                  className="w-3 h-3 text-black"
-                  fill="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path d="M12 2C10.9 2 10 2.9 10 4s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 18h-3v-6h-2v6H9v-6H7v6H4v-8c0-1.1.9-2 2-2h12c1.1 0 2 .9 2 2v8z" />
-                </svg>
-                <span className="hidden sm:inline">Dress Form</span>
-              </button>
 
               <button
                 id="undo-btn"
@@ -7889,60 +7869,6 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
                 }}
               >
                 Reset
-              </button>
-
-              <button
-                type="button"
-                onClick={() => renderSketchFromWorkspace("selected")}
-                className={`${toolbarButtonBaseClass} hidden md:flex`}
-                style={{
-                  backgroundColor: "#fcd34d",
-                  borderColor: "#fbbf24",
-                  color: "#000000",
-                }}
-              >
-                Refine Image
-              </button>
-
-              <button
-                type="button"
-                onClick={() => renderSketchFromWorkspace("selected", "jewelry")}
-                className={`${toolbarButtonBaseClass} hidden md:flex`}
-                style={{
-                  backgroundColor: "#fde68a",
-                  borderColor: "#d97706",
-                  color: "#000000",
-                }}
-              >
-                Refine Jewellery
-              </button>
-
-              <button
-                id="download-btn"
-                onClick={() => handleDownload("png")}
-                className={`${toolbarButtonBaseClass} hidden md:flex`}
-                style={{
-                  backgroundColor: "#c4b5fd",
-                  borderColor: "#8b5cf6",
-                  color: "#000000",
-                }}
-              >
-                Download
-              </button>
-
-              <button
-                id="submit-design-btn"
-                type="button"
-                onClick={() => setShowSubmissionModal(true)}
-                className={`${toolbarButtonBaseClass} hidden md:flex`}
-                style={{
-                  backgroundColor: "#bbf7d0",
-                  borderColor: "#16a34a",
-                  color: "#000000",
-                }}
-                title="Send this design for review: approved designs are shown in the community gallery"
-              >
-                Submit Design
               </button>
 
               <button
@@ -7986,6 +7912,75 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
               >
                 Lock
               </button>
+
+              <button
+                id="dress-form-btn"
+                onClick={() => setShowMannequinModal(true)}
+                className={`${toolbarButtonBaseClass} hover:shadow-lg gap-1 hidden md:flex`}
+                style={{
+                  backgroundColor: "#f9a8d4",
+                  borderColor: "#ec4899",
+                  color: "#000000",
+                }}
+              >
+                <svg
+                  className="w-3 h-3 text-black"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M12 2C10.9 2 10 2.9 10 4s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 18h-3v-6h-2v6H9v-6H7v6H4v-8c0-1.1.9-2 2-2h12c1.1 0 2 .9 2 2v8z" />
+                </svg>
+                <span className="hidden sm:inline">Dress Form</span>
+              </button>
+
+              {/* Refine: a sketch into a finished garment, or into polished jewellery */}
+              <select
+                id="refine-menu"
+                value=""
+                aria-label="Refine"
+                onChange={(e) => {
+                  const choice = e.target.value;
+                  if (choice === "image") renderSketchFromWorkspace("selected");
+                  else if (choice === "jewelry") renderSketchFromWorkspace("selected", "jewelry");
+                }}
+                className={`${toolbarButtonInteractiveClass} hidden md:block cursor-pointer font-black outline-none`}
+                style={{
+                  backgroundColor: "#fcd34d",
+                  borderColor: "#fbbf24",
+                  color: "#000000",
+                }}
+              >
+                <option value="" disabled hidden>
+                  Refine
+                </option>
+                <option value="image">Refine Image</option>
+                <option value="jewelry">Refine Jewellery</option>
+              </select>
+
+              {/* Save: download the design, or submit it for the community gallery */}
+              <select
+                id="save-menu"
+                value=""
+                aria-label="Save"
+                onChange={(e) => {
+                  const choice = e.target.value;
+                  if (choice === "download") handleDownload("png");
+                  else if (choice === "submit") setShowSubmissionModal(true);
+                }}
+                className={`${toolbarButtonInteractiveClass} hidden md:block cursor-pointer font-black outline-none`}
+                style={{
+                  backgroundColor: "#c4b5fd",
+                  borderColor: "#8b5cf6",
+                  color: "#000000",
+                }}
+                title="Download the design, or submit it for review: approved designs are shown in the community gallery"
+              >
+                <option value="" disabled hidden>
+                  Save
+                </option>
+                <option value="download">Download</option>
+                <option value="submit">Submit Design</option>
+              </select>
             </div>
           </div>
         </div>
