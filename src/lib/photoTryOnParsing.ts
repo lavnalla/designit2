@@ -37,7 +37,7 @@ function getWorker(): Worker {
   return worker;
 }
 
-function parseHumanAndPose(image: ImageData): Promise<{ human: Uint8Array; pose: Landmark[] | null }> {
+export function parseHumanAndPose(image: ImageData): Promise<{ human: Uint8Array; pose: Landmark[] | null }> {
   const id = nextId++;
   return new Promise((resolve, reject) => {
     pending.set(id, {

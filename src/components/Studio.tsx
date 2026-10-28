@@ -1411,7 +1411,12 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
     setDetectedSourceFor(null);
     setIsDetectingSourceArticles(true);
     try {
-      const objects = await findSourceObjects(src);
+      const objects = await findSourceObjects(src, (early) => {
+        // (A photo's quick first answer, shown while it's checked for a person and their clothing)
+        if (request !== sourceDetectRequestRef.current) return;
+        setDetectedSourceArticles(early);
+        setDetectedSourceFor(src);
+      });
       if (request !== sourceDetectRequestRef.current) return;
       setDetectedSourceArticles(objects);
       setDetectedSourceFor(src);
@@ -9089,8 +9094,10 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
                 <div className="shrink-0">
                   {isDetectingSourceArticles && (
                     <p className="mb-[clamp(0.35rem,1.2vh,1rem)] flex items-center gap-2 text-[11px] font-bold text-sky-700">
-                      <span className="animate-spin">⏳</span> Finding the
-                      objects in this picture...
+                      <span className="animate-spin">⏳</span>
+                      {detectedSourceArticles.length > 0
+                        ? "Checking for clothing someone is wearing..."
+                        : "Finding the objects in this picture..."}
                     </p>
                   )}
                   {!isDetectingSourceArticles &&

@@ -6,13 +6,17 @@
 //   background is the colour round the picture's edges, and what's like it reaching in from there.
 // - A photo of things on a surface that isn't plain (jewelry on a display bust): what stands out from the
 //   surface by its texture (sparkling stones, metalwork, patterns against smooth suede or a wall).
-// - A photo of a person: the clothing model (garmentSegmenter) finds each garment and accessory (a dress, a top,
-//   shoes, a bag ...), its parts (sleeves, collar, pockets ...) kept with it.
+// - A photo of a person (a face found by the body parser the photo try-on uses): the clothing model
+//   (garmentSegmenter) finds each garment and accessory (a dress, a top, pants, shoes, a bag ...), its parts
+//   (sleeves, collar, pockets ...) kept with it.
 //
 // Clothing a person wears is named by the clothing model (Dress, Shoe, Bag ...); anything else is Item 1, 2 ...
-// The model is only loaded when it's needed, so things on a plain background are found at once.
+// Things on a plain background are found at once, with no model; in a photo the texture's answer comes at once
+// too, while the models (loaded the first time they're needed) check for a person and their clothing.
 
 import { parseFashionClasses } from "./garmentSegmenter";
+import { HUMAN_FACE_SKIN } from "./photoTryOn";
+import { parseHumanAndPose } from "./photoTryOnParsing";
 
 export type SourceObject = {
   id: string;
@@ -45,6 +49,8 @@ const ENCLOSED_BACKGROUND = 0.0008;
 // Parts of one thing this close (fraction of the picture's longer side) are one object (a chain and its
 // pendant, beads on a string)
 const JOIN_GAP = 0.012;
+// A photo has a person in it if at least this much of it is face
+const PERSON_FACE = 0.002;
 // The smallest object kept (fraction of the picture)
 const MIN_OBJECT = 0.002;
 // With no plain background and no clothing: how busy the picture is, measured over this far (fraction of the
@@ -610,56 +616,15 @@ function cutOut(
 }
 
 /** The separate objects in a picture, largest first, each cut out on its own. */
-export async function findSourceObjects(src: string): Promise<SourceObject[]> {
-  const img = await loadImage(src);
-  const fit = Math.min(1, WORK_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
-  const w = Math.max(1, Math.round(img.naturalWidth * fit));
-  const h = Math.max(1, Math.round(img.naturalHeight * fit));
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return [];
-  ctx.drawImage(img, 0, 0, w, h);
-  const { data } = ctx.getImageData(0, 0, w, h);
-
-  // The clothing model sees the picture on white (a see-through background as white, as it was trained on)
-  const parseCanvas = document.createElement("canvas");
-  parseCanvas.width = w;
-  parseCanvas.height = h;
-  const parseCtx = parseCanvas.getContext("2d");
-  if (parseCtx) {
-    parseCtx.fillStyle = "#fff";
-    parseCtx.fillRect(0, 0, w, h);
-    parseCtx.drawImage(canvas, 0, 0);
-  }
-
-  // The clothing model (a big download, a few seconds' work) is used only where it's needed: for the clothes a
-  // person is wearing. It's no use for naming things on their own (it takes a necklace for a top), so those are
-  // Item 1, 2 ...
-  const started = performance.now();
-  const background = plainBackground(data, w, h);
-  let found: Array<{ mask: Uint8Array; classId: number }>;
-  let how: string;
-  if (background) {
-    found = objectsOnPlainBackground(background, w, h).map((mask) => ({ mask, classId: 0 }));
-    how = "plain background";
-  } else {
-    // A photo: what stands out from the surface it's on (jewelry on a display bust: quick, no model); with
-    // nothing like that (a person in a photo runs off its edges), the clothing they're wearing
-    found = objectsByTexture(data, w, h).map((mask) => ({ mask, classId: 0 }));
-    how = "texture";
-    if (!found.length) {
-      const classes = await parseFashionClasses(parseCanvas).catch(() => null);
-      found = classes ? objectsFromClothing(classes, w, h) : [];
-      how = "clothing";
-    }
-  }
-  console.info(
-    `[Source objects] ${how}, ${Math.round(performance.now() - started)} ms: ` +
-      found.map((f) => CLASS_NAMES[f.classId] || "item").join(", "),
-  );
-
+// The objects found, cut out of the full-size picture, largest first; the unnamed ones numbered (Item 1,
+// Item 2 ...), and repeated names too (Shoe 1, Shoe 2)
+function toObjects(
+  img: HTMLImageElement,
+  found: Array<{ mask: Uint8Array; classId: number }>,
+  w: number,
+  h: number,
+): SourceObject[] {
+  const fit = w / img.naturalWidth;
   const objects: Array<SourceObject & { order: number }> = [];
   for (const { mask, classId } of found) {
     const box = { minX: w, minY: h, maxX: -1, maxY: -1 };
@@ -686,7 +651,6 @@ export async function findSourceObjects(src: string): Promise<SourceObject[]> {
       order: pixels,
     });
   }
-  // Largest first; the unnamed ones numbered (Item 1, Item 2 ...), and repeated names too (Shoe 1, Shoe 2)
   objects.sort((a, b) => b.order - a.order);
   const counts = new Map<string, number>();
   for (const o of objects) counts.set(o.label, (counts.get(o.label) ?? 0) + 1);
@@ -705,4 +669,80 @@ export async function findSourceObjects(src: string): Promise<SourceObject[]> {
       pixelCount: o.pixelCount,
     };
   });
+}
+
+// Whether there's a person in the picture: a face (some face skin, as the body parser sees it)
+async function hasPerson(canvas: HTMLCanvasElement): Promise<boolean> {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return false;
+  const { human } = await parseHumanAndPose(ctx.getImageData(0, 0, canvas.width, canvas.height));
+  let face = 0;
+  for (let p = 0; p < human.length; p += 1) if (human[p] === HUMAN_FACE_SKIN) face += 1;
+  return face >= human.length * PERSON_FACE;
+}
+
+/** The separate objects in a picture, largest first, each cut out on its own. A photo's quick first answer
+ * (by texture) is passed to onEarly while the slower checks (is there a person? what are they wearing?) run;
+ * the answer returned is the final one. */
+export async function findSourceObjects(
+  src: string,
+  onEarly?: (objects: SourceObject[]) => void,
+): Promise<SourceObject[]> {
+  const img = await loadImage(src);
+  const fit = Math.min(1, WORK_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+  const w = Math.max(1, Math.round(img.naturalWidth * fit));
+  const h = Math.max(1, Math.round(img.naturalHeight * fit));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return [];
+  ctx.drawImage(img, 0, 0, w, h);
+  const { data } = ctx.getImageData(0, 0, w, h);
+
+  // The models see the picture on white (a see-through background as white, as they were trained on)
+  const parseCanvas = document.createElement("canvas");
+  parseCanvas.width = w;
+  parseCanvas.height = h;
+  const parseCtx = parseCanvas.getContext("2d");
+  if (parseCtx) {
+    parseCtx.fillStyle = "#fff";
+    parseCtx.fillRect(0, 0, w, h);
+    parseCtx.drawImage(canvas, 0, 0);
+  }
+
+  const started = performance.now();
+  const report = (how: string, found: Array<{ classId: number }>) =>
+    console.info(
+      `[Source objects] ${how}, ${Math.round(performance.now() - started)} ms: ` +
+        found.map((f) => CLASS_NAMES[f.classId] || "item").join(", "),
+    );
+
+  // Things on a plain background: found at once, no model
+  const background = plainBackground(data, w, h);
+  if (background) {
+    const found = objectsOnPlainBackground(background, w, h).map((mask) => ({ mask, classId: 0 }));
+    report("plain background", found);
+    return toObjects(img, found, w, h);
+  }
+
+  // A photo. What stands out from the surface it's on, by its texture, is the quick answer (jewelry on a
+  // display bust), shown while the slower checks run: whether there's a person, and what the clothing model
+  // finds. A person's clothing is the answer when there's a person (the texture of hair and arms isn't
+  // anything); with no person, the texture's answer stands (the clothing model takes a display bust for a top),
+  // and only if it found nothing is the clothing model's (a garment on its own, too plain to stand out).
+  const byTexture = objectsByTexture(data, w, h).map((mask) => ({ mask, classId: 0 }));
+  const early = toObjects(img, byTexture, w, h);
+  if (early.length) onEarly?.(early);
+  const [person, classes] = await Promise.all([
+    hasPerson(parseCanvas).catch(() => false),
+    parseFashionClasses(parseCanvas).catch(() => null),
+  ]);
+  const byClothing = classes ? objectsFromClothing(classes, w, h) : [];
+  if ((person || !byTexture.length) && byClothing.length) {
+    report(person ? "clothing (a person)" : "clothing (nothing by texture)", byClothing);
+    return toObjects(img, byClothing, w, h);
+  }
+  report(person ? "texture (a person, no clothing)" : "texture", byTexture);
+  return early;
 }
