@@ -79,9 +79,24 @@ export default function LandingPage() {
 
   const goldButton =
     "inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#c9973b] via-[#f3d98b] to-[#c9973b] px-7 py-3.5 text-[11px] font-black uppercase tracking-[0.18em] text-[#0f1a3a] shadow-[0_10px_40px_rgba(212,166,74,0.35)] transition-transform hover:scale-[1.03]";
-  const ghostButton =
-    "inline-flex items-center gap-2 rounded-full border border-white/25 px-7 py-3.5 text-[11px] font-black uppercase tracking-[0.18em] text-white/90 transition-colors hover:border-[#f3d98b] hover:text-[#f3d98b]";
   const eyebrow = "text-[11px] font-black uppercase tracking-[0.32em] text-[#c9973b]";
+
+  // The hero's highlighted badge: the diamond necklace turned into the emerald one
+  const diamondsBadge = (
+    <div className="flex items-center gap-3 rounded-2xl border-2 border-[#d4a64a] bg-white p-2.5 pr-4 shadow-[0_0_0_5px_rgba(243,217,139,0.35),0_18px_44px_rgba(212,166,74,0.4)]">
+      <img src="/home-step2-cutout.png" alt="" className="h-11 w-11 rounded-xl bg-slate-50 object-contain p-1" />
+      <ArrowRight size={14} className="text-[#a37625]" aria-hidden />
+      <img src="/home-step2-designed.png" alt="" className="h-11 w-11 rounded-xl bg-emerald-50 object-contain p-1" />
+      <span className="flex items-center gap-1.5 text-[10px] font-black uppercase leading-tight tracking-[0.14em] text-[#0f1a3a]">
+        <Sparkles size={14} className="shrink-0 text-[#c9973b]" aria-hidden />
+        <span>
+          Diamonds
+          <br />
+          <span className="text-[#047857]">to emeralds</span>
+        </span>
+      </span>
+    </div>
+  );
 
   return (
     <div className="font-sans text-slate-900">
@@ -105,37 +120,46 @@ export default function LandingPage() {
         </div>
       )}
 
-      {/* ——— Hero: sapphire, gold and emerald, the look that hits you first ——— */}
-      <section className="relative overflow-hidden text-white" style={{ background: HERO_BACKDROP }}>
-        {/* (Fine gold lines across, like a jeweller's case) */}
-        <div
-          className="pointer-events-none absolute inset-0 opacity-[0.07]"
-          style={{ backgroundImage: "repeating-linear-gradient(115deg, #f3d98b 0 1px, transparent 1px 60px)" }}
-          aria-hidden
-        />
-        <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-5 py-14 md:px-10 lg:grid-cols-[1.05fr_0.95fr] lg:py-24">
+      {/* ——— Hero: white, with a ribbon of jewel colours sweeping down behind the picture ——— */}
+      {/* (On a wide screen it's exactly the window under the header: the picture fills what the band of words
+          at the bottom leaves, so nothing is cut off and nothing needs scrolling) */}
+      <section className="relative overflow-hidden bg-white text-[#0f1a3a] lg:flex lg:h-[calc(100svh-95px)] lg:min-h-[34rem] lg:flex-col">
+        <div className="pointer-events-none absolute inset-0" aria-hidden>
+          {/* (Filling the space beside the picture, from its edge to the window's, top to bottom) */}
+          <div className="hero-ribbon-glow absolute -right-16 top-0 h-full w-[24rem] rotate-[-18deg]" />
+          <div className="hero-ribbon absolute -right-48 -top-[14rem] h-[calc(100%+28rem)] w-[30rem] rotate-[-18deg] opacity-40 lg:-right-32 lg:opacity-90 xl:-right-24" />
+        </div>
+        {/* The picture is the star: it takes most of the width; the words sit small at its side. On a wide screen
+            it's in the middle of the page: the words to its left, the ribbon to its right */}
+        <div className="relative mx-auto grid w-full max-w-6xl items-center gap-10 px-5 py-12 md:px-10 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(23rem,0.8fr)_1.2fr] lg:py-5 xl:max-w-7xl xl:grid-cols-[1fr_auto_1fr]">
           <div>
-            <p className={eyebrow}>✦ Your atelier, in the browser</p>
-            <h1 className={`${cormorant.className} mt-5 text-[3.4rem] font-semibold leading-[0.92] tracking-tight sm:text-7xl lg:text-[5.6rem]`}>
+            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#a37625]">✦ Your atelier, in the browser</p>
+            <h1 className={`${cormorant.className} mt-4 text-[2.8rem] font-semibold leading-[0.95] tracking-tight sm:text-6xl lg:text-[3.6rem]`}>
               Design it.
               <br />
-              <span className="text-gold-shimmer italic">Wear it.</span>
+              <span className="text-jewel-shimmer italic">Wear it.</span>
               <br />
               Own the look.
             </h1>
-            <p className="mt-7 max-w-md text-base leading-7 text-white/75 md:text-lg md:leading-8">
+            <p className="mt-5 max-w-sm text-sm leading-6 text-slate-600 md:text-[15px] md:leading-7">
               Turn any picture into your own jewellery or outfit. Redraw it, recolour it, set it with gems, then see it
               on you: live on camera, or on your photo.
             </p>
-            <div className="mt-9 flex flex-wrap gap-3">
-              <Link href="/studio" className={goldButton}>
-                Start designing <ArrowRight size={15} />
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link
+                href="/studio"
+                className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#c9973b] via-[#f3d98b] to-[#c9973b] px-5 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-[#0f1a3a] shadow-[0_10px_40px_rgba(212,166,74,0.35)] transition-transform hover:scale-[1.03]"
+              >
+                Start designing <ArrowRight size={14} />
               </Link>
-              <a href="#how-it-works" className={ghostButton}>
+              <a
+                href="#how-it-works"
+                className="inline-flex items-center gap-2 rounded-full border border-[#0f1a3a]/20 bg-white/70 px-5 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-[#0f1a3a] backdrop-blur transition-colors hover:border-[#a37625] hover:text-[#a37625]"
+              >
                 See how it works
               </a>
             </div>
-            <ul className="mt-9 flex flex-wrap gap-x-6 gap-y-2 text-[11px] font-bold uppercase tracking-[0.2em] text-white/55">
+            <ul className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">
               {["Free", "No sign-up", "Nothing to install"].map((item) => (
                 <li key={item} className="flex items-center gap-2">
                   <span className="h-1 w-1 rounded-full bg-[#c9973b]" aria-hidden />
@@ -146,40 +170,40 @@ export default function LandingPage() {
           </div>
 
           {/* The finished look: the runway photo in an arch, the emerald necklace floating in front */}
-          <div className="relative mx-auto h-[28rem] w-full max-w-[30rem] sm:h-[34rem]">
-            <div className="absolute right-0 top-0 h-full w-[74%] overflow-hidden rounded-t-[999px] border border-[#c9973b]/50 shadow-[0_0_80px_rgba(16,185,129,0.25)]">
+          {/* (On a wide screen it's as tall as the space the hero leaves it, and as wide as keeps its shape) */}
+          {/* (On a wide screen it's just the arch, centred; the necklace floats out to its right, over the ribbon) */}
+          <div className="relative mx-auto h-[32rem] w-full max-w-[44rem] sm:h-[40rem] lg:aspect-[22/23] lg:h-full lg:max-h-[46rem] lg:w-auto lg:max-w-full lg:-translate-x-16 xl:aspect-[71/100] xl:translate-x-0">
+            <div className="absolute left-1/2 top-0 h-full w-[74%] -translate-x-1/2 overflow-hidden rounded-t-[999px] border-4 border-white shadow-[0_30px_80px_rgba(15,26,58,0.25)] xl:w-full">
               <img
                 src="/home-step3-tryon.jpg"
                 alt="A model on a runway wearing an emerald necklace designed in DesignIt"
                 className="h-full w-full object-cover object-top"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#0c1633]/70 via-transparent to-transparent" aria-hidden />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/25 via-transparent to-transparent" aria-hidden />
             </div>
             <img
               src="/home-hero-necklace.png"
               alt="The emerald necklace, redesigned from a diamond necklace"
-              className="animate-float-soft absolute -left-2 bottom-8 w-[64%] drop-shadow-[0_18px_40px_rgba(16,185,129,0.55)]"
+              className="animate-float-soft absolute -left-2 bottom-8 w-[64%] drop-shadow-[0_18px_40px_rgba(16,185,129,0.55)] lg:left-[5%] xl:-right-[30%] xl:left-auto xl:w-[86%]"
             />
-            <div className="absolute left-0 top-6 flex items-center gap-3 rounded-2xl border border-white/15 bg-white/10 p-2.5 pr-4 backdrop-blur-md">
-              <img src="/home-step2-cutout.png" alt="" className="h-11 w-11 rounded-xl bg-white object-contain p-1" />
-              <ArrowRight size={14} className="text-[#f3d98b]" aria-hidden />
-              <img src="/home-step2-designed.png" alt="" className="h-11 w-11 rounded-xl bg-white object-contain p-1" />
-              <span className="text-[10px] font-bold uppercase leading-tight tracking-[0.14em] text-white/80">
-                Diamonds
-                <br />
-                to emeralds
-              </span>
+            {/* The badge on the photo's top left corner, half out over the space beside it, clear of the model's
+                face (on a phone, at the bottom right over the runway) */}
+            <div className="absolute bottom-4 right-0 z-10 lg:bottom-auto lg:right-auto lg:left-0 lg:top-0 lg:-translate-x-[40%] xl:top-4 xl:-translate-x-1/2">
+              {diamondsBadge}
             </div>
           </div>
+
+          {/* (On a wide screen: the empty third column that keeps the picture in the middle of the page) */}
+          <div className="hidden xl:block" aria-hidden />
         </div>
 
         {/* Everything it works with, scrolling by */}
-        <div className="relative overflow-hidden border-y border-[#c9973b]/30 bg-[#081026]/60 py-4" aria-hidden>
+        <div className="relative shrink-0 overflow-hidden border-y border-slate-200 bg-white/80 py-4 backdrop-blur" aria-hidden>
           <div className="animate-marquee flex w-max gap-10 whitespace-nowrap">
             {[...MARQUEE, ...MARQUEE, ...MARQUEE, ...MARQUEE].map((word, i) => (
               <span
                 key={i}
-                className={`${cormorant.className} flex items-center gap-10 text-2xl italic text-[#f3d98b]/85`}
+                className={`${cormorant.className} flex items-center gap-10 text-2xl italic text-[#0f1a3a]/70`}
               >
                 {word}
                 <Sparkles size={14} className="text-[#c9973b]" />
@@ -190,7 +214,7 @@ export default function LandingPage() {
       </section>
 
       {/* ——— How it works: three steps, one necklace from a photo to the runway ——— */}
-      <section id="how-it-works" className="scroll-mt-20 bg-[#faf6ef] px-5 py-20 md:px-10 md:py-28">
+      <section id="how-it-works" className="scroll-mt-20 bg-white px-5 py-20 md:px-10 md:py-28">
         <div className="mx-auto max-w-6xl">
           <div className="mx-auto max-w-2xl text-center">
             <p className={eyebrow}>How it works</p>
@@ -201,11 +225,9 @@ export default function LandingPage() {
 
           <div className="mt-16 flex flex-col gap-20 md:gap-28">
             {STEPS.map((step, index) => (
-              <div
-                key={step.num}
-                className={`grid items-center gap-10 md:grid-cols-2 md:gap-16 ${index % 2 ? "md:[&>*:first-child]:order-2" : ""}`}
-              >
-                <div>
+              // Each step down the middle: its number, title and words centred, the picture centred below
+              <div key={step.num} className="mx-auto flex w-full max-w-3xl flex-col items-center gap-10 text-center">
+                <div className="flex flex-col items-center">
                   <span
                     className={`${cormorant.className} block text-[6.5rem] font-bold leading-none text-transparent md:text-[9rem]`}
                     style={{ WebkitTextStroke: "1.5px #c9973b" }}
@@ -216,8 +238,8 @@ export default function LandingPage() {
                   <h3 className={`${cormorant.className} mt-1 text-4xl font-semibold text-[#0f1a3a] md:text-5xl`}>
                     {step.title}
                   </h3>
-                  <p className="mt-5 max-w-md text-base leading-8 text-slate-600">{step.body}</p>
-                  <div className="mt-6 flex flex-wrap gap-2">
+                  <p className="mt-5 max-w-xl text-base leading-8 text-slate-600">{step.body}</p>
+                  <div className="mt-6 flex flex-wrap justify-center gap-2">
                     {step.tags.map((tag) => (
                       <span
                         key={tag}
@@ -229,11 +251,11 @@ export default function LandingPage() {
                   </div>
                 </div>
 
-                <div className="relative">
+                <div className="relative w-full text-left">
                   <div className="absolute -inset-3 rounded-[2rem] bg-gradient-to-br from-[#f3d98b]/40 via-transparent to-[#10b981]/20 blur-xl" aria-hidden />
                   <div className="relative overflow-hidden rounded-[1.75rem] border border-[#c9973b]/30 bg-white shadow-[0_30px_70px_rgba(12,22,51,0.15)]">
                     {index === 0 && (
-                      <div className="flex justify-center bg-gradient-to-b from-[#f3ece2] to-white py-6">
+                      <div className="flex justify-center bg-gradient-to-b from-slate-50 to-white py-6">
                         <img
                           src="/home-step1-source.png"
                           alt="The studio's Source window: a photo of a diamond necklace on a display bust, the necklace found and outlined"
@@ -323,7 +345,7 @@ export default function LandingPage() {
       </section>
 
       {/* ——— The community ——— */}
-      <section className="bg-[#faf6ef] px-5 pt-20 md:px-10 md:pt-28">
+      <section className="bg-white px-5 pt-20 md:px-10 md:pt-28">
         <div className="mx-auto max-w-6xl">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
@@ -344,7 +366,7 @@ export default function LandingPage() {
       </section>
 
       {homepageAdSlot && (
-        <section className="bg-[#faf6ef] px-5 pt-14 md:px-10" aria-label="Advertisement">
+        <section className="bg-white px-5 pt-14 md:px-10" aria-label="Advertisement">
           <div className="mx-auto max-w-5xl rounded-2xl border border-[#e8dccb] bg-white p-4">
             <p className="mb-3 text-center text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">Sponsored</p>
             <AdSlot slot={homepageAdSlot} className="mx-auto min-h-[90px]" style={{ minHeight: 90 }} />
@@ -353,7 +375,7 @@ export default function LandingPage() {
       )}
 
       {/* ——— Questions ——— */}
-      <section className="bg-[#faf6ef] px-5 py-20 md:px-10 md:py-28">
+      <section className="bg-white px-5 py-20 md:px-10 md:py-28">
         <div className="mx-auto max-w-3xl">
           <div className="text-center">
             <p className={eyebrow}>Questions</p>

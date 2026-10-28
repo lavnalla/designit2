@@ -20,9 +20,14 @@ import { adminHeaders } from "../lib/adminAuth";
 import { parseFashionClasses } from "../lib/garmentSegmenter";
 import { findSourceObjects, preloadSourceObjectModels } from "../lib/sourceObjects";
 import { toParseCanvas } from "../lib/photoTryOnParsing";
+import { outlineDotsOf } from "../lib/outlineDots";
+import { fabricRegionAt } from "../lib/fabricRegion";
 import { isGarmentClass } from "../lib/photoTryOn";
 import BodySilhouetteView from "./BodySilhouetteView";
 import MobileScrollbars, { SCROLLBAR_SCREENS } from "./MobileScrollbars";
+
+// How far apart (in workspace pixels) the dots around an object added to the workspace are
+const OUTLINE_DOT_SPACING = 30;
 
 const MOBILE_BREAKPOINT = 1024;
 
@@ -218,6 +223,9 @@ interface FabricLayer {
   // The fabric's own size (drawn at it, centred on the area); absent: stretched over the whole item
   naturalWidth?: number;
   naturalHeight?: number;
+  // The piece of fabric it replaces (white where it goes, over the whole item; from fabricRegionAt), when it
+  // was pasted onto the fabric under the cursor: only there, not the whole area
+  maskSrc?: string;
 }
 // Where pasted fabric is drawn over an area: filling it, with its own proportions kept (scaled evenly until it
 // covers the area, centred, the overflow cropped off by the area's clip: never stretched or tiled); without a
@@ -1294,6 +1302,8 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
   const [showFabricDropdown, setShowFabricDropdown] = useState(false);
   const [showPenStrokeDropdown, setShowPenStrokeDropdown] = useState(false);
   const [isFabricLoading, setIsFabricLoading] = useState(false);
+  // While the piece of fabric under the cursor is being found, for Replace Fabric Here (hourglass)
+  const [isFindingFabric, setIsFindingFabric] = useState(false);
   const [globalShowDots, setGlobalShowDots] = useState(true);
   const [isLocked, setIsLocked] = useState(false);
   const [strokes, setStrokes] = useState<Stroke[]>([]);
@@ -1456,22 +1466,21 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
           imgDims.width ? (300 * article.bounds.width) / imgDims.width : 300,
         ),
       );
+      const scale = dims.width ? shownWidth / dims.width : 1;
+      // (All around the object's own outline, OUTLINE_DOT_SPACING apart on the workspace, not the corners of
+      // its picture)
+      const dots = outlineDotsOf(img, dims.width, dims.height, OUTLINE_DOT_SPACING / scale);
       saveForUndo();
       setWorkspaceShapes((prev) => [
         ...prev,
         {
           id: `s-${Date.now()}`,
           img: article.imageDataUrl,
-          dots: [
-            { id: `p1`, x: 0, y: 0 },
-            { id: `p2`, x: dims.width, y: 0 },
-            { id: `p3`, x: dims.width, y: dims.height },
-            { id: `p4`, x: 0, y: dims.height },
-          ],
+          dots,
           dims,
           // (Each one added a little apart from the last, not all on top of each other)
           position: { x: 100 + (prev.length % 6) * 30, y: 100 + (prev.length % 6) * 30 },
-          scale: dims.width ? shownWidth / dims.width : 1,
+          scale,
           showDots: true,
           erasedPaths: [],
           clipUpdate: Date.now(),
@@ -1539,12 +1548,7 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
           const opened: DistortableShape = {
             id: `opened-design-${design.id}-${Date.now()}`,
             img: design.imageData,
-            dots: [
-              { id: "tl", x: 0, y: 0 },
-              { id: "tr", x: width, y: 0 },
-              { id: "br", x: width, y: height },
-              { id: "bl", x: 0, y: height },
-            ],
+            dots: outlineDotsOf(img, width, height, OUTLINE_DOT_SPACING),
             dims: { width, height },
             position: { x: 40, y: 40 },
             scale: 1,
@@ -4994,8 +4998,9 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
     setContextMenu(null);
   }, [selectionRect, buildSelectionClone]);
 
+  // (With a point on a picture, in workspace coordinates: just the piece of fabric found there is replaced)
   const pasteFabricToSelection = useCallback(
-    async (target?: { type: "shape" | "stroke"; id: string }) => {
+    async (target?: { type: "shape" | "stroke"; id: string; point?: { x: number; y: number } }) => {
       if (!fabricClipboardSrc) {
         return;
       }
@@ -5180,6 +5185,40 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
           targetStrokes.map((st) => [st.id, strokePasteAreaOf(st)]),
         );
 
+        // Pasted at a point on a picture: the piece of fabric there (a dress's body, a skirt ...) is found and
+        // only it is replaced; if nothing's found there, the whole picture is, as before
+        const regionMasks = new Map<string, string>();
+        if (target?.type === "shape" && target.point && targetShapes.length === 1) {
+          const shape = targetShapes[0];
+          setIsFindingFabric(true);
+          try {
+            await waitForPaint();
+            const shapeImage = await loadImage(shape.img);
+            // (The point in the picture's own pixels: off its position and scale, and turned back by its rotation)
+            const scale = Math.max(0.1, shape.scale);
+            const lx = (target.point.x - shape.position.x) / scale;
+            const ly = (target.point.y - shape.position.y) / scale;
+            const turn = (-(shape.rotation || 0) * Math.PI) / 180;
+            const cx = shape.dims.width / 2;
+            const cy = shape.dims.height / 2;
+            const region = await fabricRegionAt(
+              shapeImage,
+              shape.dims.width,
+              shape.dims.height,
+              cx + (lx - cx) * Math.cos(turn) - (ly - cy) * Math.sin(turn),
+              cy + (lx - cx) * Math.sin(turn) + (ly - cy) * Math.cos(turn),
+            );
+            if (region) {
+              shapePasteAreas.set(shape.id, region.area);
+              regionMasks.set(shape.id, region.maskSrc);
+            }
+          } catch (regionError) {
+            console.warn("Finding the fabric under the cursor failed; pasting over the whole picture.", regionError);
+          } finally {
+            setIsFindingFabric(false);
+          }
+        }
+
         // The fabric grown to each item's size on screen, from the copied swatch at its own scale (same
         // weave, print and colours: not stretched, not tiled)
         const MAX_FABRIC_SIDE = 2400;
@@ -5236,6 +5275,9 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
 
             const fabricPasteArea = shapePasteAreas.get(shape.id);
             const fabric = grownFabric.get(shape.id) ?? fallbackFabric;
+            // (Pasted onto the piece of fabric under the cursor: a layer of its own, like an area paste)
+            const regionMask = regionMasks.get(shape.id);
+            const asLayer = !!selectionBounds || !!regionMask;
 
             if (isAreaPaste && !fabricPasteArea) {
               return shape;
@@ -5273,7 +5315,7 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
                     ]
                   : [];
             const nextLayers =
-              selectionBounds && fabricPasteArea
+              asLayer && fabricPasteArea
                 ? [
                     ...existingLayers,
                     {
@@ -5281,6 +5323,7 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
                       area: fabricPasteArea,
                       naturalWidth: fabric.width,
                       naturalHeight: fabric.height,
+                      maskSrc: regionMask,
                     },
                   ]
                 : undefined;
@@ -5291,8 +5334,8 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
               fabricFillWidth: fabric.width,
               fabricFillHeight: fabric.height,
               fabricPasteArea,
-              fabricPasteAreas: selectionBounds ? nextAreas : undefined,
-              fabricLayers: selectionBounds ? nextLayers : undefined,
+              fabricPasteAreas: asLayer ? nextAreas : undefined,
+              fabricLayers: asLayer ? nextLayers : undefined,
               baseFill: undefined,
               fillColor: undefined,
               clothType: undefined,
@@ -8101,6 +8144,12 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
               )}
             </div>
           )}
+          {/* Hourglass while the fabric under the cursor is found (Replace Fabric Here) */}
+          {isFindingFabric && (
+            <div className="pointer-events-none fixed inset-0 z-[300]">
+              <ProcessingHourglass message="Finding the fabric where you clicked…" dim={false} />
+            </div>
+          )}
           {contextMenu && (
             <div
               className="fixed z-[300] bg-white border border-slate-200 shadow-2xl rounded-2xl overflow-hidden py-1 min-w-[140px]"
@@ -8323,18 +8372,31 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
                     onClick={() => {
                       if (contextMenu.type === "selection") {
                         pasteFabricToSelection();
-                      } else {
-                        const targetType: "shape" | "stroke" =
-                          contextMenu.type === "stroke" ? "stroke" : "shape";
+                      } else if (contextMenu.type === "shape") {
+                        // (On a picture: just the piece of fabric where it was right-clicked)
                         pasteFabricToSelection({
-                          type: targetType,
+                          type: "shape",
+                          id: contextMenu.id,
+                          point:
+                            contextMenu.clickX !== undefined && contextMenu.clickY !== undefined
+                              ? { x: contextMenu.clickX, y: contextMenu.clickY }
+                              : undefined,
+                        });
+                      } else {
+                        pasteFabricToSelection({
+                          type: "stroke",
                           id: contextMenu.id,
                         });
                       }
                     }}
+                    title={
+                      contextMenu.type === "shape"
+                        ? "Replace the fabric where you right-clicked with the copied fabric"
+                        : undefined
+                    }
                     className="w-full text-left px-4 py-2 hover:bg-cyan-50 text-[9px] font-black uppercase border-b border-slate-100 text-cyan-700"
                   >
-                    🧵 Paste Fabric
+                    {contextMenu.type === "shape" ? "🧵 Replace Fabric Here" : "🧵 Paste Fabric"}
                   </button>
                 )}
 
@@ -10906,6 +10968,24 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
                                 setSelectedShapeId(shape.id);
                               }}
                             />
+                            {/* Pasted fabric takes the object's own shape (its visible pixels), replacing its
+                                material, not the rectangle of its picture */}
+                            {(shape.fabricFillSrc || shapeFabricLayers.length > 0) && (
+                              <defs>
+                                <mask
+                                  id={`ms-shape-${shape.id}`}
+                                  maskUnits="userSpaceOnUse"
+                                  x="0"
+                                  y="0"
+                                  width={shape.dims.width}
+                                  height={shape.dims.height}
+                                  style={{ maskType: "alpha" }}
+                                >
+                                  <image href={shape.img} width={shape.dims.width} height={shape.dims.height} />
+                                </mask>
+                              </defs>
+                            )}
+                            <g mask={shape.fabricFillSrc || shapeFabricLayers.length > 0 ? `url(#ms-shape-${shape.id})` : undefined}>
                             {shape.fabricFillSrc &&
                               shapeFabricLayers.length === 0 && (
                                 <>
@@ -10954,13 +11034,23 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
                                         height={shape.dims.height}
                                         fill="black"
                                       />
-                                      <rect
-                                        x={layer.area.x}
-                                        y={layer.area.y}
-                                        width={layer.area.width}
-                                        height={layer.area.height}
-                                        fill="white"
-                                      />
+                                      {/* (Just the piece of fabric it replaces, or its whole area) */}
+                                      {layer.maskSrc ? (
+                                        <image
+                                          href={layer.maskSrc}
+                                          width={shape.dims.width}
+                                          height={shape.dims.height}
+                                          preserveAspectRatio="none"
+                                        />
+                                      ) : (
+                                        <rect
+                                          x={layer.area.x}
+                                          y={layer.area.y}
+                                          width={layer.area.width}
+                                          height={layer.area.height}
+                                          fill="white"
+                                        />
+                                      )}
                                       {shape.erasedPaths &&
                                         shape.erasedPaths.map((p, j) => (
                                           <path
@@ -11007,6 +11097,7 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
                                 })}
                               </>
                             )}
+                            </g>
                             {shape.baseFill && (
                               <path
                                 d={generatePathData(shape.dots, true)}
