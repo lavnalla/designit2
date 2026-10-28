@@ -52,6 +52,16 @@ let sessionPromise: Promise<import("onnxruntime-web").InferenceSession> | null =
 
 async function getOrt() {
   if (!ortModulePromise) {
+    // (This version of onnxruntime-web asks the graphics card for its details with requestAdapterInfo(), which
+    // newer browsers have replaced with an info property: without it, it quietly gives up on the graphics card)
+    if (hasWebGpu()) {
+      const adapter = (globalThis as { GPUAdapter?: { prototype: Record<string, unknown> } }).GPUAdapter?.prototype;
+      if (adapter && typeof adapter.requestAdapterInfo !== "function") {
+        adapter.requestAdapterInfo = function (this: { info?: unknown }) {
+          return Promise.resolve(this.info ?? {});
+        };
+      }
+    }
     ortModulePromise = (hasWebGpu() ? import("onnxruntime-web/webgpu") : import("onnxruntime-web")).then((ort) => {
       // onnxruntime-web needs its .wasm runtime files; load them from the
       // same CDN pattern already used elsewhere in this app for MediaPipe's

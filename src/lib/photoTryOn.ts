@@ -106,6 +106,10 @@ const SLEEVE_LIFT_STEP = 0.05;
 const SKIN_EDGE_SHADE = 0.22;
 // The most grain painted skin gets (the spread of its brightness), however grainy the photo's real skin is
 const SKIN_GRAIN_MAX = 0.06;
+// How thick a leg is painted where its clothes come off (half its width, as a fraction of the distance between
+// the hip joints): the thigh, and the calf
+const THIGH_SKIN = 0.32;
+const CALF_SKIN = 0.2;
 // A body (or garment) tilted less than this (radians, about 8 degrees) is treated as upright
 const UPRIGHT_TOLERANCE = 0.14;
 
@@ -624,6 +628,9 @@ function bodyZones(body: Body, w: number, h: number, human?: Uint8Array) {
   // The arms as thick as they really are (for painting them bare): the upper arm a little thicker than the
   // forearm
   const armSkin = new Uint8Array(n);
+  // ... and the legs as thick as they really are, likewise (where a long skirt or a saree comes off, what it
+  // covered beside the legs is background, not leg)
+  const legSkin = new Uint8Array(n);
   const skinRoundness = new Float32Array(n).fill(1);
   for (const arm of [body.arms.left, body.arms.right]) {
     const armArea = arm === body.arms.left ? 1 : 2;
@@ -643,8 +650,10 @@ function bodyZones(body: Body, w: number, h: number, human?: Uint8Array) {
     const hipWidth = len(sub(body.hips.right, body.hips.left));
     for (const leg of [body.legs.left, body.legs.right]) {
       if (leg.knee) {
-        capsules.push({ a: leg.hip, b: leg.knee, r: hipWidth * 0.6, skinR: hipWidth * 0.6, arm: false, area: 4 });
-        if (leg.ankle) capsules.push({ a: leg.knee, b: leg.ankle, r: hipWidth * 0.38, skinR: hipWidth * 0.38, arm: false, area: 4 });
+        capsules.push({ a: leg.hip, b: leg.knee, r: hipWidth * 0.6, skinR: hipWidth * THIGH_SKIN, arm: false, area: 4 });
+        if (leg.ankle) {
+          capsules.push({ a: leg.knee, b: leg.ankle, r: hipWidth * 0.38, skinR: hipWidth * CALF_SKIN, arm: false, area: 4 });
+        }
       }
     }
   }
@@ -699,13 +708,14 @@ function bodyZones(body: Body, w: number, h: number, human?: Uint8Array) {
           armSkin[q] = 1;
           armRound = Math.max(armRound, curve(d, c.skinR));
         }
+        if (!c.arm && d <= c.skinR) legSkin[q] = 1;
       }
       if (inBody[q]) roundness[q] = round;
       // (Painted bare, an arm in front of the torso is shaded as its own, so its edges show against the body)
       skinRoundness[q] = armRound >= 0 ? armRound : roundness[q];
     }
   }
-  return { inBody, inArm, inTorso, armSkin, roundness, skinRoundness, area };
+  return { inBody, inArm, inTorso, armSkin, legSkin, roundness, skinRoundness, area };
 }
 
 // --- parts ---
@@ -1735,7 +1745,7 @@ export function tryOnGarment(person: PhotoParse, garment: PhotoParse): { image: 
   {
     // Where bare body goes when clothes come off: the torso, the arms as thick as they really are, the legs
     // (the rest of a loose garment's outline was air around the body: background)
-    const isBody = (p: number) => zones.inTorso[p] === 1 || zones.armSkin[p] === 1 || zones.area[p] === 4;
+    const isBody = (p: number) => zones.inTorso[p] === 1 || zones.armSkin[p] === 1 || zones.legSkin[p] === 1;
     const toSkin = new Uint8Array(n);
     const toBackground = new Uint8Array(n);
     let anyBackground = false;
@@ -1804,6 +1814,28 @@ export function tryOnGarment(person: PhotoParse, garment: PhotoParse): { image: 
           toSkin[p] = 1;
         }
       }
+    }
+    if (anyBackground) {
+      const edge = Math.max(1, Math.round(sw * 0.008));
+      const grown = new Uint8Array(toBackground);
+      for (let y = 0; y < h; y += 1) {
+        for (let x = 0; x < w; x += 1) {
+          const p = y * w + x;
+          if (toBackground[p] || toSkin[p]) continue;
+          const c = person.human[p];
+          if (c === HUMAN_BODY_SKIN || c === HUMAN_FACE_SKIN || c === HUMAN_HAIR) continue;
+          let near = false;
+          for (let dy = -edge; dy <= edge && !near; dy += 1) {
+            for (let dx = -edge; dx <= edge && !near; dx += 1) {
+              const nx = x + dx;
+              const ny = y + dy;
+              if (nx >= 0 && ny >= 0 && nx < w && ny < h && toBackground[ny * w + nx]) near = true;
+            }
+          }
+          if (near) grown[p] = 1;
+        }
+      }
+      toBackground.set(grown);
     }
     paintSkin(out, P, person.human, zones, toSkin);
     if (anyBackground) {

@@ -1934,6 +1934,8 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
   const [fitStatus, setFitStatus] = useState<"idle" | "working" | "done" | "failed">("idle");
   const [fitError, setFitError] = useState<string | null>(null);
   const [showFitted, setShowFitted] = useState(false);
+  // A webcam still waiting to be fitted
+  const [snapshotPending, setSnapshotPending] = useState(false);
   // Bumped whenever the photo or garment changes, so a drape still running for the old ones is dropped
   const fitRequestRef = useRef(0);
 
@@ -2835,6 +2837,33 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
       });
   };
 
+  // On the webcam: a still of the camera, fitted the way a photo is (a fit takes seconds, too long for live
+  // video). The live view carries on behind it, for "back to live" or another still.
+  const handleSnapshotFit = () => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth) return;
+    const still = document.createElement("canvas");
+    still.width = video.videoWidth;
+    still.height = video.videoHeight;
+    still.getContext("2d")?.drawImage(video, 0, 0);
+    fitRequestRef.current += 1;
+    setPhotoOriginal(toParseCanvas(still));
+    setFittedResultUrl(null);
+    setFitError(null);
+    setFitStatus("idle");
+    setShowFitted(true);
+    setSnapshotPending(true);
+  };
+
+  // (The fit starts once the still is in place)
+  useEffect(() => {
+    if (inputSource !== "webcam" || !snapshotPending || !photoOriginal || fitStatus !== "idle") return;
+    setSnapshotPending(false);
+    startFit();
+    // startFit reads the state listed here
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputSource, snapshotPending, photoOriginal, fitStatus]);
+
   // The button switches between the fitted photo and the live overlay
   const handleFitGarment = () => {
     if (showFitted) {
@@ -3366,6 +3395,39 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
                 )}
               </>
             )}
+            {inputSource === "webcam" && mode === "garment" && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "12px",
+                  left: "12px",
+                  zIndex: 4,
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  gap: "8px"
+                }}
+              >
+                {showFitted && (
+                  <button onClick={() => setShowFitted(false)} style={mobileControlActionButtonStyle}>
+                    {"↩ Back to live"}
+                  </button>
+                )}
+                <button
+                  onClick={handleSnapshotFit}
+                  disabled={fitStatus === "working"}
+                  title="Take a still from the camera and fit the garment onto you in it, shaped to your body"
+                  style={mobileControlActionButtonStyle}
+                >
+                  {showFitted ? "📸 New snapshot" : "📸 Fit to a snapshot"}
+                </button>
+                {showFitted && fitStatus === "failed" && (
+                  <span style={{ ...mobileControlActionButtonStyle, fontWeight: "normal" }}>
+                    {`Couldn't fit the garment: ${fitError}`}
+                  </span>
+                )}
+              </div>
+            )}
             {showFitted && fitStatus === "working" && (
               <div
                 style={{
@@ -3379,7 +3441,9 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
                   fontWeight: "bold",
                 }}
               >
-                Fitting the garment to your photo… (the first time also downloads the models)
+                {inputSource === "webcam"
+                  ? "Fitting the garment to your snapshot… (the first time also downloads the models)"
+                  : "Fitting the garment to your photo… (the first time also downloads the models)"}
               </div>
             )}
             {showFitted && fittedResultUrl && (
@@ -3388,6 +3452,7 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
                 src={fittedResultUrl}
                 alt="Your photo wearing the garment"
                 style={{
+                  transform: inputSource === "photo" ? "none" : "scaleX(-1)",
                   maxWidth: isMobile ? "96vw" : "100%",
                   maxHeight: isMobile ? "calc(100dvh - 200px)" : "90%",
                   objectFit: "contain",
