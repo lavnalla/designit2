@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { detectGarmentParts } from "../lib/garmentSegmenter";
+import { waitForPaint } from "./ProcessingHourglass";
 
 export type GarmentPart = "arm" | "body" | "neck" | "shoulders";
 
@@ -194,6 +195,7 @@ export default function GarmentPartPainter({
     setIsAutoDetecting(true);
     setAutoDetectError(null);
     try {
+      await waitForPaint();
       const data = await detectGarmentParts(imageSrc);
 
       const maskImg = new Image();

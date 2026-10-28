@@ -43,28 +43,65 @@ export type GarmentSegmentResult = {
   detectedParts: GarmentPart[];
 };
 
+// The model runs on the graphics card (WebGPU) where the browser has one for it: many times quicker than on
+// the processor (WebAssembly), which it falls back to otherwise
+const hasWebGpu = () => typeof navigator !== "undefined" && "gpu" in navigator;
+
 let ortModulePromise: Promise<typeof import("onnxruntime-web")> | null = null;
 let sessionPromise: Promise<import("onnxruntime-web").InferenceSession> | null = null;
 
 async function getOrt() {
   if (!ortModulePromise) {
-    ortModulePromise = import("onnxruntime-web").then((ort) => {
+    // (This version of onnxruntime-web asks the graphics card for its details with requestAdapterInfo(), which
+    // newer browsers have replaced with an info property: without it, it quietly gives up on the graphics card)
+    if (hasWebGpu()) {
+      const adapter = (globalThis as { GPUAdapter?: { prototype: Record<string, unknown> } }).GPUAdapter?.prototype;
+      if (adapter && typeof adapter.requestAdapterInfo !== "function") {
+        adapter.requestAdapterInfo = function (this: { info?: unknown }) {
+          return Promise.resolve(this.info ?? {});
+        };
+      }
+    }
+    ortModulePromise = (hasWebGpu() ? import("onnxruntime-web/webgpu") : import("onnxruntime-web")).then((ort) => {
       // onnxruntime-web needs its .wasm runtime files; load them from the
       // same CDN pattern already used elsewhere in this app for MediaPipe's
       // WASM assets, rather than wiring up bundler asset copying.
       ort.env.wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ONNXRUNTIME_WEB_VERSION}/dist/`;
+      // Only real errors reported (its warnings, like "some nodes were not assigned to the preferred execution
+      // providers" when a few shape steps stay on the processor by design, come out as console errors, which
+      // Next.js's development overlay shows as if something had gone wrong)
+      ort.env.logLevel = "error";
       return ort;
     });
   }
   return ortModulePromise;
 }
 
+/** Starts loading the model (download and set-up, a few seconds the first time), so it's ready when it's
+ * first needed. */
+export function preloadFashionModel() {
+  void getSession().catch(() => {
+    sessionPromise = null;
+  });
+}
+
 async function getSession() {
   if (!sessionPromise) {
     sessionPromise = getOrt().then((ort) =>
       ort.InferenceSession.create(MODEL_URL, {
-        executionProviders: ["wasm"],
-      }),
+        executionProviders: hasWebGpu() ? ["webgpu", "wasm"] : ["wasm"],
+        // (3: errors only)
+        logSeverityLevel: 3,
+      })
+        .then((session) => {
+          console.info(`[Clothing model] running on the ${hasWebGpu() ? "graphics card (WebGPU)" : "processor"}`);
+          return session;
+        })
+        .catch(() => {
+          // (No adapter after all, or the model won't run on it: on the processor)
+          console.info("[Clothing model] running on the processor (no WebGPU)");
+          return ort.InferenceSession.create(MODEL_URL, { executionProviders: ["wasm"], logSeverityLevel: 3 });
+        }),
     );
   }
   return sessionPromise;

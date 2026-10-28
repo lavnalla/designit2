@@ -9,7 +9,14 @@ import type { Landmark, PhotoParse } from "./photoTryOn";
 // Photos are parsed (and tried on) at most this many pixels on the long side
 export const PARSE_MAX_SIDE = 1024;
 
-type HumanReply = { id: number; human?: Uint8Array; pose?: Landmark[] | null; error?: string };
+type HumanReply = {
+  id: number;
+  human?: Uint8Array;
+  pose?: Landmark[] | null;
+  faceShare?: number;
+  skinShare?: number;
+  error?: string;
+};
 
 let worker: Worker | null = null;
 let nextId = 0;
@@ -35,6 +42,17 @@ function getWorker(): Worker {
     };
   }
   return worker;
+}
+
+/** How much of a picture is face and how much other skin (0-1 each), from one quick look by the body parser:
+ * whether there's a person in it. */
+export function skinSharesOf(image: ImageData): Promise<{ face: number; skin: number }> {
+  const id = nextId++;
+  return new Promise((resolve, reject) => {
+    pending.set(id, { resolve: (r) => resolve({ face: r.faceShare ?? 0, skin: r.skinShare ?? 0 }), reject });
+    const data = new Uint8ClampedArray(image.data);
+    getWorker().postMessage({ id, data, width: image.width, height: image.height, faceOnly: true }, [data.buffer]);
+  });
 }
 
 function parseHumanAndPose(image: ImageData): Promise<{ human: Uint8Array; pose: Landmark[] | null }> {

@@ -1,689 +1,406 @@
 "use client";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import AdSlot from "./AdSlot";
 import { CommunityShowcase } from "./CommunityShowcase";
-import { hughIsLife, whisperingSignature } from "../lib/fonts";
-import { ChevronDown } from "lucide-react";
+import { cormorant } from "../lib/fonts";
+import { ArrowRight, Camera, ChevronDown, Gem, Play, ScanSearch, Share2, Sparkles, Wand2 } from "lucide-react";
 
 const FAQS = [
   {
     q: "What is DesignIt?",
-    a: "DesignIt is a digital studio that lets you design jewelry and clothing from scratch using professional vector tools and virtually try them on in real time.",
+    a: "A free design studio in your browser for jewellery and clothes. Start from a picture, a template or a blank canvas, design it with the studio's tools, then try it on with your camera or a photo.",
   },
   {
-    q: "Do I need design experience to use it?",
-    a: "No. The studio is built for beginners, hobbyists, and professional designers who want a fast browser workflow.",
+    q: "Do I need design experience?",
+    a: "No. Pick a picture, click the piece you want, and start changing it. The studio is made for beginners and professionals alike.",
   },
   {
-    q: "Can I try on jewelry with my webcam?",
-    a: "Yes. The AR try-on tools use your webcam to preview pieces live in the browser.",
+    q: "Can I try things on with my webcam?",
+    a: "Yes. Necklaces, earrings and garments follow you live on your webcam, or fit onto a photo of yourself.",
   },
   {
-    q: "What file formats can I import?",
-    a: "You can import PNG and JPG images as references, artwork, or surface textures in the studio.",
+    q: "What pictures can I use?",
+    a: "Any PNG or JPG: a product photo, a photo of someone wearing it, or your own sketch. The studio finds the pieces in it for you.",
   },
   {
-    q: "Can I share my designs with the community?",
-    a: "Yes. Designs can be submitted to the community gallery after review.",
+    q: "Can I share my designs?",
+    a: "Yes. Submit a design and, once it's reviewed, it appears in the community gallery.",
   },
   {
-    q: "Is DesignIt free to use?",
-    a: "Yes. The core design and try-on workflow is available without sign-up.",
+    q: "Is it really free?",
+    a: "Yes. Designing and trying on are free, with no sign-up and nothing to install.",
   },
 ];
+
+// What the studio works with, for the band that scrolls across under the hero
+const MARQUEE = ["Necklaces", "Earrings", "Dresses", "Sarees", "Tops", "Fabrics", "Gemstones", "Live try-on"];
 
 const STEPS = [
   {
     num: "01",
-    title: "Open the Studio",
-    desc: "Launch the browser studio and begin immediately without installing desktop software.",
+    title: "Start from any picture",
+    body: "Upload a photo, pick a template or begin on a blank canvas. The studio finds every piece in your picture, so one click lifts a necklace off its display or a top off a model.",
+    tags: ["Upload", "Templates", "Finds the pieces"],
   },
   {
     num: "02",
-    title: "Build Your Design",
-    desc: "Draw from scratch or import artwork, then refine it with tracing, color, texture, and shape tools.",
+    title: "Make it yours",
+    body: "Redraw it, recolour it, set it with emeralds, rubies or diamonds, drape it in a new fabric. Pens, shapes, gems and an eraser: everything an atelier needs.",
+    tags: ["Pens & shapes", "Gems & metals", "Fabrics"],
   },
   {
     num: "03",
-    title: "Preview In AR",
-    desc: "Move from canvas to live try-on and inspect your jewelry or fashion concept in context.",
+    title: "See it on you",
+    body: "Try it on live with your webcam, or fit it onto a photo of yourself, shaped to your body. Then download it, or share it with the community.",
+    tags: ["Webcam", "Your photo", "Share"],
   },
 ];
 
 const FEATURES = [
-  {
-    title: "Professional Vector Canvas",
-    desc: "Shape, trace, color, and layer your ideas in a fashion-focused design workflow.",
-  },
-  {
-    title: "Jewelry AR Try-On",
-    desc: "Preview earrings and necklaces live with browser-based camera tracking.",
-  },
-  {
-    title: "Fabric And Texture Import",
-    desc: "Bring swatches, references, and source imagery directly into the studio.",
-  },
-  {
-    title: "Community Gallery",
-    desc: "Share finished concepts and explore what other creators are building.",
-  },
+  { icon: ScanSearch, title: "Finds the pieces", body: "Every necklace, earring and garment in a photo, cut out and ready." },
+  { icon: Gem, title: "Real-looking gems", body: "Gold, platinum and silver that shine; stones cut and set." },
+  { icon: Camera, title: "Live try-on", body: "Jewellery and clothes that follow you on your webcam." },
+  { icon: Share2, title: "Share your designs", body: "A community gallery of what others are making." },
 ];
 
-const FEATURED_LINKS = [
-  { href: "/blog", label: "Blog" },
-  { href: "/community", label: "Community" },
-  { href: "/about", label: "About" },
-  { href: "/contact", label: "Contact" },
-];
-
-const VALUE_POINTS = [
-  { stat: "Real-time", label: "AR Try-On" },
-  { stat: "100%", label: "Browser Based" },
-  { stat: "Free", label: "No Sign-Up Needed" },
-  { stat: "Instant", label: "Design To Preview" },
-];
-
-const HERO_CARDS = [
-  {
-    eyebrow: "We Believe",
-    body: "In a workflow where design ideas move from sketch to visualization with speed, clarity, and creative freedom.",
-    ctaLabel: "About The Studio",
-    ctaHref: "/about",
-    beforeImage: "designFrom.png", // Replace with your actual asset path
-    afterImage: "designTo.png", // Replace with your actual asset path
-  },
-  {
-    eyebrow: "Try It On",
-    body: "Preview clothes and jewelry in a more intuitive way by moving from design mode into live try-on, so you can evaluate proportion, placement, and style before making your next creative decision.",
-    ctaLabel: "Open The Studio",
-    ctaHref: "/studio",
-    beforeImage: "earrings.png", // Replace with your actual asset path
-    afterImage: "wearingearrings.png", // Replace with your actual asset path
-  },
-];
+// The hero's backdrop: deep sapphire (midnight blue), with a glow of gold and of emerald behind the picture
+const HERO_BACKDROP =
+  "radial-gradient(60rem 40rem at 85% 30%, rgba(16,185,129,0.18), transparent 60%)," +
+  "radial-gradient(50rem 30rem at 15% 10%, rgba(212,166,74,0.20), transparent 60%)," +
+  "radial-gradient(40rem 40rem at 50% 120%, rgba(126,34,206,0.30), transparent 60%)," +
+  "linear-gradient(180deg, #0c1633 0%, #14244f 55%, #0a1229 100%)";
 
 export default function LandingPage() {
-  const router = useRouter();
-  const demoVideoSources = ["/demo_video1.mp4"];
-  const [openFaq, setOpenFaq] = useState<number | null>(null);
-  const [isDemoPlaying, setIsDemoPlaying] = useState(true);
+  const [openFaq, setOpenFaq] = useState<number | null>(0);
   const [isDemoPopupOpen, setIsDemoPopupOpen] = useState(false);
-  const [activeDemoVideoIndex, setActiveDemoVideoIndex] = useState(0);
-  const [activeHeroCardIndex, setActiveHeroCardIndex] = useState(0);
   const homepageAdSlot = process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_HOME_SLOT;
   const demoVideoRef = useRef<HTMLVideoElement | null>(null);
-  const demoTransitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
 
-  const openStudioWithSourceAsset = (assetPath: string) => {
-    if (typeof window !== "undefined") {
-      window.sessionStorage.setItem("designit-studio-source-image", assetPath);
-    }
-    router.push("/studio?source=landing");
-  };
-
-  const playDemoVideo = async (video: HTMLVideoElement) => {
-    try {
-      await video.play();
-      setIsDemoPlaying(true);
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        setIsDemoPlaying(false);
-        return;
-      }
-
-      throw error;
-    }
-  };
-
-  const toggleDemoVideoPlayback = () => {
-    const video = demoVideoRef.current;
-    if (!video) return;
-
-    if (video.paused) {
-      void playDemoVideo(video);
-      return;
-    }
-
-    video.pause();
-    setIsDemoPlaying(false);
-  };
-
-  const playNextDemoVideo = () => {
-    if (demoTransitionTimeoutRef.current) {
-      clearTimeout(demoTransitionTimeoutRef.current);
-      demoTransitionTimeoutRef.current = null;
-    }
-
-    if (activeDemoVideoIndex >= demoVideoSources.length - 1) {
-      return;
-    }
-
-    demoTransitionTimeoutRef.current = setTimeout(() => {
-      setActiveDemoVideoIndex((currentIndex) => {
-        if (currentIndex >= demoVideoSources.length - 1) {
-          return currentIndex;
-        }
-
-        return currentIndex + 1;
-      });
-      demoTransitionTimeoutRef.current = null;
-    }, 20000);
-  };
-
-  useEffect(() => {
-    const video = demoVideoRef.current;
-    if (!video) {
-      return;
-    }
-
-    if (isDemoPlaying) {
-      void playDemoVideo(video);
-      return;
-    }
-
-    video.pause();
-  }, [activeDemoVideoIndex, isDemoPlaying]);
-
-  useEffect(() => {
-    return () => {
-      if (demoTransitionTimeoutRef.current) {
-        clearTimeout(demoTransitionTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      setActiveHeroCardIndex(
-        (currentIndex) => (currentIndex + 1) % HERO_CARDS.length,
-      );
-    }, 5000);
-
-    return () => clearInterval(intervalId);
-  }, []);
-
-  const activeHeroCard = HERO_CARDS[activeHeroCardIndex];
+  const goldButton =
+    "inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#c9973b] via-[#f3d98b] to-[#c9973b] px-7 py-3.5 text-[11px] font-black uppercase tracking-[0.18em] text-[#0f1a3a] shadow-[0_10px_40px_rgba(212,166,74,0.35)] transition-transform hover:scale-[1.03]";
+  const ghostButton =
+    "inline-flex items-center gap-2 rounded-full border border-white/25 px-7 py-3.5 text-[11px] font-black uppercase tracking-[0.18em] text-white/90 transition-colors hover:border-[#f3d98b] hover:text-[#f3d98b]";
+  const eyebrow = "text-[11px] font-black uppercase tracking-[0.32em] text-[#c9973b]";
 
   return (
-    <div className="min-h-screen bg-[#e8e0d9] px-4 pt-0 font-sans text-slate-900 md:px-8 lg:px-10">
-      <aside className="fixed left-2 top-28 z-40 w-32 lg:w-44 xl:left-[max(1rem,calc((100vw-1120px)/2-15.5rem))]">
-        <div className="border border-[#ddd3c9] bg-[#fffdfb] p-5 text-[#4b5563] shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
-          <p className="mb-4 text-[11px] font-black uppercase tracking-[0.24em] text-[#8a644a]">
-            Navigate
-          </p>
-          <nav
-            className={`${whisperingSignature.className} flex flex-col gap-3 text-lg text-[#7f8fb0]`}
-          >
-            <a
-              href="#how-to"
-              className="transition-colors hover:text-[#4f264f]"
-            >
-              How It Works
-            </a>
-            <a
-              href="#features"
-              className="transition-colors hover:text-[#4f264f]"
-            >
-              Features
-            </a>
-            <Link
-              href="/blog"
-              className="transition-colors hover:text-[#4f264f]"
-            >
-              Blog
-            </Link>
-            <Link
-              href="/community"
-              className="transition-colors hover:text-[#4f264f]"
-            >
-              Community
-            </Link>
-            <Link
-              href="/about"
-              className="transition-colors hover:text-[#4f264f]"
-            >
-              About
-            </Link>
-          </nav>
-        </div>
-      </aside>
-
+    <div className="font-sans text-slate-900">
       {isDemoPopupOpen && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/80 p-6 backdrop-blur-sm">
-          <div className="relative w-full max-w-5xl border border-slate-200 bg-white p-4 shadow-[0_30px_80px_rgba(15,23,42,0.35)]">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/85 p-6 backdrop-blur-sm">
+          <div className="relative w-full max-w-5xl rounded-2xl border border-[#c9973b]/40 bg-[#0c1633] p-4 shadow-[0_30px_80px_rgba(0,0,0,0.6)]">
             <div className="mb-3 flex items-center justify-between gap-3">
-              <p className="text-sm font-black uppercase tracking-[0.2em] text-[#8a644a]">
-                Studio Demo
-              </p>
+              <p className={eyebrow}>Studio demo</p>
               <button
                 type="button"
                 onClick={() => setIsDemoPopupOpen(false)}
-                className="border border-slate-300 bg-slate-100 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:bg-slate-200"
+                className="rounded-full border border-white/20 px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-white/80 hover:text-white"
               >
                 Close
               </button>
             </div>
-            <video
-              className="w-full border border-slate-200"
-              controls
-              autoPlay
-              muted
-              playsInline
-              preload="metadata"
-              onEnded={playNextDemoVideo}
-              key={`popup-${demoVideoSources[activeDemoVideoIndex]}`}
-            >
-              <source
-                src={demoVideoSources[activeDemoVideoIndex]}
-                type="video/mp4"
-              />
+            <video className="w-full rounded-lg" controls autoPlay muted playsInline preload="metadata" poster="/demo_video_studio_poster.jpg">
+              <source src="/demo_video_studio.mp4" type="video/mp4" />
             </video>
           </div>
         </div>
       )}
 
-      <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-[1120px] flex-col overflow-hidden border border-[#e3ddd6] bg-[#fffdfa] shadow-[0_28px_80px_rgba(15,23,42,0.12)]">
-        <section className="bg-[#fffdfa] px-5 py-8 md:px-8 md:py-10">
-          <div className="relative grid gap-5 lg:grid-cols-[1.05fr_0.95fr] lg:pb-8">
-            <div className="max-w-xl lg:pb-24">
-              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#8a644a]">
-                Creative Technology For Fashion
-              </p>
-              <h1
-                className={`${hughIsLife.className} mt-3 text-4xl leading-tight tracking-tight text-[#4f264f] md:text-5xl xl:text-6xl`}
-              >
-                Design Clothes & Jewelry.
-              </h1>
-              <h2
-                className={`${hughIsLife.className} mt-2 text-2xl leading-tight tracking-tight text-[#4f264f] md:text-3xl xl:text-4xl`}
-              >
-                Create, Customize & Try Them On.
-              </h2>
-              <p className="mt-4 max-w-md text-base leading-7 text-slate-600">
-                Move from blank canvas to polished visual in a browser studio
-                built for garments, jewelry, swatches, and AR previews.
-              </p>
-              <div className="mt-6 flex flex-wrap gap-3">
-                <Link
-                  href="/studio"
-                  className="bg-black px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white"
-                >
-                  Try On In Studio
-                </Link>
-                <Link
-                  href="/blog"
-                  className="border border-slate-300 px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700"
-                >
-                  Read The Guides
-                </Link>
-              </div>
+      {/* ——— Hero: sapphire, gold and emerald, the look that hits you first ——— */}
+      <section className="relative overflow-hidden text-white" style={{ background: HERO_BACKDROP }}>
+        {/* (Fine gold lines across, like a jeweller's case) */}
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.07]"
+          style={{ backgroundImage: "repeating-linear-gradient(115deg, #f3d98b 0 1px, transparent 1px 60px)" }}
+          aria-hidden
+        />
+        <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-5 py-14 md:px-10 lg:grid-cols-[1.05fr_0.95fr] lg:py-24">
+          <div>
+            <p className={eyebrow}>✦ Your atelier, in the browser</p>
+            <h1 className={`${cormorant.className} mt-5 text-[3.4rem] font-semibold leading-[0.92] tracking-tight sm:text-7xl lg:text-[5.6rem]`}>
+              Design it.
+              <br />
+              <span className="text-gold-shimmer italic">Wear it.</span>
+              <br />
+              Own the look.
+            </h1>
+            <p className="mt-7 max-w-md text-base leading-7 text-white/75 md:text-lg md:leading-8">
+              Turn any picture into your own jewellery or outfit. Redraw it, recolour it, set it with gems, then see it
+              on you: live on camera, or on your photo.
+            </p>
+            <div className="mt-9 flex flex-wrap gap-3">
+              <Link href="/studio" className={goldButton}>
+                Start designing <ArrowRight size={15} />
+              </Link>
+              <a href="#how-it-works" className={ghostButton}>
+                See how it works
+              </a>
             </div>
-            <div className="relative flex min-h-[34rem] flex-col justify-between overflow-hidden bg-[linear-gradient(180deg,#f7b64f_0%,#f6cb67_38%,#5d82a8_72%,#7a4bbb_100%)] p-6 md:p-8">
-              {/* Before & After Images at Top */}
-              <div className="grid grid-cols-2 gap-3 mb-6">
-                <div className="relative overflow-hidden border border-white/20 bg-black/20">
-                  <span className="absolute left-2 top-2 z-10 bg-black/60 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white">
-                    Before
-                  </span>
-                  <img
-                    src={activeHeroCard.beforeImage}
-                    alt="Before transformation"
-                    className="h-36 w-full object-contain md:h-44 bg-gray-100" // added object-contain and optional background
-                  />
-                </div>
-                <div className="relative overflow-hidden border border-white/20 bg-black/20">
-                  <span className="absolute left-2 top-2 z-10 bg-black/60 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white">
-                    After
-                  </span>
-                  <img
-                    src={activeHeroCard.afterImage}
-                    alt="After transformation"
-                    className="h-36 w-full object-contain md:h-44 bg-gray-100" // added object-contain and optional background
-                  />
-                </div>
-              </div>
+            <ul className="mt-9 flex flex-wrap gap-x-6 gap-y-2 text-[11px] font-bold uppercase tracking-[0.2em] text-white/55">
+              {["Free", "No sign-up", "Nothing to install"].map((item) => (
+                <li key={item} className="flex items-center gap-2">
+                  <span className="h-1 w-1 rounded-full bg-[#c9973b]" aria-hidden />
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
 
-              {/* Card Content Below Images */}
-              <div className="border border-white/20 bg-[#7c49b4] p-6 md:p-8 text-white shadow-[0_18px_36px_rgba(15,23,42,0.18)]">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-white/70">
-                  {activeHeroCard.eyebrow}
-                </p>
-                <p className="mt-3 text-xl leading-8 md:text-2xl md:leading-9">
-                  {activeHeroCard.body}
-                </p>
-                <Link
-                  href={activeHeroCard.ctaHref}
-                  className="mt-5 inline-block bg-black px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-800"
-                >
-                  {activeHeroCard.ctaLabel}
-                </Link>
-              </div>
+          {/* The finished look: the runway photo in an arch, the emerald necklace floating in front */}
+          <div className="relative mx-auto h-[28rem] w-full max-w-[30rem] sm:h-[34rem]">
+            <div className="absolute right-0 top-0 h-full w-[74%] overflow-hidden rounded-t-[999px] border border-[#c9973b]/50 shadow-[0_0_80px_rgba(16,185,129,0.25)]">
+              <img
+                src="/home-step3-tryon.jpg"
+                alt="A model on a runway wearing an emerald necklace designed in DesignIt"
+                className="h-full w-full object-cover object-top"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#0c1633]/70 via-transparent to-transparent" aria-hidden />
             </div>
+            <img
+              src="/home-hero-necklace.png"
+              alt="The emerald necklace, redesigned from a diamond necklace"
+              className="animate-float-soft absolute -left-2 bottom-8 w-[64%] drop-shadow-[0_18px_40px_rgba(16,185,129,0.55)]"
+            />
+            <div className="absolute left-0 top-6 flex items-center gap-3 rounded-2xl border border-white/15 bg-white/10 p-2.5 pr-4 backdrop-blur-md">
+              <img src="/home-step2-cutout.png" alt="" className="h-11 w-11 rounded-xl bg-white object-contain p-1" />
+              <ArrowRight size={14} className="text-[#f3d98b]" aria-hidden />
+              <img src="/home-step2-designed.png" alt="" className="h-11 w-11 rounded-xl bg-white object-contain p-1" />
+              <span className="text-[10px] font-bold uppercase leading-tight tracking-[0.14em] text-white/80">
+                Diamonds
+                <br />
+                to emeralds
+              </span>
+            </div>
+          </div>
+        </div>
 
-            <div className="border border-[#e6ddd4] bg-[#fffdfa] p-3 shadow-[0_18px_36px_rgba(15,23,42,0.08)] lg:absolute lg:left-[2rem] lg:top-[20rem] lg:z-20 lg:w-[18rem] xl:left-[2.5rem] xl:top-[20.5rem] xl:w-[19rem]">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#8a644a]">
-                  Studio Demo
-                </p>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={toggleDemoVideoPlayback}
-                    className="border border-slate-300 bg-white px-2 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:bg-slate-50"
+        {/* Everything it works with, scrolling by */}
+        <div className="relative overflow-hidden border-y border-[#c9973b]/30 bg-[#081026]/60 py-4" aria-hidden>
+          <div className="animate-marquee flex w-max gap-10 whitespace-nowrap">
+            {[...MARQUEE, ...MARQUEE, ...MARQUEE, ...MARQUEE].map((word, i) => (
+              <span
+                key={i}
+                className={`${cormorant.className} flex items-center gap-10 text-2xl italic text-[#f3d98b]/85`}
+              >
+                {word}
+                <Sparkles size={14} className="text-[#c9973b]" />
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ——— How it works: three steps, one necklace from a photo to the runway ——— */}
+      <section id="how-it-works" className="scroll-mt-20 bg-[#faf6ef] px-5 py-20 md:px-10 md:py-28">
+        <div className="mx-auto max-w-6xl">
+          <div className="mx-auto max-w-2xl text-center">
+            <p className={eyebrow}>How it works</p>
+            <h2 className={`${cormorant.className} mt-4 text-4xl font-semibold leading-tight text-[#0f1a3a] md:text-6xl`}>
+              From a picture to the runway, <span className="italic text-[#8a5a14]">in three steps</span>
+            </h2>
+          </div>
+
+          <div className="mt-16 flex flex-col gap-20 md:gap-28">
+            {STEPS.map((step, index) => (
+              <div
+                key={step.num}
+                className={`grid items-center gap-10 md:grid-cols-2 md:gap-16 ${index % 2 ? "md:[&>*:first-child]:order-2" : ""}`}
+              >
+                <div>
+                  <span
+                    className={`${cormorant.className} block text-[6.5rem] font-bold leading-none text-transparent md:text-[9rem]`}
+                    style={{ WebkitTextStroke: "1.5px #c9973b" }}
+                    aria-hidden
                   >
-                    {isDemoPlaying ? "Stop" : "Play"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsDemoPopupOpen(true)}
-                    className="bg-black px-2 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-800"
-                  >
-                    Max
-                  </button>
+                    {step.num}
+                  </span>
+                  <h3 className={`${cormorant.className} mt-1 text-4xl font-semibold text-[#0f1a3a] md:text-5xl`}>
+                    {step.title}
+                  </h3>
+                  <p className="mt-5 max-w-md text-base leading-8 text-slate-600">{step.body}</p>
+                  <div className="mt-6 flex flex-wrap gap-2">
+                    {step.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-full border border-[#c9973b]/40 bg-white px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-[#8a5a14]"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="relative">
+                  <div className="absolute -inset-3 rounded-[2rem] bg-gradient-to-br from-[#f3d98b]/40 via-transparent to-[#10b981]/20 blur-xl" aria-hidden />
+                  <div className="relative overflow-hidden rounded-[1.75rem] border border-[#c9973b]/30 bg-white shadow-[0_30px_70px_rgba(12,22,51,0.15)]">
+                    {index === 0 && (
+                      <div className="flex justify-center bg-gradient-to-b from-[#f3ece2] to-white py-6">
+                        <img
+                          src="/home-step1-source.png"
+                          alt="The studio's Source window: a photo of a diamond necklace on a display bust, the necklace found and outlined"
+                          className="max-h-[32rem] w-auto max-w-full rounded-xl shadow-lg"
+                        />
+                      </div>
+                    )}
+                    {index === 1 && (
+                      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 p-6 md:p-8">
+                        <figure className="flex flex-col items-center gap-3">
+                          <img src="/home-step2-cutout.png" alt="The diamond necklace, lifted out of its photo" className="max-h-60 w-full object-contain" />
+                          <figcaption className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Before</figcaption>
+                        </figure>
+                        <Wand2 className="text-[#c9973b]" size={26} aria-hidden />
+                        <figure className="flex flex-col items-center gap-3">
+                          <img src="/home-step2-designed.png" alt="The same necklace redesigned in emeralds with a sapphire drop" className="max-h-60 w-full object-contain" />
+                          <figcaption className="text-[10px] font-black uppercase tracking-[0.18em] text-[#047857]">After</figcaption>
+                        </figure>
+                      </div>
+                    )}
+                    {index === 2 && (
+                      <div className="relative h-[30rem]">
+                        <img
+                          src="/home-step3-tryon.jpg"
+                          alt="A model on a runway wearing the redesigned emerald necklace"
+                          className="absolute inset-0 h-full w-full object-cover object-top"
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
+            ))}
+          </div>
+
+          <div className="mt-20 flex justify-center">
+            <Link href="/studio" className={goldButton}>
+              Open the studio <ArrowRight size={15} />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ——— What's in the studio, and the demo ——— */}
+      <section className="relative overflow-hidden px-5 py-20 text-white md:px-10 md:py-28" style={{ background: HERO_BACKDROP }}>
+        <div className="relative mx-auto grid max-w-6xl items-center gap-14 lg:grid-cols-[0.9fr_1.1fr]">
+          <div>
+            <p className={eyebrow}>Inside the studio</p>
+            <h2 className={`${cormorant.className} mt-4 text-4xl font-semibold leading-tight md:text-6xl`}>
+              Everything an atelier has. <span className="italic text-[#f3d98b]">None of the cost.</span>
+            </h2>
+            <div className="mt-10 grid gap-6 sm:grid-cols-2">
+              {FEATURES.map(({ icon: Icon, title, body }) => (
+                <div key={title} className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
+                  <Icon className="text-[#f3d98b]" size={22} aria-hidden />
+                  <h3 className="mt-3 text-sm font-black uppercase tracking-[0.14em]">{title}</h3>
+                  <p className="mt-2 text-sm leading-6 text-white/65">{body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="relative">
+            <div className="absolute -inset-4 rounded-[2rem] bg-[#c9973b]/20 blur-2xl" aria-hidden />
+            <div className="relative overflow-hidden rounded-[1.5rem] border border-[#c9973b]/40 bg-black shadow-[0_30px_80px_rgba(0,0,0,0.5)]">
               <video
                 ref={demoVideoRef}
-                className="aspect-video w-full border border-[#eadfd7] bg-white object-contain"
+                className="aspect-video w-full object-contain"
                 autoPlay
                 muted
                 playsInline
+                loop
                 preload="metadata"
-                onEnded={playNextDemoVideo}
-                key={demoVideoSources[activeDemoVideoIndex]}
+                poster="/demo_video_studio_poster.jpg"
               >
-                <source
-                  src={demoVideoSources[activeDemoVideoIndex]}
-                  type="video/mp4"
-                />
+                <source src="/demo_video_studio.mp4" type="video/mp4" />
               </video>
-            </div>
-          </div>
-        </section>
-
-        <section className="px-5 py-8 md:px-8">
-          <div className="border-t border-[#e7ddd4] pt-6">
-            <div className="mb-6 flex items-center justify-between gap-4">
-              <div>
-                <p
-                  className={`${whisperingSignature.className} text-3xl text-[#4f264f]`}
-                >
-                  Features
-                </p>
-                <p className="mt-1 text-sm text-slate-500">
-                  A design workflow built for creative iteration, publishing,
-                  and AR previewing.
-                </p>
-              </div>
-              <Link
-                href="/studio"
-                className="bg-black px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white"
+              <button
+                type="button"
+                onClick={() => setIsDemoPopupOpen(true)}
+                className="absolute bottom-4 right-4 inline-flex items-center gap-2 rounded-full bg-black/70 px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-[#f3d98b] backdrop-blur hover:bg-black/90"
               >
-                See More
-              </Link>
-            </div>
-            <div
-              id="features"
-              className="divide-y divide-[#e7ddd4] border-y border-[#e7ddd4] bg-[#fffdfa]"
-            >
-              {FEATURES.map((feature, index) => (
-                <div
-                  key={feature.title}
-                  className="grid items-center gap-4 px-4 py-5 md:grid-cols-[5rem_1fr_auto] md:px-0"
-                >
-                  <div className="text-center text-2xl font-light text-slate-500">
-                    {String(index + 1).padStart(2, "0")}
-                  </div>
-                  <div>
-                    <h3 className="text-2xl text-slate-900">{feature.title}</h3>
-                    <p className="mt-1 text-sm leading-7 text-slate-500">
-                      {feature.desc}
-                    </p>
-                  </div>
-                  <Link
-                    href="/studio"
-                    className="justify-self-start bg-[#8f6a88] px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white md:justify-self-end"
-                  >
-                    Explore
-                  </Link>
-                </div>
-              ))}
+                <Play size={12} /> Watch full screen
+              </button>
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        {homepageAdSlot && (
-          <section className="px-5 py-6 md:px-8" aria-label="Advertisement">
-            <div className="mx-auto max-w-5xl border border-[#e7ddd4] bg-[#fffdfa] p-4">
-              <p className="mb-3 text-center text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">
-                Sponsored
-              </p>
-              <AdSlot
-                slot={homepageAdSlot}
-                className="mx-auto min-h-[90px]"
-                style={{ minHeight: 90 }}
-              />
-            </div>
-          </section>
-        )}
-
-        <section className="grid gap-8 px-5 py-8 md:px-8 lg:grid-cols-[1fr_22rem]">
-          <div>
-            <div className="grid gap-5 lg:grid-cols-[0.95fr_1.2fr_0.8fr]">
-              <div className="overflow-hidden bg-[#efe6dc]">
-                <img
-                  src="/design2.png"
-                  alt="Design workflow inspiration"
-                  className="h-full w-full object-cover"
-                />
-              </div>
-              <div className="flex min-h-[17rem] items-center bg-[#7c49b4] p-8 text-white">
-                <div>
-                  <p className="text-[10px] uppercase tracking-[0.18em] text-white/70">
-                    What We Offer
-                  </p>
-                  <p className="mt-4 text-3xl leading-10">
-                    From vector editing tools to AR preview workflows, the
-                    studio brings ideas into focus fast.
-                  </p>
-                  <Link
-                    href="/studio"
-                    className="mt-6 inline-block bg-black px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white"
-                  >
-                    Open The Studio
-                  </Link>
-                </div>
-              </div>
-              <div className="overflow-hidden bg-[#fffdfa]">
-                <img
-                  src="/design3.png"
-                  alt="Creative community inspiration"
-                  className="h-full w-full object-cover"
-                />
-              </div>
-            </div>
-
-            <section className="py-12">
-              <div className="grid grid-cols-2 gap-0 border border-[#e7ddd4] bg-[#fffdfa] text-center md:grid-cols-4">
-                {VALUE_POINTS.map((item) => (
-                  <div
-                    key={item.label}
-                    className="flex flex-col items-center gap-1 border border-[#e3ccc5] p-6 sm:p-7"
-                  >
-                    <span className="text-2xl font-black text-[#4f264f]">
-                      {item.stat}
-                    </span>
-                    <span className="text-xs font-medium text-slate-500">
-                      {item.label}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <CommunityShowcase />
-
-            <section className="border-t border-[#e7ddd4] bg-[#fffdfa] px-5 py-16 sm:px-6 sm:py-20">
-              <div className="mx-auto max-w-2xl">
-                <p className="mb-2 text-center text-xs font-bold uppercase tracking-widest text-[#8a644a]">
-                  FAQ
-                </p>
-                <h2 className="mb-10 text-center text-3xl font-black text-slate-900">
-                  Frequently Asked Questions
-                </h2>
-
-                <div className="flex flex-col gap-3">
-                  {FAQS.map((faq, index) => (
-                    <div
-                      key={faq.q}
-                      className="overflow-hidden border border-slate-100 bg-white"
-                    >
-                      <button
-                        onClick={() =>
-                          setOpenFaq(openFaq === index ? null : index)
-                        }
-                        className="flex w-full items-center justify-between px-5 py-4 text-left text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-50"
-                      >
-                        {faq.q}
-                        <ChevronDown
-                          size={16}
-                          className={`shrink-0 text-slate-400 transition-transform ${openFaq === index ? "rotate-180" : ""}`}
-                        />
-                      </button>
-                      {openFaq === index && (
-                        <div className="border-t border-slate-100 px-5 pb-4 pt-3 text-sm leading-relaxed text-slate-500">
-                          {faq.a}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </section>
-          </div>
-
-          <section id="how-to" className="hidden lg:block">
-            <div className="sticky top-28 border border-[#e7ddd4] bg-[#fffdfa] p-6 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
-              <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[#8a644a]">
-                How It Works
-              </p>
-              <h2
-                className={`${whisperingSignature.className} mb-8 text-3xl text-slate-900`}
-              >
-                From sketch to try-on in 3 steps
+      {/* ——— The community ——— */}
+      <section className="bg-[#faf6ef] px-5 pt-20 md:px-10 md:pt-28">
+        <div className="mx-auto max-w-6xl">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className={eyebrow}>The community</p>
+              <h2 className={`${cormorant.className} mt-4 text-4xl font-semibold text-[#0f1a3a] md:text-6xl`}>
+                Made in <span className="italic text-[#8a5a14]">DesignIt</span>
               </h2>
-
-              <div className="grid grid-cols-1 gap-4">
-                {STEPS.map((step) => (
-                  <div
-                    key={step.num}
-                    className="border border-[#eadfd7] bg-[#fffdfa] p-5"
-                  >
-                    <span className="mb-3 block text-4xl font-black text-[#4f264f]">
-                      {step.num}
-                    </span>
-                    <h3 className="mb-2 text-lg font-bold text-slate-800">
-                      {step.title}
-                    </h3>
-                    <p className="text-sm leading-relaxed text-slate-500">
-                      {step.desc}
-                    </p>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-8">
-                <Link
-                  href="/studio"
-                  className="inline-flex bg-black px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white"
-                >
-                  Start Designing
-                </Link>
-              </div>
             </div>
-          </section>
-        </section>
-
-        <section className="px-5 pb-10 lg:hidden md:px-8">
-          <div className="border border-[#e7ddd4] bg-[#fffdfa] p-6 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
-            <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[#8a644a]">
-              How It Works
-            </p>
-            <h2
-              className={`${whisperingSignature.className} mb-8 text-3xl text-slate-900`}
+            <Link
+              href="/community"
+              className="inline-flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-[#8a5a14] hover:text-[#0f1a3a]"
             >
-              From sketch to try-on in 3 steps
-            </h2>
-            <div className="grid gap-4">
-              {STEPS.map((step) => (
-                <div
-                  key={`mobile-${step.num}`}
-                  className="border border-[#eadfd7] bg-[#fffdfa] p-5"
-                >
-                  <span className="mb-3 block text-4xl font-black text-[#4f264f]">
-                    {step.num}
-                  </span>
-                  <h3 className="mb-2 text-lg font-bold text-slate-800">
-                    {step.title}
-                  </h3>
-                  <p className="text-sm leading-relaxed text-slate-500">
-                    {step.desc}
-                  </p>
-                </div>
-              ))}
-            </div>
+              See the gallery <ArrowRight size={14} />
+            </Link>
           </div>
-        </section>
+        </div>
+        <CommunityShowcase hideHeading className="mx-auto mt-10 w-full max-w-6xl" />
+      </section>
 
-        <section className="bg-[#fffdfa] px-5 py-12 text-slate-900 md:px-8 border-t border-[#e7ddd4]">
-          <div className="grid gap-8 md:grid-cols-[1fr_1.1fr_0.8fr] md:items-start">
-            <div>
-              <h2 className="text-3xl font-black text-[#4f264f]">DesignIt</h2>
-              <p className="mt-3 max-w-xs text-sm leading-7 text-slate-600">
-                A browser-native studio for fashion, jewelry, and AR-guided
-                design exploration.
-              </p>
-            </div>
-            <div>
-              <p className="text-xl leading-8 text-slate-900">
-                We have a lot of creative possibilities waiting. Be the first to
-                find out.
-              </p>
-              <div className="mt-5 flex max-w-md gap-3">
-                <input
-                  type="email"
-                  placeholder="Enter your email here"
-                  className="min-w-0 flex-1 border border-[#d8dbe3] bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
-                />
-                <button className="bg-black px-4 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white">
-                  Submit
-                </button>
-              </div>
-            </div>
-            <div className="flex flex-col gap-2 text-sm text-slate-600">
-              {FEATURED_LINKS.map((item) => (
-                <Link
-                  key={`footer-${item.href}`}
-                  href={item.href}
-                  className="hover:text-slate-900"
-                >
-                  {item.label}
-                </Link>
-              ))}
-              <Link
-                href="/studio"
-                className="mt-3 inline-block bg-black px-4 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white"
-              >
-                Make a Design
-              </Link>
-            </div>
+      {homepageAdSlot && (
+        <section className="bg-[#faf6ef] px-5 pt-14 md:px-10" aria-label="Advertisement">
+          <div className="mx-auto max-w-5xl rounded-2xl border border-[#e8dccb] bg-white p-4">
+            <p className="mb-3 text-center text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">Sponsored</p>
+            <AdSlot slot={homepageAdSlot} className="mx-auto min-h-[90px]" style={{ minHeight: 90 }} />
           </div>
         </section>
-      </div>
+      )}
+
+      {/* ——— Questions ——— */}
+      <section className="bg-[#faf6ef] px-5 py-20 md:px-10 md:py-28">
+        <div className="mx-auto max-w-3xl">
+          <div className="text-center">
+            <p className={eyebrow}>Questions</p>
+            <h2 className={`${cormorant.className} mt-4 text-4xl font-semibold text-[#0f1a3a] md:text-5xl`}>
+              Everything you&apos;d like to know
+            </h2>
+          </div>
+          <div className="mt-12 divide-y divide-[#e8dccb] border-y border-[#e8dccb]">
+            {FAQS.map((faq, index) => (
+              <div key={faq.q}>
+                <button
+                  onClick={() => setOpenFaq(openFaq === index ? null : index)}
+                  className="flex w-full items-center justify-between gap-4 py-5 text-left"
+                  aria-expanded={openFaq === index}
+                >
+                  <span className={`${cormorant.className} text-2xl font-semibold text-[#0f1a3a]`}>{faq.q}</span>
+                  <ChevronDown
+                    size={18}
+                    className={`shrink-0 text-[#c9973b] transition-transform ${openFaq === index ? "rotate-180" : ""}`}
+                  />
+                </button>
+                {openFaq === index && <p className="pb-6 pr-8 text-base leading-7 text-slate-600">{faq.a}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ——— The last word ——— */}
+      <section className="relative overflow-hidden px-5 py-24 text-center text-white md:px-10" style={{ background: HERO_BACKDROP }}>
+        <img
+          src="/home-hero-necklace.png"
+          alt=""
+          className="pointer-events-none absolute left-1/2 top-1/2 w-[38rem] max-w-none -translate-x-1/2 -translate-y-1/2 opacity-[0.12]"
+          aria-hidden
+        />
+        <div className="relative mx-auto max-w-2xl">
+          <h2 className={`${cormorant.className} text-5xl font-semibold leading-tight md:text-7xl`}>
+            Your next look starts <span className="text-gold-shimmer italic">with a picture.</span>
+          </h2>
+          <div className="mt-10 flex justify-center">
+            <Link href="/studio" className={goldButton}>
+              Start designing, free <ArrowRight size={15} />
+            </Link>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

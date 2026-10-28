@@ -12,7 +12,8 @@ interface Design {
   imageData: string;
 }
 
-export function CommunityShowcase() {
+// The latest approved designs. hideHeading/className: for a page that gives it its own heading and setting
+export function CommunityShowcase({ hideHeading = false, className }: { hideHeading?: boolean; className?: string } = {}) {
   const [designs, setDesigns] = useState<Design[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -37,9 +38,9 @@ export function CommunityShowcase() {
   if (designs.length === 0) return null;
 
   return (
-    <section className="w-full border-t border-slate-200 bg-white px-4 py-4 sm:px-6">
+    <section className={className ?? "w-full border-t border-slate-200 bg-white px-4 py-4 sm:px-6"}>
       <div className="max-w-[1000px] mx-auto text-center">
-        <div className="flex flex-col items-center mb-4">
+        <div className={hideHeading ? "hidden" : "flex flex-col items-center mb-4"}>
           <h2 className="text-lg font-bold mb-0.5 text-slate-800">Community Creations</h2>
           <Link href="/community" className="text-yellow-600 text-[10px] font-bold hover:underline">
             View All →

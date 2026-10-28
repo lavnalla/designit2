@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import Script from "next/script";
 import { parsePhoto, toParseCanvas } from "../lib/photoTryOnParsing";
 import type { PhotoParse, RGBAImage, TryOnReport } from "../lib/photoTryOn";
+import ProcessingHourglass, { waitForPaint } from "./ProcessingHourglass";
 
 interface MetricData {
   shoulderCenterNorm: number;
@@ -1889,6 +1890,16 @@ declare global {
   }
 }
 
+// MediaPipe's models start and stop one at a time, page-wide: each loads its WebAssembly through the same
+// globals (createMediapipeSolutionsWasm, Module), so two starting at once, or one closed while it's still
+// starting, abort ("Module.arguments has been replaced ..."). Each start or close waits its turn here.
+let mediapipeTurn: Promise<unknown> = Promise.resolve();
+function inMediapipeTurn<T>(work: () => Promise<T> | T): Promise<T> {
+  const run = mediapipeTurn.then(work, work);
+  mediapipeTurn = run.catch(() => {});
+  return run;
+}
+
 export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inputSource = "webcam", partMaskSrc = null, onClose }: NecklaceTryOnProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   // The design as it's worn: its white background cleared (jewellery and garments alike)
@@ -1934,6 +1945,8 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
   const [fitStatus, setFitStatus] = useState<"idle" | "working" | "done" | "failed">("idle");
   const [fitError, setFitError] = useState<string | null>(null);
   const [showFitted, setShowFitted] = useState(false);
+  // A webcam still waiting to be fitted
+  const [snapshotPending, setSnapshotPending] = useState(false);
   // Bumped whenever the photo or garment changes, so a drape still running for the old ones is dropped
   const fitRequestRef = useRef(0);
 
@@ -1952,6 +1965,14 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
   const streamRef = useRef<MediaStream | null>(null);
   const sessionIdRef = useRef(0);
   const frameProcessingRef = useRef(false);
+  // The session whose frame the models are working on (a late result from an earlier photo is dropped)
+  const sendingSessionRef = useRef(0);
+  // Until the first pose result of a session arrives (the first time, the models also download): hourglass
+  const [isAnalysing, setIsAnalysing] = useState(false);
+  const isAnalysingRef = useRef(false);
+  // The models, loaded once when the fitting room opens: both download at the same time
+  const [modelsCreated, setModelsCreated] = useState(false);
+  const modelsReadyRef = useRef<Promise<unknown> | null>(null);
 
   // Manual Adjustments placeholders
   const manualOffsetXRef = useRef<number>(0);
@@ -2219,9 +2240,81 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
     img.src = designSrc;
   }, [mode, designSrc]);
 
+  // The segmentation and Holistic models, out of the local static folder. Made once and kept while the
+  // fitting room is open (starting them again for each photo or mode took seconds every time), and
+  // both start downloading straight away, side by side, rather than one after the other on the first frame
+  useEffect(() => {
+    if (isClosed) return;
+    if (!scriptsLoaded.selfie || !scriptsLoaded.holistic || !window.SelfieSegmentation || !window.Holistic) return;
+
+    const selfie = new window.SelfieSegmentation({
+      locateFile: (file: string) => window.location.origin + `/static-libs/${file}`,
+    });
+    selfie.setOptions({ modelSelection: 1 });
+    selfie.onResults((results: any) => {
+      if (sendingSessionRef.current !== sessionIdRef.current) return;
+      latestSegmentationRef.current = results.segmentationMask;
+    });
+
+    const holistic = new window.Holistic({
+      locateFile: (file: string) => window.location.origin + `/static-libs/${file}`,
+    });
+    holistic.setOptions({
+      modelComplexity: 1,
+      smoothLandmarks: true,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+    });
+    holistic.onResults((results: any) => {
+      if (sendingSessionRef.current !== sessionIdRef.current) return;
+      latestPoseLandmarksRef.current = results.poseLandmarks;
+      latestFaceLandmarksRef.current = results.faceLandmarks;
+      if (isAnalysingRef.current) {
+        isAnalysingRef.current = false;
+        setIsAnalysing(false);
+      }
+    });
+
+    selfieSegmentationRef.current = selfie;
+    holisticRef.current = holistic;
+    // The two can't start at the same time: both load their WebAssembly through the same global
+    // (createMediapipeSolutionsWasm), and one would get the other's. So Holistic's big files are only
+    // downloaded meanwhile (into the browser's cache), and it starts once the segmentation model has.
+    for (const file of [
+      "holistic_solution_packed_assets.data",
+      "holistic_solution_simd_wasm_bin.wasm",
+      "pose_landmark_full.tflite",
+    ]) {
+      fetch(`/static-libs/${file}`).then((res) => res.arrayBuffer()).catch(() => {});
+    }
+    // (Skipped if these models are thrown away before their turn: React mounts twice in development)
+    let disposed = false;
+    const modelsReady = inMediapipeTurn(async () => {
+      if (disposed) return;
+      await selfie.initialize();
+      if (disposed) return;
+      await holistic.initialize();
+    });
+    modelsReady.catch((err: unknown) => console.warn("[Fitting room] the models failed to load", err));
+    modelsReadyRef.current = modelsReady;
+    setModelsCreated(true);
+
+    return () => {
+      disposed = true;
+      void inMediapipeTurn(() => {
+        try { selfie.close(); } catch {}
+        try { holistic.close(); } catch {}
+      });
+      if (selfieSegmentationRef.current === selfie) selfieSegmentationRef.current = null;
+      if (holisticRef.current === holistic) holisticRef.current = null;
+      modelsReadyRef.current = null;
+      setModelsCreated(false);
+    };
+  }, [scriptsLoaded.selfie, scriptsLoaded.holistic, isClosed]);
+
   useEffect(() => {
     if (isClosed || isMinimized) return;
-    if (!scriptsLoaded.selfie || !scriptsLoaded.holistic) return;
+    if (!scriptsLoaded.selfie || !scriptsLoaded.holistic || !modelsCreated) return;
     if (!videoRef.current || !canvasRef.current || !window.SelfieSegmentation || !window.Holistic) return;
     const isPhoto = inputSource === "photo";
     if (isPhoto && !photoCanvas) return;
@@ -2262,29 +2355,13 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
       overlay: HTMLCanvasElement | null;
     } | null = null;
 
-    // Initialize your segmentation engine locally out of the public folder mapping
-    selfieSegmentationRef.current = new window.SelfieSegmentation({
-      locateFile: (file: string) => window.location.origin + `/static-libs/${file}`,
-    });
-    selfieSegmentationRef.current.setOptions({ modelSelection: 1 });
-    selfieSegmentationRef.current.onResults((results: any) => {
-      latestSegmentationRef.current = results.segmentationMask;
-    });
-
-    // Initialize your Holistic pipeline safely out of the local static folder mapping
-    holisticRef.current = new window.Holistic({
-      locateFile: (file: string) => window.location.origin + `/static-libs/${file}`,
-    });
-    holisticRef.current.setOptions({
-      modelComplexity: 1,
-      smoothLandmarks: true,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5,
-    });
-    holisticRef.current.onResults((results: any) => {
-      latestPoseLandmarksRef.current = results.poseLandmarks;
-      latestFaceLandmarksRef.current = results.faceLandmarks;
-    });
+    // The models stay loaded between sessions (see the effect above): reset, so one photo's tracking
+    // doesn't carry over to the next
+    if (!selfieSegmentationRef.current || !holisticRef.current) return;
+    try { selfieSegmentationRef.current.reset(); } catch {}
+    try { holisticRef.current.reset(); } catch {}
+    isAnalysingRef.current = true;
+    setIsAnalysing(true);
 
     function renderLoop() {
       // FIXED: Added an implicit guard check to instantly kill the animation loop if the session closes
@@ -2649,6 +2726,12 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
             return;
           }
 
+          await modelsReadyRef.current;
+          if (sessionIdRef.current !== sessionId) {
+            return;
+          }
+
+          sendingSessionRef.current = sessionId;
           if (selfieSegmentationRef.current) {
             await selfieSegmentationRef.current.send({ image: source });
           }
@@ -2660,7 +2743,8 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
           if (holisticRef.current) {
             await holisticRef.current.send({ image: source });
           }
-        } catch {
+        } catch (err) {
+          console.error("[Fitting room] the models failed on a frame; closing", err);
           if (sessionIdRef.current === sessionId) {
             setIsClosed(true);
             onClose?.();
@@ -2765,22 +2849,14 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
         video.load();
       }
 
-      if (selfieSegmentationRef.current) {
-        try { selfieSegmentationRef.current.close(); } catch {}
-        selfieSegmentationRef.current = null;
-      }
-
-      if (holisticRef.current) {
-        try { holisticRef.current.close(); } catch {}
-        holisticRef.current = null;
-      }
-
       latestSegmentationRef.current = null;
       latestPoseLandmarksRef.current = null;
       latestFaceLandmarksRef.current = null;
       frameProcessingRef.current = false;
+      isAnalysingRef.current = false;
+      setIsAnalysing(false);
     };
-  }, [scriptsLoaded, isMinimized, isClosed, mode, onClose, inputSource, photoCanvas]);
+  }, [scriptsLoaded, modelsCreated, isMinimized, isClosed, mode, onClose, inputSource, photoCanvas]);
 
   const handlePhotoSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -2820,7 +2896,8 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
     setFitStatus("working");
     setFitError(null);
     const request = fitRequestRef.current;
-    fitGarmentOnPhoto(photoOriginal, selectedImageSrc)
+    waitForPaint()
+      .then(() => fitGarmentOnPhoto(photoOriginal, selectedImageSrc))
       .then(({ canvas, report }) => {
         if (request !== fitRequestRef.current) return;
         console.info("[Fit garment]", report);
@@ -2834,6 +2911,33 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
         setFitStatus("failed");
       });
   };
+
+  // On the webcam: a still of the camera, fitted the way a photo is (a fit takes seconds, too long for live
+  // video). The live view carries on behind it, for "back to live" or another still.
+  const handleSnapshotFit = () => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth) return;
+    const still = document.createElement("canvas");
+    still.width = video.videoWidth;
+    still.height = video.videoHeight;
+    still.getContext("2d")?.drawImage(video, 0, 0);
+    fitRequestRef.current += 1;
+    setPhotoOriginal(toParseCanvas(still));
+    setFittedResultUrl(null);
+    setFitError(null);
+    setFitStatus("idle");
+    setShowFitted(true);
+    setSnapshotPending(true);
+  };
+
+  // (The fit starts once the still is in place)
+  useEffect(() => {
+    if (inputSource !== "webcam" || !snapshotPending || !photoOriginal || fitStatus !== "idle") return;
+    setSnapshotPending(false);
+    startFit();
+    // startFit reads the state listed here
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputSource, snapshotPending, photoOriginal, fitStatus]);
 
   // The button switches between the fitted photo and the live overlay
   const handleFitGarment = () => {
@@ -3326,7 +3430,7 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
                     {showBodyOutlines && (armDetectionStatus === "loading" || armDetectionStatus === "failed") && (
                       <span style={{ ...mobileControlActionButtonStyle, fontWeight: "normal" }}>
                         {armDetectionStatus === "loading"
-                          ? "Refining arm outlines with BodyPix…"
+                          ? "⏳ Refining arm outlines with BodyPix…"
                           : "BodyPix unavailable — showing estimated arms"}
                       </span>
                     )}
@@ -3366,21 +3470,59 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
                 )}
               </>
             )}
-            {showFitted && fitStatus === "working" && (
+            {inputSource === "webcam" && mode === "garment" && (
               <div
                 style={{
                   position: "absolute",
-                  zIndex: 3,
-                  background: "rgba(17, 24, 39, 0.85)",
-                  color: "#fff",
-                  borderRadius: "10px",
-                  padding: "12px 20px",
-                  fontSize: "14px",
-                  fontWeight: "bold",
+                  top: "12px",
+                  left: "12px",
+                  zIndex: 4,
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  gap: "8px"
                 }}
               >
-                Fitting the garment to your photo… (the first time also downloads the models)
+                {showFitted && (
+                  <button onClick={() => setShowFitted(false)} style={mobileControlActionButtonStyle}>
+                    {"↩ Back to live"}
+                  </button>
+                )}
+                <button
+                  onClick={handleSnapshotFit}
+                  disabled={fitStatus === "working"}
+                  title="Take a still from the camera and fit the garment onto you in it, shaped to your body"
+                  style={mobileControlActionButtonStyle}
+                >
+                  {showFitted ? "📸 New snapshot" : "📸 Fit to a snapshot"}
+                </button>
+                {showFitted && fitStatus === "failed" && (
+                  <span style={{ ...mobileControlActionButtonStyle, fontWeight: "normal" }}>
+                    {`Couldn't fit the garment: ${fitError}`}
+                  </span>
+                )}
               </div>
+            )}
+            {/* Hourglass while the computer works: loading the try-on models, finding the person (until the
+                first pose arrives, which the first time also downloads the models), or fitting the garment */}
+            {!isLoaded && <ProcessingHourglass message="Loading the fitting room…" />}
+            {isLoaded && isAnalysing && !(showFitted && fitStatus === "working") && (
+              <ProcessingHourglass
+                message={
+                  inputSource === "webcam"
+                    ? "Finding you in the camera… (the first time also downloads the models)"
+                    : "Finding you in the photo… (the first time also downloads the models)"
+                }
+              />
+            )}
+            {isLoaded && showFitted && fitStatus === "working" && (
+              <ProcessingHourglass
+                message={
+                  inputSource === "webcam"
+                    ? "Fitting the garment to your snapshot… (the first time also downloads the models)"
+                    : "Fitting the garment to your photo… (the first time also downloads the models)"
+                }
+              />
             )}
             {showFitted && fittedResultUrl && (
               // eslint-disable-next-line @next/next/no-img-element
@@ -3388,6 +3530,7 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
                 src={fittedResultUrl}
                 alt="Your photo wearing the garment"
                 style={{
+                  transform: inputSource === "photo" ? "none" : "scaleX(-1)",
                   maxWidth: isMobile ? "96vw" : "100%",
                   maxHeight: isMobile ? "calc(100dvh - 200px)" : "90%",
                   objectFit: "contain",
