@@ -6,6 +6,7 @@ import React, { useEffect, useState, useCallback, useMemo, useRef } from "react"
 import Link from "next/link";
 import NecklaceTryOn from "./NecklaceTryOn";
 import GarmentPartPainter from "./GarmentPartPainter";
+import ProcessingHourglass, { waitForPaint } from "./ProcessingHourglass";
 import AdSlot from "./AdSlot";
 import { hughIsLife, whisperingSignature } from "../lib/fonts";
 
@@ -1422,6 +1423,8 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
     setDetectedSourceFor(null);
     setIsDetectingSourceArticles(true);
     try {
+      await waitForPaint();
+      if (request !== sourceDetectRequestRef.current) return;
       const objects = await findSourceObjects(src, (early) => {
         // (A photo's quick first answer, shown while it's checked for a person and their clothing)
         if (request !== sourceDetectRequestRef.current) return;
@@ -3265,7 +3268,7 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
     setTutorialDisabled(false);
   }, []);
 
-  const helpVideoSources = ["/demo_video1.mp4", "/demo_video2.mp4"];
+  const helpVideoSources = ["/demo_video_studio.mp4", "/demo_video2.mp4"];
 
   const playNextHelpVideo = useCallback(() => {
     setActiveHelpVideoIndex((currentIndex) => {
@@ -9100,6 +9103,17 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
                       />
                     ))}
                   </svg>
+                  {/* Hourglass over the picture while its objects and garments are found */}
+                  {isDetectingSourceArticles && (
+                    <ProcessingHourglass
+                      message={
+                        detectedSourceArticles.length > 0
+                          ? "Checking for clothing someone is wearing..."
+                          : "Finding the objects in this picture..."
+                      }
+                      dim={detectedSourceArticles.length === 0}
+                    />
+                  )}
                 </div>
 
                 <div className="shrink-0">
