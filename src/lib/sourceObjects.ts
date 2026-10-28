@@ -6,7 +6,7 @@
 //   background is the colour round the picture's edges, and what's like it reaching in from there.
 // - A photo of things on a surface that isn't plain (jewelry on a display bust): what stands out from the
 //   surface by its texture (sparkling stones, metalwork, patterns against smooth suede or a wall).
-// - A photo of a person (a face found by the body parser the photo try-on uses): the clothing model
+// - A photo of a person (a face or skin found by the body parser the photo try-on uses): the clothing model
 //   (garmentSegmenter) finds each garment and accessory (a dress, a top, pants, shoes, a bag ...), its parts
 //   (sleeves, collar, pockets ...) kept with it.
 //
@@ -14,9 +14,8 @@
 // Things on a plain background are found at once, with no model; in a photo the texture's answer comes at once
 // too, while the models (loaded the first time they're needed) check for a person and their clothing.
 
-import { parseFashionClasses } from "./garmentSegmenter";
-import { HUMAN_FACE_SKIN } from "./photoTryOn";
-import { parseHumanAndPose } from "./photoTryOnParsing";
+import { parseFashionClasses, preloadFashionModel } from "./garmentSegmenter";
+import { skinSharesOf } from "./photoTryOnParsing";
 
 export type SourceObject = {
   id: string;
@@ -49,8 +48,18 @@ const ENCLOSED_BACKGROUND = 0.0008;
 // Parts of one thing this close (fraction of the picture's longer side) are one object (a chain and its
 // pendant, beads on a string)
 const JOIN_GAP = 0.012;
-// A photo has a person in it if at least this much of it is face
+// Found by texture in this many pieces or more, it's more likely a patterned garment broken up than that
+// many things
+const TEXTURE_PIECES = 3;
+// A photo has a person in it if at least this much of it is face, or this much other skin (hands, arms, a neck:
+// a photo of a top cropped below the face; a display bust's suede is taken for a little skin, about 2%) (looked
+// for in a copy this big, px on its longer side)
 const PERSON_FACE = 0.002;
+const PERSON_SKIN = 0.04;
+const PERSON_SIDE = 384;
+// A garment less than this fraction of the size of a garment it touches is part of that one (the model unsure
+// what it was)
+const GARMENT_MERGE = 0.4;
 // The smallest object kept (fraction of the picture)
 const MIN_OBJECT = 0.002;
 // With no plain background and no clothing: how busy the picture is, measured over this far (fraction of the
@@ -539,8 +548,48 @@ function objectsFromClothing(classes: Uint8Array, w: number, h: number): Array<{
   }
   for (let p = 0; p < n; p += 1) if (labels[p] && patchOwner[labels[p]]) owner[p] = patchOwner[labels[p]];
 
-  const found: Array<{ mask: Uint8Array; classId: number }> = [];
-  for (let cls = 1; cls <= LAST_WHOLE_CLASS; cls += 1) {
+  // The garments; one the model wasn't sure of (patches of a long top called Top among the Dress) merged into
+  // the bigger garment it touches most, if it's much smaller than it and worn on the same part of the body
+  // (pants never into a dress)
+  const isLegGarment = (cls: number) => cls >= 7 && cls <= 9;
+  const garments: Array<{ mask: Uint8Array; classId: number; size: number }> = [];
+  for (let cls = 1; cls <= LAST_GARMENT_CLASS; cls += 1) {
+    const mask = new Uint8Array(n);
+    let size = 0;
+    for (let p = 0; p < n; p += 1) {
+      if (owner[p] === cls) {
+        mask[p] = 1;
+        size += 1;
+      }
+    }
+    if (size) garments.push({ mask, classId: cls, size });
+  }
+  garments.sort((a, b) => a.size - b.size);
+  for (let i = 0; i < garments.length; i += 1) {
+    const small = garments[i];
+    const reach = grow(small.mask, w, h, 2);
+    let into = -1;
+    let mostContact = 0;
+    for (let j = i + 1; j < garments.length; j += 1) {
+      const big = garments[j];
+      if (small.size >= big.size * GARMENT_MERGE || isLegGarment(small.classId) !== isLegGarment(big.classId)) continue;
+      let contact = 0;
+      for (let p = 0; p < n; p += 1) if (reach[p] && big.mask[p]) contact += 1;
+      if (contact > mostContact) {
+        mostContact = contact;
+        into = j;
+      }
+    }
+    if (into < 0) continue;
+    const big = garments[into];
+    for (let p = 0; p < n; p += 1) if (small.mask[p]) big.mask[p] = 1;
+    big.size += small.size;
+    small.size = 0;
+  }
+  const found: Array<{ mask: Uint8Array; classId: number }> = garments
+    .filter((g) => g.size >= n * MIN_OBJECT)
+    .map((g) => ({ mask: g.mask, classId: g.classId }));
+  for (let cls = LAST_GARMENT_CLASS + 1; cls <= LAST_WHOLE_CLASS; cls += 1) {
     const mask = new Uint8Array(n);
     let any = 0;
     for (let p = 0; p < n; p += 1) {
@@ -550,10 +599,6 @@ function objectsFromClothing(classes: Uint8Array, w: number, h: number): Array<{
       }
     }
     if (any < n * MIN_OBJECT) continue;
-    if (cls <= LAST_GARMENT_CLASS) {
-      found.push({ mask, classId: cls });
-      continue;
-    }
     // (An accessory: each one on its own, a pair of shoes as two)
     const pieces = labelParts(mask, w, h);
     for (let k = 1; k <= pieces.count; k += 1) {
@@ -671,14 +716,18 @@ function toObjects(
   });
 }
 
-// Whether there's a person in the picture: a face (some face skin, as the body parser sees it)
+// Whether there's a person in the picture: a face, or enough other skin (as the body parser sees them), looked
+// for in a small copy of it
 async function hasPerson(canvas: HTMLCanvasElement): Promise<boolean> {
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const fit = Math.min(1, PERSON_SIDE / Math.max(canvas.width, canvas.height));
+  const small = document.createElement("canvas");
+  small.width = Math.max(1, Math.round(canvas.width * fit));
+  small.height = Math.max(1, Math.round(canvas.height * fit));
+  const ctx = small.getContext("2d", { willReadFrequently: true });
   if (!ctx) return false;
-  const { human } = await parseHumanAndPose(ctx.getImageData(0, 0, canvas.width, canvas.height));
-  let face = 0;
-  for (let p = 0; p < human.length; p += 1) if (human[p] === HUMAN_FACE_SKIN) face += 1;
-  return face >= human.length * PERSON_FACE;
+  ctx.drawImage(canvas, 0, 0, small.width, small.height);
+  const { face, skin } = await skinSharesOf(ctx.getImageData(0, 0, small.width, small.height));
+  return face >= PERSON_FACE || skin >= PERSON_SKIN;
 }
 
 /** The separate objects in a picture, largest first, each cut out on its own. A photo's quick first answer
@@ -734,15 +783,28 @@ export async function findSourceObjects(
   const byTexture = objectsByTexture(data, w, h).map((mask) => ({ mask, classId: 0 }));
   const early = toObjects(img, byTexture, w, h);
   if (early.length) onEarly?.(early);
-  const [person, classes] = await Promise.all([
-    hasPerson(parseCanvas).catch(() => false),
-    parseFashionClasses(parseCanvas).catch(() => null),
-  ]);
+  // (The person check first: the clothing model can hold up the page while it runs, so it's only run when
+  // it's needed)
+  const person = await hasPerson(parseCanvas).catch(() => false);
+  // (No person: the texture's answer stands, unless it's many pieces, which is a patterned garment broken up
+  // (polka dots): then the clothing model has its say)
+  if (!person && byTexture.length && byTexture.length < TEXTURE_PIECES) {
+    report("texture", byTexture);
+    return early;
+  }
+  const classes = await parseFashionClasses(parseCanvas).catch(() => null);
   const byClothing = classes ? objectsFromClothing(classes, w, h) : [];
-  if ((person || !byTexture.length) && byClothing.length) {
-    report(person ? "clothing (a person)" : "clothing (nothing by texture)", byClothing);
+  if (byClothing.length) {
+    report(person ? "clothing (a person)" : "clothing (nothing clear by texture)", byClothing);
     return toObjects(img, byClothing, w, h);
   }
-  report(person ? "texture (a person, no clothing)" : "texture", byTexture);
+  report(person ? "texture (a person, no clothing)" : byTexture.length ? "texture (no clothing)" : "nothing", byTexture);
   return early;
+}
+
+/** Starts loading the models a photo needs (the body parser that looks for a person, and the clothing model)
+ * in the background, so they're ready by the time a photo is picked. */
+export function preloadSourceObjectModels() {
+  preloadFashionModel();
+  void skinSharesOf(new ImageData(8, 8)).catch(() => undefined);
 }

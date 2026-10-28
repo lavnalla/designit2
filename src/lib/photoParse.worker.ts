@@ -11,6 +11,9 @@ const WASM_PATH = "/static-libs/tasks-vision";
 const SEGMENTER_MODEL = "/static-libs/selfie_multiclass_256x256.tflite";
 const POSE_MODEL = "/static-libs/pose_landmarker_full.task";
 const HUMAN_CLASSES = 6;
+// The body skin and face skin classes
+const BODY_SKIN = 2;
+const FACE_SKIN = 3;
 
 // tasks-vision's wasm glue comes in two builds: a classic script (loaded with importScripts in a classic
 // worker) and an ES module (loaded with import() in a module worker). The bundler decides which kind of
@@ -140,11 +143,30 @@ function parseHuman(segmenter: ImageSegmenter, image: ImageData): Uint8Array {
   return human;
 }
 
-self.onmessage = async (e: MessageEvent<{ id: number; data: Uint8ClampedArray; width: number; height: number }>) => {
-  const { id, data, width, height } = e.data;
+self.onmessage = async (
+  e: MessageEvent<{ id: number; data: Uint8ClampedArray; width: number; height: number; faceOnly?: boolean }>,
+) => {
+  const { id, data, width, height, faceOnly } = e.data;
   try {
     const { segmenter, pose } = await getModels();
     const image = new ImageData(new Uint8ClampedArray(data), width, height);
+    // Only how much of it is face and skin (is there a person in it?): one look, no pose
+    if (faceOnly) {
+      const confidences = humanConfidences(segmenter, image);
+      let face = 0;
+      let skin = 0;
+      for (let p = 0; p < width * height; p += 1) {
+        let best = 0;
+        for (let c = 1; c < HUMAN_CLASSES; c += 1) {
+          if (confidences[p * HUMAN_CLASSES + c] > confidences[p * HUMAN_CLASSES + best]) best = c;
+        }
+        if (best === FACE_SKIN) face += 1;
+        if (best === BODY_SKIN) skin += 1;
+      }
+      const n = Math.max(1, width * height);
+      (self as unknown as Worker).postMessage({ id, faceShare: face / n, skinShare: skin / n });
+      return;
+    }
     const human = parseHuman(segmenter, image);
     const landmarks = pose.detect(image).landmarks[0] ?? null;
     (self as unknown as Worker).postMessage(

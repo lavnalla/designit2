@@ -43,12 +43,16 @@ export type GarmentSegmentResult = {
   detectedParts: GarmentPart[];
 };
 
+// The model runs on the graphics card (WebGPU) where the browser has one for it: many times quicker than on
+// the processor (WebAssembly), which it falls back to otherwise
+const hasWebGpu = () => typeof navigator !== "undefined" && "gpu" in navigator;
+
 let ortModulePromise: Promise<typeof import("onnxruntime-web")> | null = null;
 let sessionPromise: Promise<import("onnxruntime-web").InferenceSession> | null = null;
 
 async function getOrt() {
   if (!ortModulePromise) {
-    ortModulePromise = import("onnxruntime-web").then((ort) => {
+    ortModulePromise = (hasWebGpu() ? import("onnxruntime-web/webgpu") : import("onnxruntime-web")).then((ort) => {
       // onnxruntime-web needs its .wasm runtime files; load them from the
       // same CDN pattern already used elsewhere in this app for MediaPipe's
       // WASM assets, rather than wiring up bundler asset copying.
@@ -59,12 +63,29 @@ async function getOrt() {
   return ortModulePromise;
 }
 
+/** Starts loading the model (download and set-up, a few seconds the first time), so it's ready when it's
+ * first needed. */
+export function preloadFashionModel() {
+  void getSession().catch(() => {
+    sessionPromise = null;
+  });
+}
+
 async function getSession() {
   if (!sessionPromise) {
     sessionPromise = getOrt().then((ort) =>
       ort.InferenceSession.create(MODEL_URL, {
-        executionProviders: ["wasm"],
-      }),
+        executionProviders: hasWebGpu() ? ["webgpu", "wasm"] : ["wasm"],
+      })
+        .then((session) => {
+          console.info(`[Clothing model] running on the ${hasWebGpu() ? "graphics card (WebGPU)" : "processor"}`);
+          return session;
+        })
+        .catch(() => {
+          // (No adapter after all, or the model won't run on it: on the processor)
+          console.info("[Clothing model] running on the processor (no WebGPU)");
+          return ort.InferenceSession.create(MODEL_URL, { executionProviders: ["wasm"] });
+        }),
     );
   }
   return sessionPromise;

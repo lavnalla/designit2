@@ -17,7 +17,7 @@ import { renderSketch } from "../lib/sketchRender";
 import { renderJewelry } from "../lib/jewelryRender";
 import { adminHeaders } from "../lib/adminAuth";
 import { parseFashionClasses } from "../lib/garmentSegmenter";
-import { findSourceObjects } from "../lib/sourceObjects";
+import { findSourceObjects, preloadSourceObjectModels } from "../lib/sourceObjects";
 import { toParseCanvas } from "../lib/photoTryOnParsing";
 import { isGarmentClass } from "../lib/photoTryOn";
 import BodySilhouetteView from "./BodySilhouetteView";
@@ -1404,6 +1404,17 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
 
   // The separate objects in a Source picture (sourceObjects.ts), found as soon as a picture is uploaded or a
   // template picked; each can then be put on the workspace on its own
+  // The models a photo's objects are found with, loaded in the background the first time the Source window
+  // opens (a few seconds' download and set-up), so a photo picked there is ready sooner
+  const sourceModelsPreloadedRef = useRef(false);
+  useEffect(() => {
+    if (!showSourceWindow || sourceModelsPreloadedRef.current) return;
+    sourceModelsPreloadedRef.current = true;
+    const start = () => preloadSourceObjectModels();
+    if ("requestIdleCallback" in window) window.requestIdleCallback(start, { timeout: 3000 });
+    else setTimeout(start, 1500);
+  }, [showSourceWindow]);
+
   const detectSourceObjects = async (src: string | null) => {
     if (!src) return;
     const request = ++sourceDetectRequestRef.current;
