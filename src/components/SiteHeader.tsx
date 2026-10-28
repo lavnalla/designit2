@@ -25,16 +25,17 @@ export default function SiteHeader() {
   }
 
   return (
-    // Outer nav uses bg-transparent so the page background shows on the sides
+    // Outer nav uses bg-transparent so the page background shows on the sides (white on the home page,
+    // which is white throughout)
     // Sticky so the nav (and the open mobile menu) stays reachable once the page is scrolled down
-    <nav className="sticky top-0 z-50 w-full bg-transparent">
+    <nav className={`sticky top-0 z-50 w-full ${pathname === "/" ? "bg-white" : "bg-transparent"}`}>
       {/* 
         Inner container:
         1. max-w-[1120px] mx-auto matches the exact width of the main container below.
         2. px-5 md:px-8 aligns the contents flush with the main grid.
-        3. bg-[#fffdfa] and border classes enclose only the inner content box.
+        3. bg-white and border classes enclose only the inner content box.
       */}
-      <div className="mx-auto flex w-full max-w-[1120px] flex-wrap items-center justify-between gap-4 border-x border-t border-[#e3ddd6] bg-[#fffdfa] px-5 py-5 md:px-8 max-h-[100dvh] overflow-y-auto">
+      <div className="mx-auto flex w-full max-w-[1120px] flex-wrap items-center justify-between gap-4 border-x border-t border-[#e3ddd6] bg-white px-5 py-5 md:px-8 max-h-[100dvh] overflow-y-auto">
         <div className="flex min-w-0 items-center gap-3">
           <div>
             <span className={`${hughIsLife.className} block truncate text-2xl leading-none tracking-tight text-black sm:text-3xl`}>

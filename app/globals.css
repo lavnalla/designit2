@@ -106,3 +106,35 @@ header,
 @media (prefers-reduced-motion: reduce) {
   .animate-float-soft, .animate-marquee, .text-gold-shimmer { animation: none; }
 }
+
+/* Home page hero: a ribbon of jewel colours sweeping down the side of the white page, (gold, rose, amethyst, sapphire,
+   emerald), with fine folds along it and its colours drifting slowly */
+.hero-ribbon {
+  background:
+    repeating-linear-gradient(90deg, transparent 0 46px, rgba(255, 255, 255, 0.28) 46px 48px),
+    linear-gradient(90deg, #f8dc8c 0%, #f2a43a 12%, #ec5f86 28%, #b23cc7 44%, #6457f0 60%, #2d8ee6 74%, #10b981 88%, #b7f0d6 100%);
+  background-size: 100% 100%, 220% 100%;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 18%, #000 82%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 18%, #000 82%, transparent 100%);
+  animation: ribbon-flow 20s ease-in-out infinite alternate;
+}
+.hero-ribbon-glow {
+  background: linear-gradient(90deg, #f2a43a, #ec5f86, #b23cc7, #6457f0, #10b981);
+  filter: blur(70px);
+  opacity: 0.35;
+}
+@keyframes ribbon-flow {
+  from { background-position: 0 0, 0% 0; }
+  to { background-position: 0 0, 100% 0; }
+}
+.text-jewel-shimmer {
+  background: linear-gradient(100deg, #b8892b 0%, #ec5f86 30%, #8b3fd1 55%, #2d8ee6 75%, #b8892b 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gold-shimmer 8s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-ribbon, .text-jewel-shimmer { animation: none; }
+}

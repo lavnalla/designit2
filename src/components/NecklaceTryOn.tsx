@@ -1847,26 +1847,65 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 
 // The person photo wearing the garment photo's garment (photoTryOn.ts, run in a worker: it takes a few
 // seconds of number crunching)
+// The webcam's live fit works on camera frames this many pixels on the long side (a photo is fitted at
+// PARSE_MAX_SIDE): smaller, so each fit comes back sooner
+const LIVE_FIT_MAX_SIDE = 640;
+
+// The garment picture's parse, kept for the garment it was made from: the webcam's live fit fits the same
+// garment over and over, and parsing it is half the work of each fit
+let garmentParseCache: { src: string; parse: Promise<PhotoParse> } | null = null;
+function parseGarment(garmentSrc: string): Promise<PhotoParse> {
+  if (garmentParseCache?.src !== garmentSrc) {
+    const parse = loadImage(garmentSrc).then((img) => parsePhoto(toParseCanvas(img)));
+    garmentParseCache = { src: garmentSrc, parse };
+    parse.catch(() => {
+      if (garmentParseCache?.parse === parse) garmentParseCache = null;
+    });
+  }
+  return garmentParseCache.parse;
+}
+
+// The try-on worker, started once and kept between fits (starting one takes a moment, each time)
+type TryOnReply = { id: number; image?: RGBAImage; report?: TryOnReport; error?: string };
+let tryOnWorker: Worker | null = null;
+let nextTryOnId = 0;
+const tryOnPending = new Map<number, { resolve: (r: TryOnReply) => void; reject: (e: Error) => void }>();
+function runTryOn(person: PhotoParse, garment: PhotoParse): Promise<{ image: RGBAImage; report: TryOnReport }> {
+  if (!tryOnWorker) {
+    tryOnWorker = new Worker(new URL("../lib/photoTryOn.worker.ts", import.meta.url), { type: "module" });
+    tryOnWorker.onmessage = (e: MessageEvent<TryOnReply>) => {
+      const request = tryOnPending.get(e.data.id);
+      if (!request) return;
+      tryOnPending.delete(e.data.id);
+      request.resolve(e.data);
+    };
+    tryOnWorker.onerror = (e) => {
+      // (A worker that failed can't answer: fail everything waiting, and start afresh next time)
+      for (const request of tryOnPending.values()) request.reject(new Error(e.message || "Try-on failed"));
+      tryOnPending.clear();
+      tryOnWorker?.terminate();
+      tryOnWorker = null;
+    };
+  }
+  const worker = tryOnWorker;
+  const id = nextTryOnId++;
+  return new Promise<TryOnReply>((resolve, reject) => {
+    tryOnPending.set(id, { resolve, reject });
+    worker.postMessage({ id, person, garment });
+  }).then((reply) => {
+    if (reply.error || !reply.image || !reply.report) throw new Error(reply.error ?? "Try-on failed");
+    return { image: reply.image, report: reply.report };
+  });
+}
+
 async function fitGarmentOnPhoto(
   person: HTMLCanvasElement,
   garmentSrc: string,
 ): Promise<{ canvas: HTMLCanvasElement; report: TryOnReport }> {
+  // (One after the other: both run the same clothing model, which takes one picture at a time)
+  const garmentParse = await parseGarment(garmentSrc);
   const personParse = await parsePhoto(person);
-  const garmentParse = await parsePhoto(toParseCanvas(await loadImage(garmentSrc)));
-  const { image, report } = await new Promise<{ image: RGBAImage; report: TryOnReport }>((resolve, reject) => {
-    const worker = new Worker(new URL("../lib/photoTryOn.worker.ts", import.meta.url), { type: "module" });
-    worker.onmessage = (e: MessageEvent<{ image?: RGBAImage; report?: TryOnReport; error?: string }>) => {
-      worker.terminate();
-      if (e.data.error || !e.data.image || !e.data.report) reject(new Error(e.data.error ?? "Try-on failed"));
-      else resolve({ image: e.data.image, report: e.data.report });
-    };
-    worker.onerror = (e) => {
-      worker.terminate();
-      reject(new Error(e.message));
-    };
-    const message: { person: PhotoParse; garment: PhotoParse } = { person: personParse, garment: garmentParse };
-    worker.postMessage(message);
-  });
+  const { image, report } = await runTryOn(personParse, garmentParse);
   const out = document.createElement("canvas");
   out.width = image.width;
   out.height = image.height;
@@ -1943,6 +1982,14 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
   const [photoOriginal, setPhotoOriginal] = useState<HTMLCanvasElement | null>(null);
   const [fittedResultUrl, setFittedResultUrl] = useState<string | null>(null);
   const [fitStatus, setFitStatus] = useState<"idle" | "working" | "done" | "failed">("idle");
+  // Webcam live fit (garment): the photo fit done again and again on the latest camera frame, so the garment
+  // follows you a few times a second. On by default; paused, the snapshot fit is there instead.
+  const [liveFit, setLiveFit] = useState(true);
+  const [liveFitStatus, setLiveFitStatus] = useState<"starting" | "running">("starting");
+  const [liveFitError, setLiveFitError] = useState<string | null>(null);
+  // (While live fitted pictures are showing, the overlay's own per-frame detection is paused: it isn't seen,
+  // and it would slow the fits down)
+  const liveFitShowingRef = useRef(false);
   const [fitError, setFitError] = useState<string | null>(null);
   const [showFitted, setShowFitted] = useState(false);
   // A webcam still waiting to be fitted
@@ -2715,7 +2762,7 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
     }
 
     const processFrame = async () => {
-        if (sessionIdRef.current !== sessionId || frameProcessingRef.current) {
+        if (sessionIdRef.current !== sessionId || frameProcessingRef.current || liveFitShowingRef.current) {
           return;
         }
 
@@ -2958,6 +3005,71 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
     // startFit reads the state listed here
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inputSource, mode, photoOriginal, selectedImageSrc, fitStatus]);
+
+  // Webcam live fit: fit the garment onto the latest camera frame, show it, and go again with the next one
+  useEffect(() => {
+    if (inputSource !== "webcam" || mode !== "garment" || !liveFit || !selectedImageSrc) return;
+    if (isClosed || isMinimized) return;
+
+    let cancelled = false;
+    // (The two newest pictures' URLs: the one showing, and the one before it, released once replaced)
+    const shownUrls: string[] = [];
+    fitRequestRef.current += 1; // (a snapshot fit in progress is dropped)
+    setFitStatus("idle");
+    setFittedResultUrl(null);
+    setShowFitted(true);
+    setLiveFitStatus("starting");
+    setLiveFitError(null);
+
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const run = async () => {
+      await waitForPaint();
+      while (!cancelled) {
+        const video = videoRef.current;
+        if (!video || !video.videoWidth) {
+          await sleep(200);
+          continue;
+        }
+        const still = document.createElement("canvas");
+        still.width = video.videoWidth;
+        still.height = video.videoHeight;
+        still.getContext("2d")?.drawImage(video, 0, 0);
+        try {
+          const { canvas } = await fitGarmentOnPhoto(toParseCanvas(still, LIVE_FIT_MAX_SIDE), selectedImageSrc);
+          if (cancelled) break;
+          const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+          if (cancelled) break;
+          if (blob) {
+            const url = URL.createObjectURL(blob);
+            shownUrls.push(url);
+            if (shownUrls.length > 2) URL.revokeObjectURL(shownUrls.shift()!);
+            setFittedResultUrl(url);
+            setLiveFitStatus("running");
+            setLiveFitError(null);
+            liveFitShowingRef.current = true;
+          }
+        } catch (err) {
+          // (A frame it can't fit, e.g. no one in view: the last picture stays, and it tries the next frame)
+          if (cancelled) break;
+          console.warn("[Live fit] a frame couldn't be fitted", err);
+          setLiveFitError(err instanceof Error ? err.message : String(err));
+          await sleep(500);
+        }
+        // (A breath between fits, for the page to draw and respond)
+        await waitForPaint();
+      }
+    };
+    void run();
+
+    return () => {
+      cancelled = true;
+      liveFitShowingRef.current = false;
+      setFittedResultUrl(null);
+      setShowFitted(false);
+      // (Released once the picture is off the page)
+      setTimeout(() => shownUrls.forEach((url) => URL.revokeObjectURL(url)), 1000);
+    };
+  }, [inputSource, mode, liveFit, selectedImageSrc, isClosed, isMinimized]);
 
   const handleCloseFittingRoom = () => {
     setIsMinimized(false);
@@ -3483,20 +3595,38 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
                   gap: "8px"
                 }}
               >
-                {showFitted && (
+                <button
+                  onClick={() => setLiveFit((on) => !on)}
+                  title={
+                    liveFit
+                      ? "Stop fitting the garment onto the camera, and show the quick overlay"
+                      : "Fit the garment onto you on the camera, shaped to your body, over and over as you move"
+                  }
+                  style={mobileControlActionButtonStyle}
+                >
+                  {liveFit ? "⏸ Pause live fit" : "✨ Live fit"}
+                </button>
+                {liveFit && liveFitError && liveFitStatus === "starting" && (
+                  <span style={{ ...mobileControlActionButtonStyle, fontWeight: "normal" }}>
+                    {`Can't fit yet: ${liveFitError} (stand where the camera sees you)`}
+                  </span>
+                )}
+                {!liveFit && showFitted && (
                   <button onClick={() => setShowFitted(false)} style={mobileControlActionButtonStyle}>
                     {"↩ Back to live"}
                   </button>
                 )}
-                <button
-                  onClick={handleSnapshotFit}
-                  disabled={fitStatus === "working"}
-                  title="Take a still from the camera and fit the garment onto you in it, shaped to your body"
-                  style={mobileControlActionButtonStyle}
-                >
-                  {showFitted ? "📸 New snapshot" : "📸 Fit to a snapshot"}
-                </button>
-                {showFitted && fitStatus === "failed" && (
+                {!liveFit && (
+                  <button
+                    onClick={handleSnapshotFit}
+                    disabled={fitStatus === "working"}
+                    title="Take a still from the camera and fit the garment onto you in it, shaped to your body"
+                    style={mobileControlActionButtonStyle}
+                  >
+                    {showFitted ? "📸 New snapshot" : "📸 Fit to a snapshot"}
+                  </button>
+                )}
+                {!liveFit && showFitted && fitStatus === "failed" && (
                   <span style={{ ...mobileControlActionButtonStyle, fontWeight: "normal" }}>
                     {`Couldn't fit the garment: ${fitError}`}
                   </span>
@@ -3506,7 +3636,11 @@ export default function NecklaceTryOn({ selectedImageSrc, mode = "garment", inpu
             {/* Hourglass while the computer works: loading the try-on models, finding the person (until the
                 first pose arrives, which the first time also downloads the models), or fitting the garment */}
             {!isLoaded && <ProcessingHourglass message="Loading the fitting room…" />}
-            {isLoaded && isAnalysing && !(showFitted && fitStatus === "working") && (
+            {isLoaded && inputSource === "webcam" && mode === "garment" && liveFit && liveFitStatus === "starting" && (
+              <ProcessingHourglass message="Fitting the garment to you on the camera… (the first time also downloads the models)" />
+            )}
+            {isLoaded && isAnalysing && !(showFitted && fitStatus === "working") &&
+              !(inputSource === "webcam" && mode === "garment" && liveFit && liveFitStatus === "starting") && (
               <ProcessingHourglass
                 message={
                   inputSource === "webcam"
