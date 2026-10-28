@@ -11,14 +11,13 @@ import { hughIsLife, whisperingSignature } from "../lib/fonts";
 
 import type { NextConfig } from "next";
 
-import ImageTracer from "imagetracerjs";
-import { removeBackground, preload } from "@imgly/background-removal";
 import { SubmissionModal } from "./SubmissionModal";
 import { pickFabricSwatch, synthesizeFabricImage } from "../lib/fabricSynthesis";
 import { renderSketch } from "../lib/sketchRender";
 import { renderJewelry } from "../lib/jewelryRender";
 import { adminHeaders } from "../lib/adminAuth";
 import { parseFashionClasses } from "../lib/garmentSegmenter";
+import { findSourceObjects } from "../lib/sourceObjects";
 import { toParseCanvas } from "../lib/photoTryOnParsing";
 import { isGarmentClass } from "../lib/photoTryOn";
 import BodySilhouetteView from "./BodySilhouetteView";
@@ -299,7 +298,6 @@ interface Stroke {
   erasedSpots?: Array<{ x: number; y: number; r: number }>;
 }
 type HistoryItem = { shapes: DistortableShape[]; strokes: Stroke[] };
-type Candidate = { id: string; d: string; area: number; selected: boolean };
 type DetectedSourceArticle = {
   id: string;
   label: string;
@@ -1197,7 +1195,6 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
     window.addEventListener("resize", syncSidebarForViewport);
     return () => window.removeEventListener("resize", syncSidebarForViewport);
   }, [showSourceWindow]);
-  const [isRemovingBg, setIsRemovingBg] = useState(false);
   const [tutorialStep, setTutorialStep] = useState<number | null>(null);
   const [tutorialDisabled, setTutorialDisabled] = useState(false);
   const [tutorialRecording, setTutorialRecording] = useState(false);
@@ -1256,9 +1253,12 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
   >([]);
   const [isDetectingSourceArticles, setIsDetectingSourceArticles] =
     useState(false);
-  const [svgContent, setSvgContent] = useState<string | null>(null);
+  const [detectedSourceFor, setDetectedSourceFor] = useState<string | null>(
+    null,
+  );
+  // Bumped by each search for objects, so a slower earlier one doesn't overwrite a newer one's
+  const sourceDetectRequestRef = useRef(0);
   const [imgDims, setImgDims] = useState({ width: 0, height: 0 });
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [sourceDots, setSourceDots] = useState<Dot[]>([]);
   const [activeTool, setActiveTool] = useState<
     "cursor" | "scissor" | "pen" | "ghost" | "fill" | "erase"
@@ -1402,77 +1402,68 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
   const [eraseRadius, setEraseRadius] = useState(15);
   const ERASE_RADIUS = eraseRadius;
 
-  const handleDetectSourceArticles = async () => {
-    const detectImage = originalSourceImage ?? selectedImage;
-
-    if (!detectImage) {
-      alert(
-        "Article detection currently works on uploaded or captured source images.",
-      );
-      return;
-    }
-
+  // The separate objects in a Source picture (sourceObjects.ts), found as soon as a picture is uploaded or a
+  // template picked; each can then be put on the workspace on its own
+  const detectSourceObjects = async (src: string | null) => {
+    if (!src) return;
+    const request = ++sourceDetectRequestRef.current;
+    setDetectedSourceArticles([]);
+    setDetectedSourceFor(null);
+    setIsDetectingSourceArticles(true);
     try {
-      setIsDetectingSourceArticles(true);
-      let imageDataUrl = detectImage;
-
-      if (!imageDataUrl.startsWith("data:image/")) {
-        const response = await fetch(imageDataUrl);
-        if (!response.ok) {
-          throw new Error(
-            "Could not load the source image for article detection.",
-          );
-        }
-
-        const imageBlob = await response.blob();
-        imageDataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            if (typeof reader.result === "string") {
-              resolve(reader.result);
-              return;
-            }
-
-            reject(
-              new Error(
-                "Could not read the source image for article detection.",
-              ),
-            );
-          };
-          reader.onerror = () =>
-            reject(
-              new Error(
-                "Could not read the source image for article detection.",
-              ),
-            );
-          reader.readAsDataURL(imageBlob);
-        });
-      }
-
-      const response = await fetch("/api/source-detect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageDataUrl }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data?.details || data?.error || "Detection failed");
-      }
-
-      setDetectedSourceArticles(
-        Array.isArray(data?.articles) ? data.articles : [],
-      );
+      const objects = await findSourceObjects(src);
+      if (request !== sourceDetectRequestRef.current) return;
+      setDetectedSourceArticles(objects);
+      setDetectedSourceFor(src);
     } catch (error) {
-      console.error("Source article detection failed", error);
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Could not detect articles in this image.";
-      alert(message);
+      console.warn("Finding the objects in the Source picture failed", error);
     } finally {
-      setIsDetectingSourceArticles(false);
+      if (request === sourceDetectRequestRef.current) {
+        setIsDetectingSourceArticles(false);
+      }
     }
+  };
+
+  // A found object on the workspace, as an image of its own: about as big as it is in the picture (shown 300 px
+  // wide), but never smaller than half that, so a small one (an earring) can still be worked on
+  const addSourceObjectToWorkspace = (article: DetectedSourceArticle) => {
+    const img = new Image();
+    img.onload = () => {
+      const dims = { width: img.width, height: img.height };
+      const shownWidth = Math.min(
+        300,
+        Math.max(
+          150,
+          imgDims.width ? (300 * article.bounds.width) / imgDims.width : 300,
+        ),
+      );
+      saveForUndo();
+      setWorkspaceShapes((prev) => [
+        ...prev,
+        {
+          id: `s-${Date.now()}`,
+          img: article.imageDataUrl,
+          dots: [
+            { id: `p1`, x: 0, y: 0 },
+            { id: `p2`, x: dims.width, y: 0 },
+            { id: `p3`, x: dims.width, y: dims.height },
+            { id: `p4`, x: 0, y: dims.height },
+          ],
+          dims,
+          // (Each one added a little apart from the last, not all on top of each other)
+          position: { x: 100 + (prev.length % 6) * 30, y: 100 + (prev.length % 6) * 30 },
+          scale: dims.width ? shownWidth / dims.width : 1,
+          showDots: true,
+          erasedPaths: [],
+          clipUpdate: Date.now(),
+          opacity: 1,
+        },
+      ]);
+      setSourceDots([]);
+      setShowSourceWindow(false);
+      setIsSidebarOpen(false);
+    };
+    img.src = article.imageDataUrl;
   };
 
   useEffect(() => {
@@ -1491,6 +1482,7 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
     setShowSourceWindow(true);
     setIsSidebarOpen(true);
     window.sessionStorage.removeItem("designit-studio-source-image");
+    void detectSourceObjects(pendingSourceImage);
   }, [mounted]);
 
   // A submitted design opened from the community gallery or My Designs: placed on the workspace as an image,
@@ -5896,70 +5888,15 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
     load();
   }, []);
 
-  const runTrace = useCallback(() => {
+  // The Source picture's size (its preview is drawn at it)
+  useEffect(() => {
     if (!selectedImage) return;
-
-    const isRemoteSource =
-      /^https?:\/\//i.test(selectedImage) ||
-      selectedImage.startsWith("/api/source-image");
     const img = new Image();
     img.crossOrigin = "anonymous";
-    img.onload = () => {
-      setImgDims({ width: img.width, height: img.height });
-
-      if (isRemoteSource) {
-        setSvgContent(null);
-        setCandidates([]);
-        setSourceDots([]);
-        return;
-      }
-
-      ImageTracer.imageToSVG(
-        selectedImage,
-        (svgString: string) => {
-          const inner = svgString
-            .replace(/<svg[^>]*>/, "")
-            .replace(/<\/svg>/, "")
-            .replace(/<rect[^>]*\/>/g, "");
-          setSvgContent(inner);
-          setCandidates([]);
-          setSourceDots([]);
-        },
-        { numberofcolors: 2, ltres: 1, qtres: 1, scale: 1 },
-      );
-    };
-    img.onerror = () => {
-      setSvgContent(null);
-      setCandidates([]);
-      setSourceDots([]);
-    };
+    img.onload = () => setImgDims({ width: img.width, height: img.height });
     img.src = selectedImage;
+    setSourceDots([]);
   }, [selectedImage]);
-
-  useEffect(() => {
-    if (selectedImage) runTrace();
-  }, [selectedImage, runTrace]);
-
-  useEffect(() => {
-    if (!svgContent) return;
-    const ns = "http://www.w3.org/2000/svg";
-    const tmp = document.createElementNS(ns, "svg");
-    tmp.innerHTML = svgContent;
-    const results: Candidate[] = [];
-    Array.from(tmp.querySelectorAll("path")).forEach((p, pathIdx) => {
-      const d = p.getAttribute("d") || "";
-      const subs = d.match(/([Mm][^Mm]*)/g) || [];
-      subs.forEach((sd, subIdx) => {
-        results.push({
-          id: `path-${pathIdx}-${subIdx}`,
-          d: sd,
-          area: 0,
-          selected: false,
-        });
-      });
-    });
-    setCandidates(results);
-  }, [svgContent]);
 
   const getCoords = (e: any) => {
     const rect = workspaceRef.current?.getBoundingClientRect();
@@ -6016,9 +5953,9 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
       const reader = new FileReader();
       reader.onload = (event) => {
         const url = event.target?.result as string;
-        setDetectedSourceArticles([]);
         setOriginalSourceImage(url);
         setSelectedImage(url);
+        void detectSourceObjects(url);
       };
       reader.readAsDataURL(file);
     }
@@ -6033,69 +5970,6 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
       blue: "bg-gradient-to-br from-blue-100 to-cyan-100 border-blue-200",
     };
     return bgMap[workspaceBgColor] || bgMap["white"];
-  };
-
-  const handleRemoveBackground = async () => {
-    if (!selectedImage) return;
-
-    try {
-      setIsRemovingBg(true);
-      console.log("Starting background removal...");
-
-      // Get absolute URL for publicPath
-      const origin =
-        typeof window !== "undefined" ? window.location.origin : "";
-      const publicPath = `${origin}/background-removal-data/`;
-      console.log("Using publicPath:", publicPath);
-
-      const config = {
-        publicPath: publicPath,
-        debug: false,
-      };
-
-      // Preload assets first
-      console.log("Preloading assets...");
-      await preload(config);
-      console.log("Assets preloaded successfully");
-
-      // Convert data URL to blob for better handling
-      let imageInput: Blob | string = selectedImage;
-      if (selectedImage.startsWith("data:")) {
-        console.log("Converting data URL to Blob...");
-        const response = await fetch(selectedImage);
-        imageInput = await response.blob();
-        console.log("Blob created, size:", imageInput.size);
-      }
-
-      // Call removeBackground with proper config
-      console.log("Calling removeBackground...");
-      const imageBlob = await removeBackground(imageInput, config);
-      console.log(
-        "Background removed successfully, blob size:",
-        imageBlob.size,
-      );
-
-      // Convert the resulting blob back to a data URL
-      const reader = new FileReader();
-      reader.readAsDataURL(imageBlob);
-      reader.onloadend = () => {
-        const base64data = reader.result as string;
-        setSelectedImage(base64data);
-        setDetectedSourceArticles([]);
-        setIsRemovingBg(false);
-        console.log("Background removal complete!");
-      };
-      reader.onerror = () => {
-        console.error("FileReader error:", reader.error);
-        throw new Error("Failed to read blob");
-      };
-    } catch (error) {
-      console.error("Error removing background:", error);
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      alert(`Failed to remove background: ${errorMessage}`);
-      setIsRemovingBg(false);
-    }
   };
 
   // The eraser rubs out whatever is under it: on a stroke, a spot hidden there (its line, fill and fabric), the
@@ -9130,7 +9004,7 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
                   </button>
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    className={`${whisperingSignature.className} bg-gradient-to-br from-slate-500 to-slate-600 px-2 py-[clamp(0.1rem,0.6vh,0.25rem)] text-[length:clamp(0.7rem,1.7vh,0.875rem)] text-white shadow-sm transition-all hover:shadow-md`}
+                    className={`${whisperingSignature.className} col-span-2 bg-gradient-to-br from-slate-500 to-slate-600 px-2 py-[clamp(0.1rem,0.6vh,0.25rem)] text-[length:clamp(0.7rem,1.7vh,0.875rem)] text-white shadow-sm transition-all hover:shadow-md`}
                   >
                     Upload
                     <input
@@ -9141,88 +9015,7 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
                       className="hidden"
                     />
                   </button>
-                  <button
-                    id="add-btn"
-                    onClick={() => {
-                      const ns = "http://www.w3.org/2000/svg";
-                      let pts: Dot[] = [];
-                      candidates
-                        .filter((c) => c.selected)
-                        .forEach((c) => {
-                          const path = document.createElementNS(ns, "path");
-                          path.setAttribute("d", c.d);
-                          document.body.appendChild(path);
-                          const len = path.getTotalLength();
-                          for (
-                            let i = 0;
-                            i <= len;
-                            i += Math.max(3, Math.round(len / 40))
-                          ) {
-                            const p = path.getPointAtLength(i);
-                            pts.push({
-                              id: `p-${Math.random()}`,
-                              x: p.x,
-                              y: p.y,
-                            });
-                          }
-                          document.body.removeChild(path);
-                        });
-                      if (pts.length > 0) {
-                        saveForUndo();
-                        const fs = imgDims.width ? 150 / imgDims.width : 1;
-                        setWorkspaceShapes((prev) => [
-                          ...prev,
-                          {
-                            id: `s-${Date.now()}`,
-                            img: selectedImage!,
-                            dots: [...pts],
-                            dims: { ...imgDims },
-                            position: { x: 100, y: 100 },
-                            scale: fs,
-                            showDots: true,
-                            erasedPaths: [],
-                            opacity: 1,
-                          },
-                        ]);
-                        setSourceDots([]);
-                        setShowSourceWindow(false);
-                        setIsSidebarOpen(false);
-                      }
-                    }}
-                    disabled={candidates.filter((c) => c.selected).length === 0}
-                    className={`${whisperingSignature.className} bg-gradient-to-br from-slate-800 to-slate-900 px-2 py-[clamp(0.1rem,0.6vh,0.25rem)] text-[length:clamp(0.7rem,1.7vh,0.875rem)] text-yellow-300 shadow-sm transition-all hover:shadow-md disabled:opacity-30`}
-                  >
-                    Add to Canvas
-                  </button>
                 </div>
-                {selectedImage && (
-                  <div className="mb-2">
-                    <button
-                      onClick={handleRemoveBackground}
-                      disabled={isRemovingBg}
-                      className={`${whisperingSignature.className} flex w-full items-center justify-center gap-2 bg-gradient-to-r from-yellow-500 to-amber-600 py-[clamp(0.1rem,0.7vh,0.375rem)] text-[length:clamp(0.7rem,1.7vh,0.875rem)] text-white shadow-md transition-all hover:shadow-lg disabled:opacity-50`}
-                    >
-                      {isRemovingBg ? (
-                        <>
-                          <span className="animate-spin">⏳</span> AI
-                          Cleaning...
-                        </>
-                      ) : (
-                        <>✨ AI Remove BG</>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleDetectSourceArticles}
-                      disabled={isDetectingSourceArticles || !selectedImage}
-                      className={`${whisperingSignature.className} mt-[clamp(0.25rem,0.8vh,0.5rem)] flex w-full items-center justify-center gap-2 bg-gradient-to-r from-sky-500 to-cyan-600 py-[clamp(0.1rem,0.7vh,0.375rem)] text-[length:clamp(0.7rem,1.7vh,0.875rem)] text-white shadow-md transition-all hover:shadow-lg disabled:opacity-50`}
-                    >
-                      {isDetectingSourceArticles
-                        ? "Detecting Articles..."
-                        : "Detect Articles"}
-                    </button>
-                  </div>
-                )}
               </div>
               {/* Grows to fill the panel, but won't shrink below its content (the preview at its smallest
                   plus the templates) — past that the panel scrolls instead of hiding the templates */}
@@ -9241,28 +9034,43 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
                         height={imgDims.height}
                       />
                     )}
-                    {candidates.map((c, idx) => (
-                      <path
-                        key={c.id}
-                        id={idx === 0 ? "path-0-0" : c.id}
-                        d={c.d}
-                        fill={
-                          c.selected ? "rgba(251, 191, 36, 0.5)" : "transparent"
-                        }
-                        stroke={c.selected ? "#f59e0b" : "#cbd5e1"}
-                        strokeWidth={4}
-                        className="cursor-pointer"
-                        onClick={() =>
-                          setCandidates((prev) =>
-                            prev.map((x) =>
-                              x.id === c.id
-                                ? { ...x, selected: !x.selected }
-                                : x,
-                            ),
-                          )
-                        }
-                      />
-                    ))}
+                    {/* The objects found: outlined, named, each put on the workspace with a click */}
+                    {detectedSourceFor === selectedImage &&
+                      detectedSourceArticles.map((article) => {
+                        const line = Math.max(2, imgDims.width / 160);
+                        return (
+                          <g
+                            key={`outline-${article.id}`}
+                            className="cursor-pointer [&:hover>rect]:fill-sky-400/25"
+                            onClick={() => addSourceObjectToWorkspace(article)}
+                          >
+                            <title>{`Put the ${article.label.toLowerCase()} on the workspace`}</title>
+                            <rect
+                              x={article.bounds.x}
+                              y={article.bounds.y}
+                              width={article.bounds.width}
+                              height={article.bounds.height}
+                              rx={line * 2}
+                              fill="rgba(14, 165, 233, 0.08)"
+                              stroke="#0ea5e9"
+                              strokeWidth={line}
+                              strokeDasharray={`${line * 4} ${line * 2}`}
+                            />
+                            <text
+                              x={article.bounds.x + line * 2}
+                              y={article.bounds.y + line * 9}
+                              fontSize={line * 7}
+                              fontWeight={800}
+                              fill="#0369a1"
+                              stroke="#ffffff"
+                              strokeWidth={line * 1.5}
+                              paintOrder="stroke"
+                            >
+                              {article.label}
+                            </text>
+                          </g>
+                        );
+                      })}
                     {sourceDots.map((dot) => (
                       <circle
                         key={dot.id}
@@ -9279,19 +9087,32 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
                 </div>
 
                 <div className="shrink-0">
+                  {isDetectingSourceArticles && (
+                    <p className="mb-[clamp(0.35rem,1.2vh,1rem)] flex items-center gap-2 text-[11px] font-bold text-sky-700">
+                      <span className="animate-spin">⏳</span> Finding the
+                      objects in this picture...
+                    </p>
+                  )}
+                  {!isDetectingSourceArticles &&
+                    detectedSourceFor === selectedImage &&
+                    detectedSourceArticles.length === 0 && (
+                      <p className="mb-[clamp(0.35rem,1.2vh,1rem)] text-[11px] text-slate-500">
+                        No separate objects found in this picture: add it as
+                        it is with Add Original Image As-Is.
+                      </p>
+                    )}
                   {detectedSourceArticles.length > 0 && (
                     <div className="mb-[clamp(0.35rem,1.2vh,1rem)]">
                       <h4 className="mb-[clamp(0.2rem,0.8vh,0.5rem)] text-[10px] font-black uppercase text-slate-500">
-                        Detected Articles
+                        Objects ({detectedSourceArticles.length})
                       </h4>
                       <div className="flex flex-wrap items-center gap-2 pb-1">
                         {detectedSourceArticles.map((article) => (
                           <button
                             key={article.id}
                             type="button"
-                            onClick={() =>
-                              setSelectedImage(article.imageDataUrl)
-                            }
+                            onClick={() => addSourceObjectToWorkspace(article)}
+                            title={`Put the ${article.label.toLowerCase()} on the workspace`}
                             className="flex w-[clamp(3.5rem,9vh,7rem)] shrink-0 flex-col items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1 text-left shadow-sm transition hover:border-sky-300 hover:shadow-md"
                           >
                             <div
@@ -9315,8 +9136,8 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
                         ))}
                       </div>
                       <p className="mt-2 text-[11px] text-slate-500">
-                        Click a detected article to load it as the active Source
-                        image.
+                        Click an object (here or in the picture) to put it on
+                        the workspace.
                       </p>
                     </div>
                   )}
@@ -9330,7 +9151,10 @@ export function Studio({ onBack, designToOpen }: { onBack: () => void; designToO
                         key={i}
                         id={`template-${i}`}
                         src={u}
-                        onClick={() => setSelectedImage(u)}
+                        onClick={() => {
+                          setSelectedImage(u);
+                          void detectSourceObjects(u);
+                        }}
                         className={`h-[clamp(1.5rem,4.5vh,2.5rem)] w-[clamp(1.5rem,4.5vh,2.5rem)] shrink-0 rounded-lg object-contain cursor-pointer border-2 transition-all ${selectedImage === u ? "border-yellow-500 scale-105 bg-white" : "border-transparent opacity-70 hover:opacity-100 bg-white/50"}`}
                       />
                     ))}
