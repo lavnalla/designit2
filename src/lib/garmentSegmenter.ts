@@ -67,6 +67,10 @@ async function getOrt() {
       // same CDN pattern already used elsewhere in this app for MediaPipe's
       // WASM assets, rather than wiring up bundler asset copying.
       ort.env.wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ONNXRUNTIME_WEB_VERSION}/dist/`;
+      // Only real errors reported (its warnings, like "some nodes were not assigned to the preferred execution
+      // providers" when a few shape steps stay on the processor by design, come out as console errors, which
+      // Next.js's development overlay shows as if something had gone wrong)
+      ort.env.logLevel = "error";
       return ort;
     });
   }
@@ -86,6 +90,8 @@ async function getSession() {
     sessionPromise = getOrt().then((ort) =>
       ort.InferenceSession.create(MODEL_URL, {
         executionProviders: hasWebGpu() ? ["webgpu", "wasm"] : ["wasm"],
+        // (3: errors only)
+        logSeverityLevel: 3,
       })
         .then((session) => {
           console.info(`[Clothing model] running on the ${hasWebGpu() ? "graphics card (WebGPU)" : "processor"}`);
@@ -94,7 +100,7 @@ async function getSession() {
         .catch(() => {
           // (No adapter after all, or the model won't run on it: on the processor)
           console.info("[Clothing model] running on the processor (no WebGPU)");
-          return ort.InferenceSession.create(MODEL_URL, { executionProviders: ["wasm"] });
+          return ort.InferenceSession.create(MODEL_URL, { executionProviders: ["wasm"], logSeverityLevel: 3 });
         }),
     );
   }

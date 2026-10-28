@@ -64,12 +64,12 @@ const FEATURES = [
   { icon: Share2, title: "Share your designs", body: "A community gallery of what others are making." },
 ];
 
-// The hero's backdrop: deep plum, with a glow of gold and of emerald behind the picture
+// The hero's backdrop: deep sapphire (midnight blue), with a glow of gold and of emerald behind the picture
 const HERO_BACKDROP =
   "radial-gradient(60rem 40rem at 85% 30%, rgba(16,185,129,0.18), transparent 60%)," +
   "radial-gradient(50rem 30rem at 15% 10%, rgba(212,166,74,0.20), transparent 60%)," +
   "radial-gradient(40rem 40rem at 50% 120%, rgba(126,34,206,0.30), transparent 60%)," +
-  "linear-gradient(180deg, #120914 0%, #1b0d1f 55%, #0d070f 100%)";
+  "linear-gradient(180deg, #0c1633 0%, #14244f 55%, #0a1229 100%)";
 
 export default function LandingPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
@@ -78,7 +78,7 @@ export default function LandingPage() {
   const demoVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const goldButton =
-    "inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#c9973b] via-[#f3d98b] to-[#c9973b] px-7 py-3.5 text-[11px] font-black uppercase tracking-[0.18em] text-[#1b0d1f] shadow-[0_10px_40px_rgba(212,166,74,0.35)] transition-transform hover:scale-[1.03]";
+    "inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#c9973b] via-[#f3d98b] to-[#c9973b] px-7 py-3.5 text-[11px] font-black uppercase tracking-[0.18em] text-[#0f1a3a] shadow-[0_10px_40px_rgba(212,166,74,0.35)] transition-transform hover:scale-[1.03]";
   const ghostButton =
     "inline-flex items-center gap-2 rounded-full border border-white/25 px-7 py-3.5 text-[11px] font-black uppercase tracking-[0.18em] text-white/90 transition-colors hover:border-[#f3d98b] hover:text-[#f3d98b]";
   const eyebrow = "text-[11px] font-black uppercase tracking-[0.32em] text-[#c9973b]";
@@ -87,7 +87,7 @@ export default function LandingPage() {
     <div className="font-sans text-slate-900">
       {isDemoPopupOpen && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/85 p-6 backdrop-blur-sm">
-          <div className="relative w-full max-w-5xl rounded-2xl border border-[#c9973b]/40 bg-[#120914] p-4 shadow-[0_30px_80px_rgba(0,0,0,0.6)]">
+          <div className="relative w-full max-w-5xl rounded-2xl border border-[#c9973b]/40 bg-[#0c1633] p-4 shadow-[0_30px_80px_rgba(0,0,0,0.6)]">
             <div className="mb-3 flex items-center justify-between gap-3">
               <p className={eyebrow}>Studio demo</p>
               <button
@@ -98,14 +98,14 @@ export default function LandingPage() {
                 Close
               </button>
             </div>
-            <video className="w-full rounded-lg" controls autoPlay muted playsInline preload="metadata">
-              <source src="/demo_video1.mp4" type="video/mp4" />
+            <video className="w-full rounded-lg" controls autoPlay muted playsInline preload="metadata" poster="/demo_video_studio_poster.jpg">
+              <source src="/demo_video_studio.mp4" type="video/mp4" />
             </video>
           </div>
         </div>
       )}
 
-      {/* ——— Hero: dark, gold and emerald, the look that hits you first ——— */}
+      {/* ——— Hero: sapphire, gold and emerald, the look that hits you first ——— */}
       <section className="relative overflow-hidden text-white" style={{ background: HERO_BACKDROP }}>
         {/* (Fine gold lines across, like a jeweller's case) */}
         <div
@@ -153,7 +153,7 @@ export default function LandingPage() {
                 alt="A model on a runway wearing an emerald necklace designed in DesignIt"
                 className="h-full w-full object-cover object-top"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#120914]/70 via-transparent to-transparent" aria-hidden />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#0c1633]/70 via-transparent to-transparent" aria-hidden />
             </div>
             <img
               src="/home-hero-necklace.png"
@@ -174,7 +174,7 @@ export default function LandingPage() {
         </div>
 
         {/* Everything it works with, scrolling by */}
-        <div className="relative overflow-hidden border-y border-[#c9973b]/30 bg-black/40 py-4" aria-hidden>
+        <div className="relative overflow-hidden border-y border-[#c9973b]/30 bg-[#081026]/60 py-4" aria-hidden>
           <div className="animate-marquee flex w-max gap-10 whitespace-nowrap">
             {[...MARQUEE, ...MARQUEE, ...MARQUEE, ...MARQUEE].map((word, i) => (
               <span
@@ -194,7 +194,7 @@ export default function LandingPage() {
         <div className="mx-auto max-w-6xl">
           <div className="mx-auto max-w-2xl text-center">
             <p className={eyebrow}>How it works</p>
-            <h2 className={`${cormorant.className} mt-4 text-4xl font-semibold leading-tight text-[#1b0d1f] md:text-6xl`}>
+            <h2 className={`${cormorant.className} mt-4 text-4xl font-semibold leading-tight text-[#0f1a3a] md:text-6xl`}>
               From a picture to the runway, <span className="italic text-[#8a5a14]">in three steps</span>
             </h2>
           </div>
@@ -213,7 +213,7 @@ export default function LandingPage() {
                   >
                     {step.num}
                   </span>
-                  <h3 className={`${cormorant.className} mt-1 text-4xl font-semibold text-[#1b0d1f] md:text-5xl`}>
+                  <h3 className={`${cormorant.className} mt-1 text-4xl font-semibold text-[#0f1a3a] md:text-5xl`}>
                     {step.title}
                   </h3>
                   <p className="mt-5 max-w-md text-base leading-8 text-slate-600">{step.body}</p>
@@ -231,7 +231,7 @@ export default function LandingPage() {
 
                 <div className="relative">
                   <div className="absolute -inset-3 rounded-[2rem] bg-gradient-to-br from-[#f3d98b]/40 via-transparent to-[#10b981]/20 blur-xl" aria-hidden />
-                  <div className="relative overflow-hidden rounded-[1.75rem] border border-[#c9973b]/30 bg-white shadow-[0_30px_70px_rgba(27,13,31,0.15)]">
+                  <div className="relative overflow-hidden rounded-[1.75rem] border border-[#c9973b]/30 bg-white shadow-[0_30px_70px_rgba(12,22,51,0.15)]">
                     {index === 0 && (
                       <div className="flex justify-center bg-gradient-to-b from-[#f3ece2] to-white py-6">
                         <img
@@ -306,8 +306,9 @@ export default function LandingPage() {
                 playsInline
                 loop
                 preload="metadata"
+                poster="/demo_video_studio_poster.jpg"
               >
-                <source src="/demo_video1.mp4" type="video/mp4" />
+                <source src="/demo_video_studio.mp4" type="video/mp4" />
               </video>
               <button
                 type="button"
@@ -327,13 +328,13 @@ export default function LandingPage() {
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className={eyebrow}>The community</p>
-              <h2 className={`${cormorant.className} mt-4 text-4xl font-semibold text-[#1b0d1f] md:text-6xl`}>
+              <h2 className={`${cormorant.className} mt-4 text-4xl font-semibold text-[#0f1a3a] md:text-6xl`}>
                 Made in <span className="italic text-[#8a5a14]">DesignIt</span>
               </h2>
             </div>
             <Link
               href="/community"
-              className="inline-flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-[#8a5a14] hover:text-[#1b0d1f]"
+              className="inline-flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-[#8a5a14] hover:text-[#0f1a3a]"
             >
               See the gallery <ArrowRight size={14} />
             </Link>
@@ -356,7 +357,7 @@ export default function LandingPage() {
         <div className="mx-auto max-w-3xl">
           <div className="text-center">
             <p className={eyebrow}>Questions</p>
-            <h2 className={`${cormorant.className} mt-4 text-4xl font-semibold text-[#1b0d1f] md:text-5xl`}>
+            <h2 className={`${cormorant.className} mt-4 text-4xl font-semibold text-[#0f1a3a] md:text-5xl`}>
               Everything you&apos;d like to know
             </h2>
           </div>
@@ -368,7 +369,7 @@ export default function LandingPage() {
                   className="flex w-full items-center justify-between gap-4 py-5 text-left"
                   aria-expanded={openFaq === index}
                 >
-                  <span className={`${cormorant.className} text-2xl font-semibold text-[#1b0d1f]`}>{faq.q}</span>
+                  <span className={`${cormorant.className} text-2xl font-semibold text-[#0f1a3a]`}>{faq.q}</span>
                   <ChevronDown
                     size={18}
                     className={`shrink-0 text-[#c9973b] transition-transform ${openFaq === index ? "rotate-180" : ""}`}
