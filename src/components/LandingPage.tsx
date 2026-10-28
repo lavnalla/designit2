@@ -3,394 +3,403 @@ import React, { useRef, useState } from "react";
 import Link from "next/link";
 import AdSlot from "./AdSlot";
 import { CommunityShowcase } from "./CommunityShowcase";
-import { hughIsLife, whisperingSignature } from "../lib/fonts";
-import {
-  ArrowRight,
-  Camera,
-  ChevronDown,
-  Download,
-  Share2,
-} from "lucide-react";
+import { cormorant } from "../lib/fonts";
+import { ArrowRight, Camera, ChevronDown, Gem, Play, ScanSearch, Share2, Sparkles, Wand2 } from "lucide-react";
 
 const FAQS = [
   {
     q: "What is DesignIt?",
-    a: "DesignIt is a free design studio in your browser for clothes and jewelry: start from a picture, a template or a blank canvas, design it with the studio's tools, then try it on with your camera or a photo.",
+    a: "A free design studio in your browser for jewellery and clothes. Start from a picture, a template or a blank canvas, design it with the studio's tools, then try it on with your camera or a photo.",
   },
   {
-    q: "Do I need design experience to use it?",
-    a: "No. The studio is built for beginners, hobbyists, and professional designers who want a fast browser workflow.",
+    q: "Do I need design experience?",
+    a: "No. Pick a picture, click the piece you want, and start changing it. The studio is made for beginners and professionals alike.",
   },
   {
-    q: "Can I try on jewelry with my webcam?",
-    a: "Yes. Necklaces, earrings and garments can be tried on live with your webcam, or on a photo of yourself.",
+    q: "Can I try things on with my webcam?",
+    a: "Yes. Necklaces, earrings and garments follow you live on your webcam, or fit onto a photo of yourself.",
   },
   {
-    q: "What file formats can I import?",
-    a: "You can import PNG and JPG images as references, artwork, or surface textures in the studio.",
+    q: "What pictures can I use?",
+    a: "Any PNG or JPG: a product photo, a photo of someone wearing it, or your own sketch. The studio finds the pieces in it for you.",
   },
   {
-    q: "Can I share my designs with the community?",
-    a: "Yes. Designs can be submitted to the community gallery after review.",
+    q: "Can I share my designs?",
+    a: "Yes. Submit a design and, once it's reviewed, it appears in the community gallery.",
   },
   {
-    q: "Is DesignIt free to use?",
-    a: "Yes. The core design and try-on workflow is available without sign-up.",
+    q: "Is it really free?",
+    a: "Yes. Designing and trying on are free, with no sign-up and nothing to install.",
   },
 ];
 
-const FEATURED_LINKS = [
-  { href: "/blog", label: "Blog" },
-  { href: "/community", label: "Community" },
-  { href: "/about", label: "About" },
-  { href: "/contact", label: "Contact" },
+// What the studio works with, for the band that scrolls across under the hero
+const MARQUEE = ["Necklaces", "Earrings", "Dresses", "Sarees", "Tops", "Fabrics", "Gemstones", "Live try-on"];
+
+const STEPS = [
+  {
+    num: "01",
+    title: "Start from any picture",
+    body: "Upload a photo, pick a template or begin on a blank canvas. The studio finds every piece in your picture, so one click lifts a necklace off its display or a top off a model.",
+    tags: ["Upload", "Templates", "Finds the pieces"],
+  },
+  {
+    num: "02",
+    title: "Make it yours",
+    body: "Redraw it, recolour it, set it with emeralds, rubies or diamonds, drape it in a new fabric. Pens, shapes, gems and an eraser: everything an atelier needs.",
+    tags: ["Pens & shapes", "Gems & metals", "Fabrics"],
+  },
+  {
+    num: "03",
+    title: "See it on you",
+    body: "Try it on live with your webcam, or fit it onto a photo of yourself, shaped to your body. Then download it, or share it with the community.",
+    tags: ["Webcam", "Your photo", "Share"],
+  },
 ];
 
-// A step's window: a title bar (with the window's three dots) over what it shows
-function StepWindow({ title, className = "", children }: { title: string; className?: string; children: React.ReactNode }) {
-  return (
-    <div
-      className={`flex flex-col overflow-hidden rounded-xl border border-[#e3d6ca] bg-white shadow-[0_18px_36px_rgba(15,23,42,0.08)] ${className}`}
-    >
-      <div className="flex items-center gap-3 border-b border-slate-200 bg-[#f6f1ec] px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-[#6b4a5f]">
-        <span className="flex gap-1" aria-hidden>
-          <i className="block h-2 w-2 rounded-full bg-[#f87171]" />
-          <i className="block h-2 w-2 rounded-full bg-[#fbbf24]" />
-          <i className="block h-2 w-2 rounded-full bg-[#34d399]" />
-        </span>
-        {title}
-      </div>
-      {children}
-    </div>
-  );
-}
+const FEATURES = [
+  { icon: ScanSearch, title: "Finds the pieces", body: "Every necklace, earring and garment in a photo, cut out and ready." },
+  { icon: Gem, title: "Real-looking gems", body: "Gold, platinum and silver that shine; stones cut and set." },
+  { icon: Camera, title: "Live try-on", body: "Jewellery and clothes that follow you on your webcam." },
+  { icon: Share2, title: "Share your designs", body: "A community gallery of what others are making." },
+];
 
-// A step's number, title and what to do, above its window
-function StepText({ num, title, children }: { num: string; title: string; children: React.ReactNode }) {
-  return (
-    <div className="pb-4">
-      <span className="text-4xl font-black text-[#4f264f]">{num}</span>
-      <h3 className="mt-2 text-lg font-bold text-slate-800">{title}</h3>
-      <p className="mt-2 text-sm leading-relaxed text-slate-500">{children}</p>
-    </div>
-  );
-}
+// The hero's backdrop: deep plum, with a glow of gold and of emerald behind the picture
+const HERO_BACKDROP =
+  "radial-gradient(60rem 40rem at 85% 30%, rgba(16,185,129,0.18), transparent 60%)," +
+  "radial-gradient(50rem 30rem at 15% 10%, rgba(212,166,74,0.20), transparent 60%)," +
+  "radial-gradient(40rem 40rem at 50% 120%, rgba(126,34,206,0.30), transparent 60%)," +
+  "linear-gradient(180deg, #120914 0%, #1b0d1f 55%, #0d070f 100%)";
 
 export default function LandingPage() {
-  const [openFaq, setOpenFaq] = useState<number | null>(null);
-  const [isDemoPlaying, setIsDemoPlaying] = useState(true);
+  const [openFaq, setOpenFaq] = useState<number | null>(0);
   const [isDemoPopupOpen, setIsDemoPopupOpen] = useState(false);
   const homepageAdSlot = process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_HOME_SLOT;
   const demoVideoRef = useRef<HTMLVideoElement | null>(null);
 
-  const toggleDemoVideoPlayback = () => {
-    const video = demoVideoRef.current;
-    if (!video) return;
-    if (video.paused) {
-      video
-        .play()
-        .then(() => setIsDemoPlaying(true))
-        .catch(() => setIsDemoPlaying(false));
-      return;
-    }
-    video.pause();
-    setIsDemoPlaying(false);
-  };
-
-  const chip =
-    "inline-flex items-center gap-1 border border-[#e3d6ca] bg-[#f8f1ea] px-2 py-1 text-[9px] font-black uppercase tracking-[0.08em] text-[#6b4a5f]";
+  const goldButton =
+    "inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#c9973b] via-[#f3d98b] to-[#c9973b] px-7 py-3.5 text-[11px] font-black uppercase tracking-[0.18em] text-[#1b0d1f] shadow-[0_10px_40px_rgba(212,166,74,0.35)] transition-transform hover:scale-[1.03]";
+  const ghostButton =
+    "inline-flex items-center gap-2 rounded-full border border-white/25 px-7 py-3.5 text-[11px] font-black uppercase tracking-[0.18em] text-white/90 transition-colors hover:border-[#f3d98b] hover:text-[#f3d98b]";
+  const eyebrow = "text-[11px] font-black uppercase tracking-[0.32em] text-[#c9973b]";
 
   return (
-    <div className="min-h-screen bg-[#e8e0d9] px-4 pt-0 font-sans text-slate-900 md:px-8 lg:px-10">
+    <div className="font-sans text-slate-900">
       {isDemoPopupOpen && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/80 p-6 backdrop-blur-sm">
-          <div className="relative w-full max-w-5xl border border-slate-200 bg-white p-4 shadow-[0_30px_80px_rgba(15,23,42,0.35)]">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/85 p-6 backdrop-blur-sm">
+          <div className="relative w-full max-w-5xl rounded-2xl border border-[#c9973b]/40 bg-[#120914] p-4 shadow-[0_30px_80px_rgba(0,0,0,0.6)]">
             <div className="mb-3 flex items-center justify-between gap-3">
-              <p className="text-sm font-black uppercase tracking-[0.2em] text-[#8a644a]">
-                Studio Demo
-              </p>
+              <p className={eyebrow}>Studio demo</p>
               <button
                 type="button"
                 onClick={() => setIsDemoPopupOpen(false)}
-                className="border border-slate-300 bg-slate-100 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:bg-slate-200"
+                className="rounded-full border border-white/20 px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-white/80 hover:text-white"
               >
                 Close
               </button>
             </div>
-            <video
-              className="w-full border border-slate-200"
-              controls
-              autoPlay
-              muted
-              playsInline
-              preload="metadata"
-            >
+            <video className="w-full rounded-lg" controls autoPlay muted playsInline preload="metadata">
               <source src="/demo_video1.mp4" type="video/mp4" />
             </video>
           </div>
         </div>
       )}
 
-      <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-[1120px] flex-col overflow-hidden border border-[#e3ddd6] bg-[#fffdfa] shadow-[0_28px_80px_rgba(15,23,42,0.12)]">
-        {/* The gist, with the three steps one below another beside it (the gist stays in view beside them) */}
-        <section className="grid gap-12 px-5 py-10 md:px-10 md:py-14 lg:grid-cols-[0.85fr_1.15fr] lg:gap-10">
-          <div className="lg:sticky lg:top-28 lg:self-start">
-            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#8a644a]">
-              A Free Design Studio In Your Browser
-            </p>
-            <h1
-              className={`${hughIsLife.className} mt-3 text-4xl leading-tight tracking-tight text-[#4f264f] md:text-5xl xl:text-6xl`}
-            >
-              Design Clothes & Jewelry.
+      {/* ——— Hero: dark, gold and emerald, the look that hits you first ——— */}
+      <section className="relative overflow-hidden text-white" style={{ background: HERO_BACKDROP }}>
+        {/* (Fine gold lines across, like a jeweller's case) */}
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.07]"
+          style={{ backgroundImage: "repeating-linear-gradient(115deg, #f3d98b 0 1px, transparent 1px 60px)" }}
+          aria-hidden
+        />
+        <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-5 py-14 md:px-10 lg:grid-cols-[1.05fr_0.95fr] lg:py-24">
+          <div>
+            <p className={eyebrow}>✦ Your atelier, in the browser</p>
+            <h1 className={`${cormorant.className} mt-5 text-[3.4rem] font-semibold leading-[0.92] tracking-tight sm:text-7xl lg:text-[5.6rem]`}>
+              Design it.
+              <br />
+              <span className="text-gold-shimmer italic">Wear it.</span>
+              <br />
+              Own the look.
             </h1>
-            <h2
-              className={`${hughIsLife.className} mt-2 text-2xl leading-tight tracking-tight text-[#4f264f] md:text-3xl xl:text-4xl`}
-            >
-              Then Try Them On.
-            </h2>
-            <p className="mt-5 max-w-lg text-base leading-7 text-slate-600">
-              Start from a picture, a template or a blank canvas. Shape it with drawing, colour, fabric and gem
-              tools. Then see it on you, live on your webcam or on a photo, and save it or share it with the
-              community. No sign-up, nothing to install.
+            <p className="mt-7 max-w-md text-base leading-7 text-white/75 md:text-lg md:leading-8">
+              Turn any picture into your own jewellery or outfit. Redraw it, recolour it, set it with gems, then see it
+              on you: live on camera, or on your photo.
             </p>
-            <div className="mt-7 flex flex-wrap gap-3">
-              <Link
-                href="/studio"
-                className="inline-flex items-center gap-2 bg-black px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-800"
-              >
-                Start Designing <ArrowRight size={14} />
+            <div className="mt-9 flex flex-wrap gap-3">
+              <Link href="/studio" className={goldButton}>
+                Start designing <ArrowRight size={15} />
               </Link>
-              <a
-                href="#how-it-works"
-                className="border border-slate-300 px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:bg-slate-50"
-              >
-                How It Works
+              <a href="#how-it-works" className={ghostButton}>
+                See how it works
               </a>
             </div>
+            <ul className="mt-9 flex flex-wrap gap-x-6 gap-y-2 text-[11px] font-bold uppercase tracking-[0.2em] text-white/55">
+              {["Free", "No sign-up", "Nothing to install"].map((item) => (
+                <li key={item} className="flex items-center gap-2">
+                  <span className="h-1 w-1 rounded-full bg-[#c9973b]" aria-hidden />
+                  {item}
+                </li>
+              ))}
+            </ul>
           </div>
 
-          {/* Three steps, each a window showing it in the studio, one necklace going through all three: picked
-              out of a photo, redesigned in emeralds, worn */}
-          <div id="how-it-works" className="scroll-mt-24">
-          <p className="text-xs font-bold uppercase tracking-widest text-[#8a644a]">How It Works</p>
-          <h2 className={`${whisperingSignature.className} mt-1 text-3xl text-slate-900 md:text-4xl`}>
-            From idea to try-on in 3 steps
-          </h2>
-
-          <div className="mt-6 flex flex-col gap-10">
-            {/* 1. Source: the studio's Source window, the necklace found in a photo */}
-            <div className="flex flex-col">
-              <StepText num="01" title="Source">
-                Upload a picture, select a template, or start on a blank canvas. The studio finds the objects in
-                your picture: click one to put it on the canvas.
-              </StepText>
-              <StepWindow title="Source" className="bg-slate-50">
-                <img
-                  src="/home-step1-source.png"
-                  alt="The studio's Source window: a photo of a diamond necklace on a display bust, the necklace outlined as an object"
-                  className="mx-auto block max-h-[44rem] w-auto max-w-full py-3"
-                />
-              </StepWindow>
+          {/* The finished look: the runway photo in an arch, the emerald necklace floating in front */}
+          <div className="relative mx-auto h-[28rem] w-full max-w-[30rem] sm:h-[34rem]">
+            <div className="absolute right-0 top-0 h-full w-[74%] overflow-hidden rounded-t-[999px] border border-[#c9973b]/50 shadow-[0_0_80px_rgba(16,185,129,0.25)]">
+              <img
+                src="/home-step3-tryon.jpg"
+                alt="A model on a runway wearing an emerald necklace designed in DesignIt"
+                className="h-full w-full object-cover object-top"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#120914]/70 via-transparent to-transparent" aria-hidden />
             </div>
-
-            {/* 2. Design: the necklace cut out, then redesigned */}
-            <div className="flex flex-col">
-              <StepText num="02" title="Design">
-                Use the tools provided: pens and shapes, colours, fabrics, gems and the eraser, then refine it into a
-                finished look.
-              </StepText>
-              <StepWindow title="Studio">
-                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 p-4">
-                  <figure className="flex flex-col items-center gap-2">
-                    <img
-                      src="/home-step2-cutout.png"
-                      alt="The diamond necklace cut out of its photo"
-                      className="max-h-56 w-full object-contain"
-                    />
-                    <figcaption className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
-                      On the canvas
-                    </figcaption>
-                  </figure>
-                  <ArrowRight className="text-[#4f264f]" size={22} aria-hidden />
-                  <figure className="flex flex-col items-center gap-2">
-                    <img
-                      src="/home-step2-designed.png"
-                      alt="The same necklace redesigned with emeralds and a blue sapphire drop"
-                      className="max-h-56 w-full object-contain"
-                    />
-                    <figcaption className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
-                      Redesigned
-                    </figcaption>
-                  </figure>
-                </div>
-              </StepWindow>
-            </div>
-
-            {/* 3. Try it on or save: the redesigned necklace, worn */}
-            <div className="flex flex-col">
-              <StepText num="03" title="Try it on or save">
-                See it on you, live on your webcam or on a photo. Then download it, or submit it to the community
-                gallery.
-              </StepText>
-              <StepWindow title="Try-On">
-                <div className="relative h-[30rem] bg-slate-900">
-                  <img
-                    src="/home-step3-tryon.jpg"
-                    alt="A model on a runway wearing the redesigned emerald necklace"
-                    className="absolute inset-0 h-full w-full object-cover object-top"
-                  />
-                </div>
-                <div className="flex flex-wrap gap-2 border-t border-slate-100 bg-white px-3 py-2">
-                  <span className={chip}>
-                    <Camera size={12} aria-hidden /> Try on
-                  </span>
-                  <span className={chip}>
-                    <Download size={12} aria-hidden /> Download
-                  </span>
-                  <span className={chip}>
-                    <Share2 size={12} aria-hidden /> Submit
-                  </span>
-                </div>
-              </StepWindow>
+            <img
+              src="/home-hero-necklace.png"
+              alt="The emerald necklace, redesigned from a diamond necklace"
+              className="animate-float-soft absolute -left-2 bottom-8 w-[64%] drop-shadow-[0_18px_40px_rgba(16,185,129,0.55)]"
+            />
+            <div className="absolute left-0 top-6 flex items-center gap-3 rounded-2xl border border-white/15 bg-white/10 p-2.5 pr-4 backdrop-blur-md">
+              <img src="/home-step2-cutout.png" alt="" className="h-11 w-11 rounded-xl bg-white object-contain p-1" />
+              <ArrowRight size={14} className="text-[#f3d98b]" aria-hidden />
+              <img src="/home-step2-designed.png" alt="" className="h-11 w-11 rounded-xl bg-white object-contain p-1" />
+              <span className="text-[10px] font-bold uppercase leading-tight tracking-[0.14em] text-white/80">
+                Diamonds
+                <br />
+                to emeralds
+              </span>
             </div>
           </div>
-
-          <div className="mt-10 flex justify-center">
-            <Link
-              href="/studio"
-              className="inline-flex items-center gap-2 bg-black px-6 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-800"
-            >
-              Open The Studio <ArrowRight size={14} />
-            </Link>
-          </div>
-          </div>
-        </section>
-
-        {/* The studio in action */}
-        <section className="border-t border-[#e7ddd4] px-5 py-12 md:px-10">
-          <div className="grid items-center gap-8 lg:grid-cols-[0.8fr_1.2fr]">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-[#8a644a]">See It In Action</p>
-              <h2 className={`${whisperingSignature.className} mt-1 text-3xl text-slate-900 md:text-4xl`}>
-                Studio demo
-              </h2>
-              <p className="mt-3 max-w-sm text-sm leading-7 text-slate-500">
-                A quick look at a design going from the canvas to a try-on.
-              </p>
-              <div className="mt-5 flex gap-2">
-                <button
-                  type="button"
-                  onClick={toggleDemoVideoPlayback}
-                  className="border border-slate-300 bg-white px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:bg-slate-50"
-                >
-                  {isDemoPlaying ? "Pause" : "Play"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsDemoPopupOpen(true)}
-                  className="bg-black px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-800"
-                >
-                  Full Screen
-                </button>
-              </div>
-            </div>
-            <video
-              ref={demoVideoRef}
-              className="aspect-video w-full border border-[#eadfd7] bg-white object-contain"
-              autoPlay
-              muted
-              playsInline
-              loop
-              preload="metadata"
-            >
-              <source src="/demo_video1.mp4" type="video/mp4" />
-            </video>
-          </div>
-        </section>
-
-        <div className="border-t border-[#e7ddd4] px-5 md:px-10">
-          <CommunityShowcase />
         </div>
 
-        {homepageAdSlot && (
-          <section className="px-5 py-6 md:px-8" aria-label="Advertisement">
-            <div className="mx-auto max-w-5xl border border-[#e7ddd4] bg-[#fffdfa] p-4">
-              <p className="mb-3 text-center text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">
-                Sponsored
-              </p>
-              <AdSlot slot={homepageAdSlot} className="mx-auto min-h-[90px]" style={{ minHeight: 90 }} />
-            </div>
-          </section>
-        )}
+        {/* Everything it works with, scrolling by */}
+        <div className="relative overflow-hidden border-y border-[#c9973b]/30 bg-black/40 py-4" aria-hidden>
+          <div className="animate-marquee flex w-max gap-10 whitespace-nowrap">
+            {[...MARQUEE, ...MARQUEE, ...MARQUEE, ...MARQUEE].map((word, i) => (
+              <span
+                key={i}
+                className={`${cormorant.className} flex items-center gap-10 text-2xl italic text-[#f3d98b]/85`}
+              >
+                {word}
+                <Sparkles size={14} className="text-[#c9973b]" />
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
 
-        <section className="border-t border-[#e7ddd4] bg-[#fffdfa] px-5 py-16 sm:px-6 sm:py-20">
-          <div className="mx-auto max-w-2xl">
-            <p className="mb-2 text-center text-xs font-bold uppercase tracking-widest text-[#8a644a]">FAQ</p>
-            <h2 className="mb-10 text-center text-3xl font-black text-slate-900">Frequently Asked Questions</h2>
+      {/* ——— How it works: three steps, one necklace from a photo to the runway ——— */}
+      <section id="how-it-works" className="scroll-mt-20 bg-[#faf6ef] px-5 py-20 md:px-10 md:py-28">
+        <div className="mx-auto max-w-6xl">
+          <div className="mx-auto max-w-2xl text-center">
+            <p className={eyebrow}>How it works</p>
+            <h2 className={`${cormorant.className} mt-4 text-4xl font-semibold leading-tight text-[#1b0d1f] md:text-6xl`}>
+              From a picture to the runway, <span className="italic text-[#8a5a14]">in three steps</span>
+            </h2>
+          </div>
 
-            <div className="flex flex-col gap-3">
-              {FAQS.map((faq, index) => (
-                <div key={faq.q} className="overflow-hidden border border-slate-100 bg-white">
-                  <button
-                    onClick={() => setOpenFaq(openFaq === index ? null : index)}
-                    className="flex w-full items-center justify-between px-5 py-4 text-left text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-50"
+          <div className="mt-16 flex flex-col gap-20 md:gap-28">
+            {STEPS.map((step, index) => (
+              <div
+                key={step.num}
+                className={`grid items-center gap-10 md:grid-cols-2 md:gap-16 ${index % 2 ? "md:[&>*:first-child]:order-2" : ""}`}
+              >
+                <div>
+                  <span
+                    className={`${cormorant.className} block text-[6.5rem] font-bold leading-none text-transparent md:text-[9rem]`}
+                    style={{ WebkitTextStroke: "1.5px #c9973b" }}
+                    aria-hidden
                   >
-                    {faq.q}
-                    <ChevronDown
-                      size={16}
-                      className={`shrink-0 text-slate-400 transition-transform ${openFaq === index ? "rotate-180" : ""}`}
-                    />
-                  </button>
-                  {openFaq === index && (
-                    <div className="border-t border-slate-100 px-5 pb-4 pt-3 text-sm leading-relaxed text-slate-500">
-                      {faq.a}
-                    </div>
-                  )}
+                    {step.num}
+                  </span>
+                  <h3 className={`${cormorant.className} mt-1 text-4xl font-semibold text-[#1b0d1f] md:text-5xl`}>
+                    {step.title}
+                  </h3>
+                  <p className="mt-5 max-w-md text-base leading-8 text-slate-600">{step.body}</p>
+                  <div className="mt-6 flex flex-wrap gap-2">
+                    {step.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-full border border-[#c9973b]/40 bg-white px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-[#8a5a14]"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="relative">
+                  <div className="absolute -inset-3 rounded-[2rem] bg-gradient-to-br from-[#f3d98b]/40 via-transparent to-[#10b981]/20 blur-xl" aria-hidden />
+                  <div className="relative overflow-hidden rounded-[1.75rem] border border-[#c9973b]/30 bg-white shadow-[0_30px_70px_rgba(27,13,31,0.15)]">
+                    {index === 0 && (
+                      <div className="flex justify-center bg-gradient-to-b from-[#f3ece2] to-white py-6">
+                        <img
+                          src="/home-step1-source.png"
+                          alt="The studio's Source window: a photo of a diamond necklace on a display bust, the necklace found and outlined"
+                          className="max-h-[32rem] w-auto max-w-full rounded-xl shadow-lg"
+                        />
+                      </div>
+                    )}
+                    {index === 1 && (
+                      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 p-6 md:p-8">
+                        <figure className="flex flex-col items-center gap-3">
+                          <img src="/home-step2-cutout.png" alt="The diamond necklace, lifted out of its photo" className="max-h-60 w-full object-contain" />
+                          <figcaption className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Before</figcaption>
+                        </figure>
+                        <Wand2 className="text-[#c9973b]" size={26} aria-hidden />
+                        <figure className="flex flex-col items-center gap-3">
+                          <img src="/home-step2-designed.png" alt="The same necklace redesigned in emeralds with a sapphire drop" className="max-h-60 w-full object-contain" />
+                          <figcaption className="text-[10px] font-black uppercase tracking-[0.18em] text-[#047857]">After</figcaption>
+                        </figure>
+                      </div>
+                    )}
+                    {index === 2 && (
+                      <div className="relative h-[30rem]">
+                        <img
+                          src="/home-step3-tryon.jpg"
+                          alt="A model on a runway wearing the redesigned emerald necklace"
+                          className="absolute inset-0 h-full w-full object-cover object-top"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-20 flex justify-center">
+            <Link href="/studio" className={goldButton}>
+              Open the studio <ArrowRight size={15} />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ——— What's in the studio, and the demo ——— */}
+      <section className="relative overflow-hidden px-5 py-20 text-white md:px-10 md:py-28" style={{ background: HERO_BACKDROP }}>
+        <div className="relative mx-auto grid max-w-6xl items-center gap-14 lg:grid-cols-[0.9fr_1.1fr]">
+          <div>
+            <p className={eyebrow}>Inside the studio</p>
+            <h2 className={`${cormorant.className} mt-4 text-4xl font-semibold leading-tight md:text-6xl`}>
+              Everything an atelier has. <span className="italic text-[#f3d98b]">None of the cost.</span>
+            </h2>
+            <div className="mt-10 grid gap-6 sm:grid-cols-2">
+              {FEATURES.map(({ icon: Icon, title, body }) => (
+                <div key={title} className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
+                  <Icon className="text-[#f3d98b]" size={22} aria-hidden />
+                  <h3 className="mt-3 text-sm font-black uppercase tracking-[0.14em]">{title}</h3>
+                  <p className="mt-2 text-sm leading-6 text-white/65">{body}</p>
                 </div>
               ))}
             </div>
           </div>
-        </section>
-
-        <section className="border-t border-[#e7ddd4] bg-[#fffdfa] px-5 py-12 text-slate-900 md:px-8">
-          <div className="grid gap-8 md:grid-cols-[1fr_1.1fr_0.8fr] md:items-start">
-            <div>
-              <h2 className="text-3xl font-black text-[#4f264f]">DesignIt</h2>
-              <p className="mt-3 max-w-xs text-sm leading-7 text-slate-600">
-                A browser-native studio for fashion, jewelry, and AR-guided design exploration.
-              </p>
-            </div>
-            <div>
-              <p className="text-xl leading-8 text-slate-900">
-                We have a lot of creative possibilities waiting. Be the first to find out.
-              </p>
-              <div className="mt-5 flex max-w-md gap-3">
-                <input
-                  type="email"
-                  placeholder="Enter your email here"
-                  className="min-w-0 flex-1 border border-[#d8dbe3] bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
-                />
-                <button className="bg-black px-4 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white">
-                  Submit
-                </button>
-              </div>
-            </div>
-            <div className="flex flex-col gap-2 text-sm text-slate-600">
-              {FEATURED_LINKS.map((item) => (
-                <Link key={`footer-${item.href}`} href={item.href} className="hover:text-slate-900">
-                  {item.label}
-                </Link>
-              ))}
-              <Link
-                href="/studio"
-                className="mt-3 inline-block bg-black px-4 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white"
+          <div className="relative">
+            <div className="absolute -inset-4 rounded-[2rem] bg-[#c9973b]/20 blur-2xl" aria-hidden />
+            <div className="relative overflow-hidden rounded-[1.5rem] border border-[#c9973b]/40 bg-black shadow-[0_30px_80px_rgba(0,0,0,0.5)]">
+              <video
+                ref={demoVideoRef}
+                className="aspect-video w-full object-contain"
+                autoPlay
+                muted
+                playsInline
+                loop
+                preload="metadata"
               >
-                Make a Design
-              </Link>
+                <source src="/demo_video1.mp4" type="video/mp4" />
+              </video>
+              <button
+                type="button"
+                onClick={() => setIsDemoPopupOpen(true)}
+                className="absolute bottom-4 right-4 inline-flex items-center gap-2 rounded-full bg-black/70 px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-[#f3d98b] backdrop-blur hover:bg-black/90"
+              >
+                <Play size={12} /> Watch full screen
+              </button>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* ——— The community ——— */}
+      <section className="bg-[#faf6ef] px-5 pt-20 md:px-10 md:pt-28">
+        <div className="mx-auto max-w-6xl">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className={eyebrow}>The community</p>
+              <h2 className={`${cormorant.className} mt-4 text-4xl font-semibold text-[#1b0d1f] md:text-6xl`}>
+                Made in <span className="italic text-[#8a5a14]">DesignIt</span>
+              </h2>
+            </div>
+            <Link
+              href="/community"
+              className="inline-flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-[#8a5a14] hover:text-[#1b0d1f]"
+            >
+              See the gallery <ArrowRight size={14} />
+            </Link>
+          </div>
+        </div>
+        <CommunityShowcase hideHeading className="mx-auto mt-10 w-full max-w-6xl" />
+      </section>
+
+      {homepageAdSlot && (
+        <section className="bg-[#faf6ef] px-5 pt-14 md:px-10" aria-label="Advertisement">
+          <div className="mx-auto max-w-5xl rounded-2xl border border-[#e8dccb] bg-white p-4">
+            <p className="mb-3 text-center text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">Sponsored</p>
+            <AdSlot slot={homepageAdSlot} className="mx-auto min-h-[90px]" style={{ minHeight: 90 }} />
+          </div>
         </section>
-      </div>
+      )}
+
+      {/* ——— Questions ——— */}
+      <section className="bg-[#faf6ef] px-5 py-20 md:px-10 md:py-28">
+        <div className="mx-auto max-w-3xl">
+          <div className="text-center">
+            <p className={eyebrow}>Questions</p>
+            <h2 className={`${cormorant.className} mt-4 text-4xl font-semibold text-[#1b0d1f] md:text-5xl`}>
+              Everything you&apos;d like to know
+            </h2>
+          </div>
+          <div className="mt-12 divide-y divide-[#e8dccb] border-y border-[#e8dccb]">
+            {FAQS.map((faq, index) => (
+              <div key={faq.q}>
+                <button
+                  onClick={() => setOpenFaq(openFaq === index ? null : index)}
+                  className="flex w-full items-center justify-between gap-4 py-5 text-left"
+                  aria-expanded={openFaq === index}
+                >
+                  <span className={`${cormorant.className} text-2xl font-semibold text-[#1b0d1f]`}>{faq.q}</span>
+                  <ChevronDown
+                    size={18}
+                    className={`shrink-0 text-[#c9973b] transition-transform ${openFaq === index ? "rotate-180" : ""}`}
+                  />
+                </button>
+                {openFaq === index && <p className="pb-6 pr-8 text-base leading-7 text-slate-600">{faq.a}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ——— The last word ——— */}
+      <section className="relative overflow-hidden px-5 py-24 text-center text-white md:px-10" style={{ background: HERO_BACKDROP }}>
+        <img
+          src="/home-hero-necklace.png"
+          alt=""
+          className="pointer-events-none absolute left-1/2 top-1/2 w-[38rem] max-w-none -translate-x-1/2 -translate-y-1/2 opacity-[0.12]"
+          aria-hidden
+        />
+        <div className="relative mx-auto max-w-2xl">
+          <h2 className={`${cormorant.className} text-5xl font-semibold leading-tight md:text-7xl`}>
+            Your next look starts <span className="text-gold-shimmer italic">with a picture.</span>
+          </h2>
+          <div className="mt-10 flex justify-center">
+            <Link href="/studio" className={goldButton}>
+              Start designing, free <ArrowRight size={15} />
+            </Link>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
